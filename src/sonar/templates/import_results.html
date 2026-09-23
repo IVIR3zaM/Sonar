@@ -1,0 +1,20 @@
+<table>
+  <thead>
+    <tr><th>File</th><th>Format</th><th>Added</th><th>Duplicates</th><th>Uncategorized</th></tr>
+  </thead>
+  <tbody>
+    {% for r in results %}
+    {% if r.error %}
+    <tr><td>{{ r.filename }}</td><td colspan="4">{{ r.error }}</td></tr>
+    {% else %}
+    <tr>
+      <td>{{ r.filename }}</td>
+      <td>{{ r.format }}</td>
+      <td>{{ r.added }}</td>
+      <td>{{ r.duplicates }}</td>
+      <td>{{ r.uncategorized }}</td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>

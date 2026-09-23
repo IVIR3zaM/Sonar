@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Import</h1>
+<form hx-post="/import" hx-target="#results" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+  <input type="file" name="files" multiple required>
+  <button type="submit">Import</button>
+</form>
+<div id="results"></div>
+{% endblock %}

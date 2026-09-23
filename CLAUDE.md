@@ -17,6 +17,7 @@ uv run ruff format --check .  # Check formatting
 - `src/sonar/`: main package
 - `src/sonar/migrations/`: numbered SQL files (NNNN_*.sql), applied at startup
 - `src/sonar/templates/`: Jinja2 templates
+- `src/sonar/importers/`: one module per bank format (NAME, detect, parse, optional parse_balance), registered in IMPORTERS; a new source = one importer module + fixture tests
 - `tests/`: pytest tests
 - `data/`: SQLite database, gitignored
 - `samples/`: real bank exports, gitignored, never used in tests

@@ -1,0 +1,16 @@
+﻿Transactions
+Account;Branch/Account number;IBAN;Currency
+GiroKonto;123 4567890 01;DE89370400440512345678;EUR
+
+1/1/2026 - 9/23/2026
+Old balance;;;;1,234.56;EUR
+Transactions pending are not included in this report.
+Booking date;Value date;Transaction Type;Beneficiary / Originator;Payment Details;IBAN / Account Number;BIC;Customer Reference;Mandate Reference;Creditor ID;Compensation amount;Original Amount;Ultimate creditor;Number of transactions;Number of cheques;Debit;Credit;Currency
+9/23/2026;9/23/2026;Transfer;Max Mustermann;"Salary payment; ref: ABC123";DE89123456789012345678;;REF001;MND123;DE11ZZZ00000000001;;-2,167.12;;;;-2,167.12;;EUR
+9/22/2026;9/22/2026;SEPA Direct Debit;ACME GmbH;Monthly subscription;DE22000000000000000002;;REF002;;;;-45.50;;;;-45.50;;EUR
+9/22/2026;9/22/2026;Credit Transfer;John Doe;Invoice payment;DE11000000000000000001;;REF003;;;;1,234.56;;;;;1,234.56;EUR
+9/21/2026;9/21/2026;Debit Card Payment;Restaurant XYZ;Dinner with colleagues;DE33500105179005312345;;REF004;MND456;DE88ZZZ00000051234;;-28.75;;;;-28.75;;EUR
+9/21/2026;9/21/2026;Standing Order;Utility Co;Monthly bill;DE22000000000000000002;;REF005;MND789;DE99ZZZ00000099999;;-89.99;;;;-89.99;;EUR
+9/20/2026;9/20/2026;Transfer;Jane Smith;Refund;DE89270400440512345678;;REF006;;;;55.00;;;;;55.00;EUR
+9/21/2026;9/21/2026;Debit Card Payment;Restaurant XYZ;Dinner with colleagues;DE33500105179005312345;;REF004;MND456;DE88ZZZ00000051234;;-28.75;;;;-28.75;;EUR
+Account balance;9/23/2026;;;-448.43;EUR

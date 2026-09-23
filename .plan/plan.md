@@ -32,6 +32,17 @@ T8 [haiku] Opt-in real-sample test: glob samples/*.csv, skip if none; import to 
 T9 [haiku] ruff format/fix, full suite green, CLAUDE.md one line "new source = one importer module + fixture tests" | files: CLAUDE.md | test first: - | deps: T7,T8
 ```
 
+### M1 replan 1 (Verifier FAIL 1: coverage gaps)
+
+Order: {T10, T11, T12} in parallel → T13
+
+```
+T10 [haiku] Add three tests for deutsche_bank_giro edge cases; keep the no-header branch in parse | files: tests/test_deutsche_bank_giro.py | test first: (a) detect is False when the fixture bytes contain a Windows-1252 byte that is not valid UTF-8 (e.g. replace one counterparty char with b"\xe4"; the fixture may be pure ASCII, so re-encoding the whole fixture as cp1252 is not enough); (b) parse_balance returns None when the "Account balance" footer line is removed from the fixture bytes; (c) parse(b"not,a,bank,export\n1,2,3,4\n") returns [] | deps: -
+T11 [sonnet] Make parse_balance optional in both the Importer Protocol and import_file: remove it from the Protocol in src/sonar/importers/__init__.py (the module docstring already calls it optional) and keep the getattr fallback in importing.py | files: src/sonar/importers/__init__.py,src/sonar/importing.py,tests/test_importing.py | test first: (a) monkeypatch sonar.importing.pick_importer to return a SimpleNamespace stub with NAME, detect and parse (returning the fixture's parsed rows) but no parse_balance; import_file adds the rows and the balances table stays empty; (b) import_file on the fixture with the "Account balance" footer line removed stores 7 transactions and 0 balances rows | deps: -
+T12 [haiku] Make the junk-file assertion check junk.csv's own row, not the Format column | files: tests/test_import_page.py | test first: pull out junk.csv's <tr> (the one containing colspan="4") from second.text and assert it contains "Unrecognized file format" and "Supported formats: Deutsche Bank Girokonto CSV" | deps: -
+T13 [haiku] Run uv run ruff check ., uv run ruff format --check . and uv run pytest -q; fix any lint or format issues in the touched files only | files: tests/test_deutsche_bank_giro.py,tests/test_importing.py,tests/test_import_page.py,src/sonar/importers/__init__.py,src/sonar/importing.py | test first: full suite green with the new tests from T10–T12 | deps: T10,T11,T12
+```
+
 ### Confirmed sample layout (samples/Transactions_ACCOUNT_20260923_160058.csv)
 
 Not the German locale SPEC §4 expected; the importer follows the real file.
@@ -46,7 +57,7 @@ Not the German locale SPEC §4 expected; the importer follows the real file.
 - Footer: `Account balance;<date>;;;<amt>;EUR`. ~1303 lines total.
 - Credit sign not yet seen in the rows read; assume the Credit column is positive. The fixture covers both.
 
-### Open questions (ask the user before dispatching M1)
+### Open questions (answered 2026-09-23: both recommendations accepted)
 
 1. Balance source: `parse()` returns only transactions. Recommend: optional importer function
    `parse_balance(file) -> ParsedBalance | None`; store only the closing "Account balance" line.

@@ -23,7 +23,7 @@ uv run ruff format --check .  # Check formatting
 
 ## Orchestrator workflow
 
-SPEC.md §1 and §2 are the source of truth. Workflow state in `.plan/state.md`. Agent definitions in `.claude/agents/`: Orchestrator (main session), Planner, Executor, Verifier. Each agent has one strict output format. Maximum 2 replans per milestone; human checkpoint after the first plan, if the sample export is missing, after 2 failed replans, or if the spec is ambiguous.
+SPEC.md §1 and §2 are the source of truth. To resume work, read `.plan/state.md` first and follow its Resume steps; task text lives in `.plan/plan.md`. Agent definitions in `.claude/agents/`: Orchestrator (main session), Planner, Executor, Verifier. Each agent has one strict output format. Maximum 2 replans per milestone; human checkpoint after the first plan, if the sample export is missing, after 2 failed replans, or if the spec is ambiguous.
 
 ## Categorization workflow
 

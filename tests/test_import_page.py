@@ -62,3 +62,34 @@ def test_nav_links_to_import_page(tmp_path) -> None:
         response = client.get("/")
 
     assert 'href="/import"' in response.text
+
+
+def test_upload_reports_per_file_uncategorized_from_tmp_toml(tmp_path) -> None:
+    content = FIXTURE.read_bytes()
+    # Never the shipped src/sonar/categories.toml: a fake rule matching one
+    # of the fixture's counterparties, so exactly one row of the fixture's
+    # 7 gets categorized and the rest stay uncategorized.
+    categories_path = tmp_path / "categories.toml"
+    categories_path.write_text(
+        """
+        [[category]]
+        name = "Groceries"
+        type = "variable"
+
+        [[rule]]
+        category = "Groceries"
+        counterparty = "ACME GmbH"
+        """,
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(tmp_path / "t.db", categories_path=categories_path)) as client:
+        response = client.post(
+            "/import",
+            files=[("files", ("giro.csv", content, "text/csv"))],
+        )
+
+    assert response.status_code == 200
+    assert "giro.csv" in response.text
+    assert ">7<" in response.text  # rows added
+    assert ">6<" in response.text  # 7 added, 1 categorized by the fake rule

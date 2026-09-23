@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Uncategorized (<span id="uncategorized-count">{{ count }}</span>)</h1>
+
+<button hx-post="/reapply" hx-target="#uncategorized-count" hx-swap="outerHTML">Re-apply rules</button>
+
+<table>
+  <thead>
+    <tr><th>Date</th><th>Amount</th><th>Counterparty</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    {% for tx in transactions %}
+    <tr>
+      <td>{{ tx.booking_date.isoformat() }}</td>
+      <td>{{ tx.amount_cents | money }}</td>
+      <td>{{ tx.counterparty }}</td>
+      <td>{{ tx.purpose }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Copy for Claude Code</h2>
+<textarea id="categorization-request" readonly rows="12" cols="100">{{ request_text }}</textarea>
+<br>
+<button onclick="navigator.clipboard.writeText(document.getElementById('categorization-request').value)">
+  Copy
+</button>
+{% endblock %}

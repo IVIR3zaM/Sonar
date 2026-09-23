@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from sonar.categorize import parse_taxonomy
 from sonar.db import apply_migrations
 from sonar.importers import UnknownFormatError, deutsche_bank_giro
 from sonar.importing import import_file
@@ -173,3 +174,52 @@ def test_import_without_balance_footer_stores_rows_but_no_balance(conn) -> None:
 
     assert result.added == _FIXTURE_ROWS
     assert conn.execute("SELECT COUNT(*) FROM balances").fetchone()[0] == 0
+
+
+def test_import_applies_rules_to_this_files_new_rows(conn) -> None:
+    # Only "ACME GmbH" (one row) matches; the other 6 new rows stay uncategorized.
+    taxonomy = parse_taxonomy(
+        """
+        [[category]]
+        name = "Subscriptions"
+        type = "fixed"
+
+        [[rule]]
+        category = "Subscriptions"
+        counterparty = "ACME"
+        """
+    )
+
+    result = import_file(conn, FIXTURE.read_bytes(), "giro.csv", rules=taxonomy.rules)
+
+    assert result.added == _FIXTURE_ROWS
+    assert result.uncategorized == _FIXTURE_ROWS - 1
+    categorized = conn.execute(
+        "SELECT COUNT(*) FROM transactions WHERE category = 'Subscriptions'"
+    ).fetchone()[0]
+    assert categorized == 1
+
+
+def test_reimport_with_a_new_rule_categorizes_previously_stored_rows(conn) -> None:
+    content = FIXTURE.read_bytes()
+    import_file(conn, content, "giro.csv")  # no rules yet: everything stays uncategorized
+
+    taxonomy = parse_taxonomy(
+        """
+        [[category]]
+        name = "Invoices"
+        type = "income"
+
+        [[rule]]
+        category = "Invoices"
+        counterparty = "John Doe"
+        """
+    )
+    result = import_file(conn, content, "giro.csv", rules=taxonomy.rules)
+
+    assert result.added == 0
+    assert result.duplicates == _FIXTURE_ROWS
+    categorized = conn.execute(
+        "SELECT COUNT(*) FROM transactions WHERE category = 'Invoices'"
+    ).fetchone()[0]
+    assert categorized == 1

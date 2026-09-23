@@ -25,11 +25,11 @@ class NumberedTransaction(NamedTuple):
 def fingerprint(tx: ParsedTransaction) -> str:
     """Hash the fields that identify a booking, ignoring cosmetic text differences."""
     fields = [
-        _normalize_text(tx.account),
+        normalize_text(tx.account),
         tx.booking_date.isoformat(),
         tx.amount_cents,
-        _normalize_text(tx.counterparty),
-        _normalize_text(tx.purpose),
+        normalize_text(tx.counterparty),
+        normalize_text(tx.purpose),
     ]
     # A JSON array keeps field boundaries explicit, so "ab"+"c" never equals "a"+"bc".
     encoded = json.dumps(fields, ensure_ascii=False).encode("utf-8")
@@ -47,6 +47,6 @@ def number_occurrences(txs: Iterable[ParsedTransaction]) -> list[NumberedTransac
     return numbered
 
 
-def _normalize_text(text: str) -> str:
+def normalize_text(text: str) -> str:
     # Exports of the same booking differ in case and spacing (padding, line wraps).
     return " ".join(text.casefold().split())

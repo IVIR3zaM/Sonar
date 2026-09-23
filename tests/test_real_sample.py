@@ -1,4 +1,4 @@
-"""Opt-in tests for real sample imports (SPEC §4).
+"""Opt-in tests for real sample imports (SPEC §4, §6).
 
 Tests run only if samples/ contains .csv files and never assert on row content.
 """
@@ -6,6 +6,7 @@ Tests run only if samples/ contains .csv files and never assert on row content.
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from sonar.categorize import load_taxonomy
 from sonar.categorizing import reapply_rules
 from sonar.db import apply_migrations
 from sonar.importing import import_file
+from sonar.recurring import sync_detected
 
 REPO_ROOT = Path(__file__).parent.parent
 MIGRATIONS_DIR = REPO_ROOT / "src" / "sonar" / "migrations"
@@ -95,3 +97,21 @@ def test_real_sample_categorization(conn: sqlite3.Connection, sample_path: Path)
     # Reapplying rules should change nothing
     changed = reapply_rules(conn, taxonomy.rules)
     assert changed == 0, f"Reapply changed {changed} rows (expected 0)"
+
+
+@pytest.mark.parametrize("sample_path", _get_sample_files(), ids=lambda p: p.name)
+def test_real_sample_recurring_detection(conn: sqlite3.Connection, sample_path: Path) -> None:
+    """sync_detected detects >= 1 payment after import; second sync is idempotent."""
+    content = sample_path.read_bytes()
+    taxonomy = load_taxonomy(CATEGORIES_PATH)
+
+    # Import with rules
+    import_file(conn, content, sample_path.name, rules=taxonomy.rules)
+
+    # First sync: should detect >= 1 payment
+    changed = sync_detected(conn, taxonomy.categories, date(2026, 9, 23))
+    assert changed >= 1, f"First sync detected {changed} payments (expected >= 1)"
+
+    # Second sync: should change 0 (idempotent)
+    changed2 = sync_detected(conn, taxonomy.categories, date(2026, 9, 23))
+    assert changed2 == 0, f"Second sync changed {changed2} rows (expected 0)"

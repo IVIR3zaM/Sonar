@@ -56,6 +56,14 @@ def uncategorized_transactions(conn: sqlite3.Connection) -> list[ParsedTransacti
     return [_transaction_from_row(row) for row in rows]
 
 
+def transactions_with_category(
+    conn: sqlite3.Connection,
+) -> list[tuple[ParsedTransaction, str | None]]:
+    """Every stored transaction paired with its category, for recurring-payment detection."""
+    rows = conn.execute(f"SELECT {_COLUMNS} FROM transactions").fetchall()
+    return [(_transaction_from_row(row), row[-1]) for row in rows]
+
+
 def _transaction_from_row(row: tuple) -> ParsedTransaction:
     (
         _id,

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Fixed payments</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Category</th><th>Amount</th><th>Every</th><th>Day</th>
+      <th>Last paid</th><th>Next due</th><th>Periods</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set payment = row.payment %}
+    <tr>
+      <td>{{ payment.name }}</td>
+      <td>{{ payment.category or "" }}</td>
+      <td>{{ row.latest.amount_cents | money }}</td>
+      <td>{{ row.latest.interval_months }} month(s)</td>
+      <td>{{ row.latest.day }}</td>
+      <td>{{ payment.last_paid_date.isoformat() if payment.last_paid_date else "" }}</td>
+      <td>{{ row.next_due.isoformat() if row.next_due else "" }}</td>
+      <td>
+        <ul>
+          {% for period in payment.periods %}
+          <li>
+            {{ period.starts_on.isoformat() }}..{{ period.until.isoformat() if period.until else "" }}:
+            {{ period.amount_cents | money }} every {{ period.interval_months }} month(s), day {{ period.day }}
+          </li>
+          {% endfor %}
+        </ul>
+      </td>
+      <td>
+        <form method="post" action="/recurring/{{ payment.id }}/edit">
+          <input name="name" value="{{ payment.name }}" required>
+          <input name="amount" value="{{ row.latest.amount_cents | money }}" required>
+          <input name="interval_months" type="number" min="1" value="{{ row.latest.interval_months }}" required>
+          <input name="day" type="number" min="1" max="31" value="{{ row.latest.day }}" required>
+          <button type="submit">Save</button>
+        </form>
+        <form method="post" action="/recurring/{{ payment.id }}/dismiss">
+          <button type="submit">Dismiss</button>
+        </form>
+        <form method="post" action="/recurring/{{ payment.id }}/pause">
+          <label>Ends/pauses after <input name="last_date" type="date" required></label>
+          <button type="submit">Pause</button>
+        </form>
+        <form method="post" action="/recurring/{{ payment.id }}/resume">
+          <label>Resumes on <input name="starts_on" type="date" required></label>
+          <input name="amount" placeholder="Amount" required>
+          <label>every <input name="interval_months" type="number" min="1" placeholder="N" required> month(s)</label>
+          <input name="day" type="number" min="1" max="31" placeholder="Day (optional)">
+          <button type="submit">Resume</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add a payment</h2>
+<form method="post" action="/recurring">
+  <input name="name" placeholder="Name" required>
+  <input name="amount" placeholder="Amount" required>
+  <label>every <input name="interval_months" type="number" min="1" placeholder="N" required> month(s)</label>
+  <input name="day" type="number" min="1" max="31" placeholder="Day of month" required>
+  <label>first due <input name="starts_on" type="date" required></label>
+  <button type="submit">Add</button>
+</form>
+{% endblock %}

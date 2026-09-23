@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, File, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from sonar.categorize import Rule, load_taxonomy
@@ -15,6 +17,18 @@ from sonar.categorizing import reapply_rules, uncategorized_count, uncategorized
 from sonar.db import apply_migrations, connect
 from sonar.importers import UnknownFormatError
 from sonar.importing import import_file
+from sonar.money import parse_cents
+from sonar.recurring import (
+    PaymentNotFound,
+    add_manual,
+    dismiss,
+    edit_payment,
+    list_payments,
+    pause_payment,
+    resume_payment,
+    sync_detected,
+)
+from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.uncategorized_export import build_categorization_request
 
 # Resolved relative to this module, not the process CWD, so migrations are
@@ -39,12 +53,14 @@ templates.env.filters["money"] = _format_cents
 def create_app(
     db_path: Path = Path("data/sonar.db"),
     categories_path: Path = CATEGORIES_PATH,
+    today: Callable[[], date] = date.today,
 ) -> FastAPI:
     """Build the Sonar FastAPI app, migrating `db_path` on startup.
 
     `categories_path` is read fresh on every import and again at startup, so
     editing `categories.toml` by hand (the Categorization workflow) takes
-    effect without restarting the app.
+    effect without restarting the app. `today` defaults to the real clock;
+    tests pin it so recurring-payment detection is deterministic.
     """
 
     @asynccontextmanager
@@ -52,7 +68,9 @@ def create_app(
         conn = connect(db_path)
         try:
             apply_migrations(conn, MIGRATIONS_DIR)
-            reapply_rules(conn, load_taxonomy(categories_path).rules)
+            taxonomy = load_taxonomy(categories_path)
+            reapply_rules(conn, taxonomy.rules)
+            sync_detected(conn, taxonomy.categories, today())
         finally:
             conn.close()
         yield
@@ -89,10 +107,11 @@ def create_app(
     async def reapply(request: Request) -> HTMLResponse:
         # Reloads the taxonomy from disk so a hand edit to categories.toml
         # takes effect without restarting the app (same as a fresh import).
-        rules = load_taxonomy(categories_path).rules
+        taxonomy = load_taxonomy(categories_path)
         conn = connect(db_path)
         try:
-            reapply_rules(conn, rules)
+            reapply_rules(conn, taxonomy.rules)
+            sync_detected(conn, taxonomy.categories, today())
             count = uncategorized_count(conn)
         finally:
             conn.close()
@@ -110,17 +129,152 @@ def create_app(
         # Loaded once per request, not once per file: all files in one upload
         # see the same rule set, and an edit to categories.toml between
         # requests applies without restarting the app.
-        rules = load_taxonomy(categories_path).rules
+        taxonomy = load_taxonomy(categories_path)
         # One connection for the whole upload; one file's failure (unknown
         # format) must not stop the others in the same request.
         conn = connect(db_path)
         try:
-            results = [_import_one(conn, await f.read(), f.filename or "", rules) for f in files]
+            results = [
+                _import_one(conn, await f.read(), f.filename or "", taxonomy.rules) for f in files
+            ]
+            # Once per request, after every file, so detection sees the full upload.
+            sync_detected(conn, taxonomy.categories, today())
         finally:
             conn.close()
         return templates.TemplateResponse(request, "import_results.html", {"results": results})
 
+    @app.get("/recurring", response_class=HTMLResponse)
+    async def recurring_page(request: Request) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            payments = list_payments(conn)
+            # periods come back ordered by starts_on, so [-1] is the latest.
+            rows = [
+                {
+                    "payment": payment,
+                    "latest": payment.periods[-1],
+                    "next_due": next_due_date(payment.periods, payment.last_paid_date, today()),
+                }
+                for payment in payments
+            ]
+        finally:
+            conn.close()
+        return templates.TemplateResponse(request, "recurring.html", {"rows": rows})
+
+    @app.post("/recurring")
+    async def add_recurring(
+        name: str = Form(...),
+        amount: str = Form(...),
+        interval_months: str = Form(...),
+        day: str = Form(...),
+        starts_on: str = Form(...),
+    ) -> HTMLResponse:
+        try:
+            period = SchedulePeriod(
+                starts_on=date.fromisoformat(starts_on),
+                until=None,
+                amount_cents=parse_cents(amount),
+                interval_months=int(interval_months),
+                day=int(day),
+            )
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            add_manual(conn, name, None, period)
+        finally:
+            conn.close()
+        return RedirectResponse("/recurring", status_code=303)
+
+    @app.post("/recurring/{id}/edit")
+    async def edit_recurring(
+        id: int,
+        name: str = Form(...),
+        amount: str = Form(...),
+        interval_months: str = Form(...),
+        day: str = Form(...),
+    ) -> HTMLResponse:
+        try:
+            amount_cents = parse_cents(amount)
+            interval = int(interval_months)
+            day_number = int(day)
+            _validate_schedule(amount_cents, interval, day_number)
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            edit_payment(conn, id, name, amount_cents, interval, day_number)
+        except PaymentNotFound:
+            return HTMLResponse(f"No such payment: {id}", status_code=404)
+        finally:
+            conn.close()
+        return RedirectResponse("/recurring", status_code=303)
+
+    @app.post("/recurring/{id}/dismiss")
+    async def dismiss_recurring(id: int) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            dismiss(conn, id)
+        except PaymentNotFound:
+            return HTMLResponse(f"No such payment: {id}", status_code=404)
+        finally:
+            conn.close()
+        return RedirectResponse("/recurring", status_code=303)
+
+    @app.post("/recurring/{id}/pause")
+    async def pause_recurring(id: int, last_date: str = Form(...)) -> HTMLResponse:
+        try:
+            parsed_last_date = date.fromisoformat(last_date)
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            pause_payment(conn, id, parsed_last_date)
+        except PaymentNotFound:
+            return HTMLResponse(f"No such payment: {id}", status_code=404)
+        finally:
+            conn.close()
+        return RedirectResponse("/recurring", status_code=303)
+
+    @app.post("/recurring/{id}/resume")
+    async def resume_recurring(
+        id: int,
+        starts_on: str = Form(...),
+        amount: str = Form(...),
+        interval_months: str = Form(...),
+        day: str = Form(""),
+    ) -> HTMLResponse:
+        try:
+            parsed_starts_on = date.fromisoformat(starts_on)
+            amount_cents = parse_cents(amount)
+            interval = int(interval_months)
+            # Day defaults to the resume date's own day, same as schedule.resume_on.
+            day_number = int(day) if day else parsed_starts_on.day
+            _validate_schedule(amount_cents, interval, day_number)
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            resume_payment(conn, id, parsed_starts_on, amount_cents, interval, day_number)
+        except PaymentNotFound:
+            return HTMLResponse(f"No such payment: {id}", status_code=404)
+        finally:
+            conn.close()
+        return RedirectResponse("/recurring", status_code=303)
+
     return app
+
+
+def _validate_schedule(amount_cents: int, interval_months: int, day: int) -> None:
+    # Reuses SchedulePeriod's own checks instead of duplicating them; the
+    # starts_on value here is a placeholder, only used to satisfy the dataclass.
+    SchedulePeriod(
+        starts_on=date(2000, 1, 1),
+        until=None,
+        amount_cents=amount_cents,
+        interval_months=interval_months,
+        day=day,
+    )
 
 
 def _import_one(

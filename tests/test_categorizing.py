@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from sonar.categorize import Rule
-from sonar.categorizing import reapply_rules, uncategorized_count, uncategorized_transactions
+from sonar.categorizing import (
+    reapply_rules,
+    transactions_with_category,
+    uncategorized_count,
+    uncategorized_transactions,
+)
 from sonar.db import apply_migrations
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
@@ -90,3 +95,16 @@ def test_uncategorized_count_and_list_only_include_null_rows(conn: sqlite3.Conne
     assert [tx.counterparty for tx in txs] == ["Someone Else"]
     assert txs[0].purpose == "misc"
     assert txs[0].amount_cents == -500
+
+
+def test_transactions_with_category_pairs_every_row_with_its_category(
+    conn: sqlite3.Connection,
+) -> None:
+    _insert(conn, fingerprint="a", counterparty="My Landlord GmbH", purpose="rent")
+    _insert(conn, fingerprint="b", counterparty="Someone Else", purpose="misc", amount_cents=-500)
+    reapply_rules(conn, (RENT_RULE,))
+
+    pairs = transactions_with_category(conn)
+
+    by_counterparty = {tx.counterparty: category for tx, category in pairs}
+    assert by_counterparty == {"My Landlord GmbH": "Rent", "Someone Else": None}

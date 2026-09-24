@@ -2,5 +2,90 @@
 
 {% block content %}
 <h1>Sonar</h1>
-<p>Uncategorized: <a href="/uncategorized">{{ uncategorized_count }}</a></p>
+
+{% if dashboard.light %}
+<div id="traffic-light" class="light-{{ dashboard.light }}">
+<p>[{{ dashboard.projection.worst_cents | money }}, {{ dashboard.projection.best_cents | money }}]</p>
+<p>Overdraft limit: {{ dashboard.overdraft_limit_cents | money }}</p>
+</div>
+{% else %}
+<p><a href="/settings">Set up your salary day and balance</a> to see the traffic light.</p>
+{% endif %}
+
+<section>
+<h2>Until payday</h2>
+{% if dashboard.payday %}
+<p>Until next payday ({{ dashboard.payday.isoformat() }}, in {{ dashboard.days_to_payday }} days)</p>
+{% endif %}
+{% if dashboard.balance %}
+<p>Balance: {{ dashboard.balance.amount_cents | money }} as of {{ dashboard.balance.as_of.isoformat() }}</p>
+{% endif %}
+
+<h3>Due</h3>
+<p>{{ dashboard.due_total_cents | money }} expected</p>
+<table id="due">
+<thead><tr><th>Name</th><th>Date</th><th>Amount</th></tr></thead>
+<tbody>
+{% for item in dashboard.due %}
+<tr><td>{{ item.name }}</td><td>{{ item.due_date.isoformat() }}</td><td>{{ item.amount_cents | money }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+
+<h3>Variable spending</h3>
+{% if dashboard.variable %}
+<p title="25th to 75th percentile of total variable spending in the last {{ dashboard.variable.cycles_used }} complete salary cycles (at most 6), each scaled to the days from the balance date to payday; categories show their median.">{{ dashboard.variable.low_cents | money }}–{{ dashboard.variable.high_cents | money }} more</p>
+<table id="variable-breakdown">
+<thead><tr><th>Category</th><th>Median</th></tr></thead>
+<tbody>
+{% for row in dashboard.variable.by_category %}
+<tr><td>{{ row.category }}</td><td>{{ row.median_cents | money }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<p>not enough data</p>
+{% endif %}
+
+{% if dashboard.projection %}
+<p>Projected: [{{ dashboard.projection.worst_cents | money }}, {{ dashboard.projection.best_cents | money }}]</p>
+{% endif %}
+</section>
+
+<section>
+<h2>Fixed costs</h2>
+<p>Monthly equivalent: {{ dashboard.fixed_costs.monthly_equivalent_cents | money }}</p>
+<table id="fixed-costs">
+<thead><tr><th>Name</th><th>Day</th><th>Every</th><th>Amount</th><th>Next due</th></tr></thead>
+<tbody>
+{% for row in dashboard.fixed_costs.rows %}
+<tr><td>{{ row.name }}</td><td>{{ row.day }}</td><td>{{ row.interval_months }}</td><td>{{ row.amount_cents | money }}</td><td>{{ row.next_due.isoformat() if row.next_due else "" }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+
+<table id="months">
+<thead><tr><th>Month</th><th>Total</th></tr></thead>
+<tbody>
+{% for m in dashboard.fixed_costs.months %}
+<tr><td>{{ m.month.strftime("%Y-%m") }}</td><td>{{ m.total_cents | money }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>Installments and loans</h2>
+<table id="debts">
+<thead><tr><th>Name</th><th>Remaining</th></tr></thead>
+<tbody>
+{% for name, cents in dashboard.debts %}
+<tr><td>{{ name }}</td><td>{{ cents | money }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+<p id="debts-total">Total remaining: {{ dashboard.debts_total_cents | money }}</p>
+</section>
+
+<p>Uncategorized: <a href="/uncategorized">{{ dashboard.uncategorized_count }}</a></p>
 {% endblock %}

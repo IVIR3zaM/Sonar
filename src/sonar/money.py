@@ -1,13 +1,14 @@
 """Money parsing: convert text to integer cents or basis points."""
 
 
-def parse_cents(text: str) -> int:
-    """Parse text amount to integer cents (positive only).
+def _parse_amount(text: str) -> int:
+    """Parse text amount to a non-negative integer amount in cents.
 
     Strips spaces and leading €. Accepts digits with at most one decimal
-    separator (. or ,) and at most 2 decimal places. Returns amount in cents.
+    separator (. or ,) and at most 2 decimal places. Shared by parse_cents
+    and parse_signed_cents, which each add their own sign handling on top.
 
-    Raises ValueError for empty, multiple separators, >2 decimals, or <=0.
+    Raises ValueError for empty, multiple separators, or >2 decimals.
     """
     text = text.strip()
     if text.startswith("€"):
@@ -47,12 +48,44 @@ def parse_cents(text: str) -> int:
 
     decimal_part = decimal_part.ljust(2, "0")
 
-    cents = int(integer_part) * 100 + int(decimal_part)
+    return int(integer_part) * 100 + int(decimal_part)
+
+
+def parse_cents(text: str) -> int:
+    """Parse text amount to integer cents (positive only).
+
+    Strips spaces and leading €. Accepts digits with at most one decimal
+    separator (. or ,) and at most 2 decimal places. Returns amount in cents.
+
+    Raises ValueError for empty, multiple separators, >2 decimals, or <=0.
+    """
+    cents = _parse_amount(text)
 
     if cents <= 0:
         raise ValueError("Amount must be positive")
 
     return cents
+
+
+def parse_signed_cents(text: str) -> int:
+    """Parse text amount to a signed integer amount in cents.
+
+    A balance can be zero or overdrawn, unlike a payment amount, so this
+    accepts an optional leading "-" (checked before the € strip, since a
+    balance may be written as "-€5") and does not reject zero or negatives.
+
+    Raises ValueError for empty, multiple separators, >2 decimals, or a
+    malformed sign (e.g. "-", "--5").
+    """
+    text = text.strip()
+
+    negative = text.startswith("-")
+    if negative:
+        text = text[1:]
+
+    cents = _parse_amount(text)
+
+    return -cents if negative else cents
 
 
 def parse_basis_points(text: str) -> int:

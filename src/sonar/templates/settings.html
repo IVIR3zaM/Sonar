@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Settings</h1>
+
+<h2>Household</h2>
+<form method="post" action="/settings">
+  <label>Salary day
+    <input name="salary_day" value="{{ settings.salary_day if settings.salary_day is not none else '' }}" required>
+  </label>
+  <label>Overdraft limit
+    <input name="overdraft_limit" value="{{ settings.overdraft_limit_cents | money }}" required>
+  </label>
+  <button type="submit">Save</button>
+</form>
+
+<h2>Balance</h2>
+{% if balance %}
+<p>Current balance: {{ balance.amount_cents | money }} as of {{ balance.as_of.isoformat() }} ({{ balance.source }})</p>
+{% else %}
+<p>No balance yet</p>
+{% endif %}
+
+<form method="post" action="/settings/balance">
+  <label>Amount <input name="amount" placeholder="Amount" required></label>
+  <label>As of <input name="as_of" type="date" value="{{ today.isoformat() }}" required></label>
+  <button type="submit">Save balance</button>
+</form>
+{% endblock %}

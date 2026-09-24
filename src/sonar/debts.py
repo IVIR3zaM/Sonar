@@ -203,6 +203,16 @@ def _with_final_payment(
     return (replace(period, until=period.until - timedelta(days=1)), final)
 
 
+def last_payment_date(debt: Installment | Loan, txs: Iterable[ParsedTransaction]) -> date | None:
+    """The most recent matching debit's booking date, or None without one.
+
+    The dashboard (M5) needs this per debt to apply the same early/late
+    payment tolerance that fixed_due already applies to detected payments.
+    """
+    dates = [tx.booking_date for tx in txs if matches(tx, debt.match)]
+    return max(dates) if dates else None
+
+
 def linked_keys(debt: Installment | Loan, txs: Iterable[ParsedTransaction]) -> frozenset[str]:
     """Detection keys of every matching debit in the whole history.
 

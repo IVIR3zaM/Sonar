@@ -14,12 +14,13 @@ from fastapi.templating import Jinja2Templates
 
 from sonar.categorize import Rule, load_taxonomy
 from sonar.categorizing import reapply_rules, uncategorized_count, uncategorized_transactions
+from sonar.dashboard import load_dashboard
 from sonar.db import apply_migrations, connect
-from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt
+from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
 from sonar.debts import Installment, Loan, MatchRule
 from sonar.importers import UnknownFormatError
 from sonar.importing import import_file
-from sonar.money import parse_basis_points, parse_cents
+from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
 from sonar.recurring import (
     PaymentNotFound,
     add_manual,
@@ -31,6 +32,7 @@ from sonar.recurring import (
     sync_detected,
 )
 from sonar.schedule import SchedulePeriod, next_due_date
+from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
 from sonar.uncategorized_export import build_categorization_request
 
 # Resolved relative to this module, not the process CWD, so migrations are
@@ -88,12 +90,13 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
+        taxonomy = load_taxonomy(categories_path)
         conn = connect(db_path)
         try:
-            count = uncategorized_count(conn)
+            board = load_dashboard(conn, taxonomy.categories, today())
         finally:
             conn.close()
-        return templates.TemplateResponse(request, "index.html", {"uncategorized_count": count})
+        return templates.TemplateResponse(request, "index.html", {"dashboard": board})
 
     @app.get("/uncategorized", response_class=HTMLResponse)
     async def uncategorized_page(request: Request) -> HTMLResponse:
@@ -288,11 +291,9 @@ def create_app(
             conn.close()
         installments = [v for v in views if isinstance(v.debt, Installment)]
         loans = [v for v in views if isinstance(v.debt, Loan)]
-        # Sums remaining installment principal and every loan's projected
-        # balance, since a paid-off loan already projects to 0 (SPEC §7).
-        total_remaining = sum(v.status.remaining_cents for v in installments) + sum(
-            v.status.projected_balance_cents for v in loans
-        )
+        # Shares the "one remaining figure per debt kind" rule with the
+        # dashboard (SPEC §9 section 3) instead of re-deriving it here.
+        total_remaining = sum(remaining_cents(v) for v in views)
         return templates.TemplateResponse(
             request,
             "debts.html",
@@ -373,6 +374,62 @@ def create_app(
         finally:
             conn.close()
         return RedirectResponse("/debts", status_code=303)
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            settings = load_settings(conn)
+            balance = current_balance(conn)
+        finally:
+            conn.close()
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            {"settings": settings, "balance": balance, "today": today()},
+        )
+
+    @app.post("/settings")
+    async def update_settings(
+        # Every field defaults to "" so an empty or missing value reaches our
+        # own ValueError -> 400, not FastAPI's 422.
+        salary_day: str = Form(""),
+        overdraft_limit: str = Form(""),
+    ) -> HTMLResponse:
+        try:
+            salary_day_number = int(salary_day)
+            overdraft_limit_cents = parse_signed_cents(overdraft_limit)
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            save_settings(conn, salary_day_number, overdraft_limit_cents)
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        finally:
+            conn.close()
+        return RedirectResponse("/settings", status_code=303)
+
+    @app.post("/settings/balance")
+    async def update_balance(
+        # Every field defaults to "" so an empty or missing value reaches our
+        # own ValueError -> 400, not FastAPI's 422.
+        amount: str = Form(""),
+        as_of: str = Form(""),
+    ) -> HTMLResponse:
+        try:
+            amount_cents = parse_signed_cents(amount)
+            as_of_date = date.fromisoformat(as_of)
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            set_manual_balance(conn, as_of_date, amount_cents, today())
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        finally:
+            conn.close()
+        return RedirectResponse("/settings", status_code=303)
 
     return app
 

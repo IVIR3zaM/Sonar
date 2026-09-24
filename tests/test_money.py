@@ -1,6 +1,6 @@
 import pytest
 
-from sonar.money import parse_basis_points, parse_cents
+from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
 
 
 class TestParseCents:
@@ -113,3 +113,51 @@ class TestParseBasisPoints:
     def test_parse_basis_points_invalid(self, text):
         with pytest.raises(ValueError):
             parse_basis_points(text)
+
+
+class TestParseSignedCents:
+    @pytest.mark.parametrize(
+        "text,expected_cents",
+        [
+            # Positive, unsigned
+            ("12.34", 1234),
+            # Negative
+            ("-12.34", -1234),
+            # Zero, with and without decimals, signed or not
+            ("0", 0),
+            ("0.00", 0),
+            ("-0", 0),
+            # Negative with comma decimal separator
+            ("-0,5", -50),
+            # Negative with surrounding spaces
+            (" -1000 ", -100000),
+            # Negative with € prefix (sign comes before the currency symbol)
+            ("-€5", -500),
+        ],
+        ids=lambda x: f"{x[0]!r}->{x[1]}" if isinstance(x, tuple) else str(x),
+    )
+    def test_parse_signed_cents_valid(self, text, expected_cents):
+        assert parse_signed_cents(text) == expected_cents
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Empty
+            "",
+            # Sign with nothing after it
+            "-",
+            # Doubled sign
+            "--5",
+            # Invalid characters
+            "abc",
+            # Too many decimals
+            "1.234",
+            # Thousands separator (both . and ,)
+            "1,234.56",
+            "-12.345",
+        ],
+        ids=lambda x: f"{x!r}",
+    )
+    def test_parse_signed_cents_invalid(self, text):
+        with pytest.raises(ValueError):
+            parse_signed_cents(text)

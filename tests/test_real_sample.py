@@ -13,9 +13,11 @@ import pytest
 
 from sonar.categorize import load_taxonomy
 from sonar.categorizing import reapply_rules
+from sonar.dashboard import load_dashboard
 from sonar.db import apply_migrations
 from sonar.importing import import_file
 from sonar.recurring import sync_detected
+from sonar.settings_store import DEFAULT_OVERDRAFT_LIMIT_CENTS, save_settings
 
 REPO_ROOT = Path(__file__).parent.parent
 MIGRATIONS_DIR = REPO_ROOT / "src" / "sonar" / "migrations"
@@ -54,7 +56,6 @@ def test_real_sample_import_is_idempotent(conn: sqlite3.Connection, sample_path:
     """Importing a real sample succeeds, storing transactions and balance; re-import adds 0 rows."""
     content = sample_path.read_bytes()
 
-    # First import
     result = import_file(conn, content, sample_path.name)
     first_tx_count = _count_transactions(conn)
     first_balance_count = _count_balances(conn)
@@ -65,7 +66,7 @@ def test_real_sample_import_is_idempotent(conn: sqlite3.Connection, sample_path:
         f"Stored {first_balance_count} balance entries after first import"
     )
 
-    # Re-import the same file
+    # Re-importing the same export must add nothing (SPEC §4 idempotency).
     result2 = import_file(conn, content, sample_path.name)
     second_tx_count = _count_transactions(conn)
     second_balance_count = _count_balances(conn)
@@ -85,16 +86,13 @@ def test_real_sample_categorization(conn: sqlite3.Connection, sample_path: Path)
     content = sample_path.read_bytes()
     taxonomy = load_taxonomy(CATEGORIES_PATH)
 
-    # Import with rules
     result = import_file(conn, content, sample_path.name, rules=taxonomy.rules)
 
-    # Some rows should be categorized
     uncategorized = _count_uncategorized(conn)
     assert uncategorized < result.added, (
         f"Uncategorized {uncategorized} should be less than added {result.added}"
     )
 
-    # Reapplying rules should change nothing
     changed = reapply_rules(conn, taxonomy.rules)
     assert changed == 0, f"Reapply changed {changed} rows (expected 0)"
 
@@ -105,13 +103,38 @@ def test_real_sample_recurring_detection(conn: sqlite3.Connection, sample_path: 
     content = sample_path.read_bytes()
     taxonomy = load_taxonomy(CATEGORIES_PATH)
 
-    # Import with rules
     import_file(conn, content, sample_path.name, rules=taxonomy.rules)
 
-    # First sync: should detect >= 1 payment
     changed = sync_detected(conn, taxonomy.categories, date(2026, 9, 23))
     assert changed >= 1, f"First sync detected {changed} payments (expected >= 1)"
 
-    # Second sync: should change 0 (idempotent)
+    # A second sync must be a no-op, or every page load would rewrite the schedule.
     changed2 = sync_detected(conn, taxonomy.categories, date(2026, 9, 23))
     assert changed2 == 0, f"Second sync changed {changed2} rows (expected 0)"
+
+
+@pytest.mark.parametrize("sample_path", _get_sample_files(), ids=lambda p: p.name)
+def test_real_sample_dashboard_load(conn: sqlite3.Connection, sample_path: Path) -> None:
+    """Load dashboard after importing sample with taxonomy and saved settings."""
+    content = sample_path.read_bytes()
+    taxonomy = load_taxonomy(CATEGORIES_PATH)
+
+    import_file(conn, content, sample_path.name, rules=taxonomy.rules)
+
+    save_settings(conn, 26, DEFAULT_OVERDRAFT_LIMIT_CENTS)
+
+    dashboard = load_dashboard(conn, taxonomy.categories, date(2026, 9, 23))
+
+    assert dashboard.balance is not None, "Dashboard balance should not be None"
+
+    assert dashboard.payday == date(2026, 9, 25), (
+        f"Dashboard payday should be 2026-09-25, got {dashboard.payday}"
+    )
+
+    assert len(dashboard.fixed_costs.months) == 12, (
+        f"Fixed costs should have 12 months, got {len(dashboard.fixed_costs.months)}"
+    )
+
+    assert dashboard.light in {"green", "yellow", "red"}, (
+        f"Dashboard light should be 'green', 'yellow', or 'red', got {dashboard.light}"
+    )

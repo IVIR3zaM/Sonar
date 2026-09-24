@@ -76,6 +76,18 @@ def debt_overview(conn: sqlite3.Connection, today: date) -> list[DebtView]:
     return views
 
 
+def remaining_cents(view: DebtView) -> int:
+    """One "amount remaining" figure for either debt kind (SPEC §9 section 3).
+
+    An installment's remaining balance and a loan's projected balance answer
+    the same question in different fields, so /debts and the dashboard share
+    this instead of branching on kind themselves.
+    """
+    if isinstance(view.status, InstallmentStatus):
+        return view.status.remaining_cents
+    return view.status.projected_balance_cents
+
+
 def add_debt(conn: sqlite3.Connection, debt: Installment | Loan) -> int:
     """Insert one debt, writing only the columns its kind uses."""
     with conn:

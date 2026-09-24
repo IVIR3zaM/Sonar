@@ -1,4 +1,4 @@
-"""Money parsing: convert text to integer cents."""
+"""Money parsing: convert text to integer cents or basis points."""
 
 
 def parse_cents(text: str) -> int:
@@ -53,3 +53,19 @@ def parse_cents(text: str) -> int:
         raise ValueError("Amount must be positive")
 
     return cents
+
+
+def parse_basis_points(text: str) -> int:
+    """Parse text percentage to integer basis points (positive only).
+
+    Strips spaces and one trailing %. Then reuses parse_cents, because
+    a percent with 2 decimals uses the same fixed-point format as cents.
+    Returns basis points (e.g., 3.5% -> 350, 0.99% -> 99).
+
+    Raises ValueError for empty, invalid format, or <=0.
+    """
+    text = text.strip()
+    if text.endswith("%"):
+        text = text[:-1].strip()
+
+    return parse_cents(text)

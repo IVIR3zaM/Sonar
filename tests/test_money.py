@@ -1,6 +1,6 @@
 import pytest
 
-from sonar.money import parse_cents
+from sonar.money import parse_basis_points, parse_cents
 
 
 class TestParseCents:
@@ -62,3 +62,54 @@ class TestParseCents:
     def test_parse_cents_invalid(self, text):
         with pytest.raises(ValueError):
             parse_cents(text)
+
+
+class TestParseBasisPoints:
+    @pytest.mark.parametrize(
+        "text,expected_bp",
+        [
+            # Valid: no decimal
+            ("3", 300),
+            # Valid: one decimal
+            ("3.5", 350),
+            ("0.99", 99),
+            # Valid: two decimals
+            ("3.50", 350),
+            # Valid: comma as decimal separator
+            ("3,50", 350),
+            ("3,5", 350),
+            # Valid: with % suffix
+            ("3%", 300),
+            ("3.5%", 350),
+            ("3,50%", 350),
+            # Valid: with spaces
+            (" 3.5 ", 350),
+            ("  3.5%  ", 350),
+            (" 3,50% ", 350),
+        ],
+        ids=lambda x: f"{x[0]!r}->{x[1]}" if isinstance(x, tuple) else str(x),
+    )
+    def test_parse_basis_points_valid(self, text, expected_bp):
+        assert parse_basis_points(text) == expected_bp
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Empty
+            "",
+            "   ",
+            # Only percent sign
+            "%",
+            # Zero or negative
+            "0",
+            "-1",
+            # Invalid characters
+            "abc",
+            # Too many decimals
+            "3.555",
+        ],
+        ids=lambda x: f"{x!r}",
+    )
+    def test_parse_basis_points_invalid(self, text):
+        with pytest.raises(ValueError):
+            parse_basis_points(text)

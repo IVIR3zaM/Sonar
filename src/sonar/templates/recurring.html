@@ -14,7 +14,10 @@
     {% for row in rows %}
     {% set payment = row.payment %}
     <tr>
-      <td>{{ payment.name }}</td>
+      <td>
+        {{ payment.name }}
+        {% if row.debt_name %}<br>Debt: {{ row.debt_name }}{% endif %}
+      </td>
       <td>{{ payment.category or "" }}</td>
       <td>{{ row.latest.amount_cents | money }}</td>
       <td>{{ row.latest.interval_months }} month(s)</td>

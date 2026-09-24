@@ -15,9 +15,11 @@ from fastapi.templating import Jinja2Templates
 from sonar.categorize import Rule, load_taxonomy
 from sonar.categorizing import reapply_rules, uncategorized_count, uncategorized_transactions
 from sonar.db import apply_migrations, connect
+from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt
+from sonar.debts import Installment, Loan, MatchRule
 from sonar.importers import UnknownFormatError
 from sonar.importing import import_file
-from sonar.money import parse_cents
+from sonar.money import parse_basis_points, parse_cents
 from sonar.recurring import (
     PaymentNotFound,
     add_manual,
@@ -47,7 +49,14 @@ def _format_cents(cents: int) -> str:
     return f"{sign}{whole}.{remainder:02d}"
 
 
+def _format_percent(interest_bp: int | None) -> str:
+    # A loan without interest_bp is amortized linearly; the page says so
+    # instead of printing a rate that was never entered.
+    return "linear" if interest_bp is None else f"{_format_cents(interest_bp)}%"
+
+
 templates.env.filters["money"] = _format_cents
+templates.env.filters["percent"] = _format_percent
 
 
 def create_app(
@@ -148,12 +157,20 @@ def create_app(
         conn = connect(db_path)
         try:
             payments = list_payments(conn)
+            # Inverted from debt_overview's debt -> payments so the payment row
+            # can show which debt (if any) it is already counted as (SPEC §7).
+            debt_names_by_payment_id = {
+                payment.id: view.debt.name
+                for view in debt_overview(conn, today())
+                for payment in view.linked_payments
+            }
             # periods come back ordered by starts_on, so [-1] is the latest.
             rows = [
                 {
                     "payment": payment,
                     "latest": payment.periods[-1],
                     "next_due": next_due_date(payment.periods, payment.last_paid_date, today()),
+                    "debt_name": debt_names_by_payment_id.get(payment.id),
                 }
                 for payment in payments
             ]
@@ -261,6 +278,101 @@ def create_app(
         finally:
             conn.close()
         return RedirectResponse("/recurring", status_code=303)
+
+    @app.get("/debts", response_class=HTMLResponse)
+    async def debts_page(request: Request) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            views = debt_overview(conn, today())
+        finally:
+            conn.close()
+        installments = [v for v in views if isinstance(v.debt, Installment)]
+        loans = [v for v in views if isinstance(v.debt, Loan)]
+        # Sums remaining installment principal and every loan's projected
+        # balance, since a paid-off loan already projects to 0 (SPEC §7).
+        total_remaining = sum(v.status.remaining_cents for v in installments) + sum(
+            v.status.projected_balance_cents for v in loans
+        )
+        return templates.TemplateResponse(
+            request,
+            "debts.html",
+            {"installments": installments, "loans": loans, "total_remaining": total_remaining},
+        )
+
+    @app.post("/debts/installments")
+    async def add_installment(
+        # Every field defaults to "" so an empty or missing value reaches our
+        # own ValueError -> 400, not FastAPI's 422.
+        name: str = Form(""),
+        total: str = Form(""),
+        rate: str = Form(""),
+        interval_months: str = Form(""),
+        first_payment_date: str = Form(""),
+        payments_count: str = Form(""),
+        match_field: str = Form(""),
+        match_value: str = Form(""),
+    ) -> HTMLResponse:
+        try:
+            debt = Installment(
+                name=name,
+                total_cents=parse_cents(total),
+                rate_cents=parse_cents(rate),
+                interval_months=int(interval_months),
+                first_payment_date=date.fromisoformat(first_payment_date),
+                payments_count=int(payments_count),
+                match=MatchRule(match_field, match_value),
+            )
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            add_debt(conn, debt)
+        finally:
+            conn.close()
+        return RedirectResponse("/debts", status_code=303)
+
+    @app.post("/debts/loans")
+    async def add_loan(
+        # Every field defaults to "" so an empty or missing value reaches our
+        # own ValueError -> 400, not FastAPI's 422.
+        name: str = Form(""),
+        balance: str = Form(""),
+        balance_as_of: str = Form(""),
+        rate: str = Form(""),
+        interest: str = Form(""),
+        match_field: str = Form(""),
+        match_value: str = Form(""),
+    ) -> HTMLResponse:
+        try:
+            debt = Loan(
+                name=name,
+                balance_cents=parse_cents(balance),
+                balance_as_of=date.fromisoformat(balance_as_of),
+                rate_cents=parse_cents(rate),
+                # An empty field means no interest was entered, not a 0% rate,
+                # so the loan amortizes linearly (see amortization.loan_schedule).
+                interest_bp=parse_basis_points(interest) if interest.strip() else None,
+                match=MatchRule(match_field, match_value),
+            )
+        except ValueError as error:
+            return HTMLResponse(str(error), status_code=400)
+        conn = connect(db_path)
+        try:
+            add_debt(conn, debt)
+        finally:
+            conn.close()
+        return RedirectResponse("/debts", status_code=303)
+
+    @app.post("/debts/{id}/delete")
+    async def delete_debt_route(id: int) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            delete_debt(conn, id)
+        except DebtNotFound:
+            return HTMLResponse(f"No such debt: {id}", status_code=404)
+        finally:
+            conn.close()
+        return RedirectResponse("/debts", status_code=303)
 
     return app
 

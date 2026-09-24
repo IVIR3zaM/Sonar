@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Installments and loans</h1>
+
+<h2>Installments</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Rate</th><th>Every</th><th>Total</th><th>Paid so far</th>
+      <th>Remaining</th><th>Payments left</th><th>End date</th><th>Match</th>
+      <th>Linked payments</th><th>Status</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for view in installments %}
+    <tr>
+      <td>{{ view.debt.name }}</td>
+      <td>{{ view.debt.rate_cents | money }}</td>
+      <td>{{ view.debt.interval_months }} month(s)</td>
+      <td>{{ view.debt.total_cents | money }}</td>
+      <td>{{ view.status.paid_cents | money }}</td>
+      <td>{{ view.status.remaining_cents | money }}</td>
+      <td>{{ view.status.payments_remaining }}</td>
+      <td>{{ view.status.end_date.isoformat() }}</td>
+      <td>{{ view.debt.match.field }}: {{ view.debt.match.value }}</td>
+      <td>{{ view.linked_payments | map(attribute="name") | join(", ") }}</td>
+      <td>{{ "paid off" if view.status.paid_off else "" }}</td>
+      <td>
+        <form method="post" action="/debts/{{ view.id }}/delete">
+          <button type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Add an installment</h3>
+<form method="post" action="/debts/installments">
+  <input name="name" placeholder="Name" required>
+  <input name="total" placeholder="Total" required>
+  <input name="rate" placeholder="Rate" required>
+  <label>every <input name="interval_months" type="number" min="1" placeholder="N" required> month(s)</label>
+  <label>first payment <input name="first_payment_date" type="date" required></label>
+  <input name="payments_count" type="number" min="1" placeholder="Payments" required>
+  <select name="match_field">
+    <option value="counterparty">Counterparty</option>
+    <option value="mandate">Mandate</option>
+  </select>
+  <input name="match_value" placeholder="Match value" required>
+  <button type="submit">Add</button>
+</form>
+
+<h2>Loans</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Balance</th><th>As of</th><th>Monthly rate</th><th>Interest</th>
+      <th>Projected balance</th><th>Payoff date</th><th>Paid since statement</th>
+      <th>Match</th><th>Linked payments</th><th>Status</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for view in loans %}
+    <tr>
+      <td>{{ view.debt.name }}</td>
+      <td>{{ view.debt.balance_cents | money }}</td>
+      <td>{{ view.debt.balance_as_of.isoformat() }}</td>
+      <td>{{ view.debt.rate_cents | money }}</td>
+      <td>{{ view.debt.interest_bp | percent }}</td>
+      <td>{{ view.status.projected_balance_cents | money }}</td>
+      <td>{{ view.status.payoff_date.isoformat() if view.status.payoff_date else "never" }}</td>
+      <td>{{ view.status.paid_since_statement_cents | money }}</td>
+      <td>{{ view.debt.match.field }}: {{ view.debt.match.value }}</td>
+      <td>{{ view.linked_payments | map(attribute="name") | join(", ") }}</td>
+      <td>{{ "paid off" if view.status.paid_off else "" }}</td>
+      <td>
+        <form method="post" action="/debts/{{ view.id }}/delete">
+          <button type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Add a loan</h3>
+<form method="post" action="/debts/loans">
+  <input name="name" placeholder="Name" required>
+  <input name="balance" placeholder="Balance" required>
+  <label>as of <input name="balance_as_of" type="date" required></label>
+  <input name="rate" placeholder="Monthly rate" required>
+  <input name="interest" placeholder="Interest % (optional)">
+  <select name="match_field">
+    <option value="counterparty">Counterparty</option>
+    <option value="mandate">Mandate</option>
+  </select>
+  <input name="match_value" placeholder="Match value" required>
+  <button type="submit">Add</button>
+</form>
+
+<p>Total remaining: {{ total_remaining | money }}</p>
+{% endblock %}

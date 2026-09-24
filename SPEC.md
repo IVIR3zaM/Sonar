@@ -121,7 +121,7 @@ Re-importing the same file or an overlapping file adds only the rows not already
 
 - Categories and rules live in one readable file in the codebase: `categories.toml`.
   - Each category has a type: `income`, `fixed`, `variable` or `transfer`.
-  - Rules are ordered and the first match wins. A rule matches on counterparty or purpose text (case-insensitive substring or regex), optionally combined with amount sign, IBAN or creditor ID.
+  - Rules are ordered and the first match wins. A rule matches on counterparty or purpose text (case-insensitive substring or regex), optionally combined with amount sign, an absolute amount range, IBAN or creditor ID.
 - **Initial taxonomy.** In M2, propose a small household set of categories based on my real sample. I will not maintain it by hand.
 - Rules are re-applied to all stored transactions on every import and at startup, so rule changes take effect everywhere.
 - **Loop for unknown transactions.**

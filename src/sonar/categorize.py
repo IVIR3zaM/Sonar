@@ -31,6 +31,9 @@ class Rule:
     sign: str | None = None  # "debit" or "credit"
     iban: str | None = None  # normalized: space-stripped, uppercase
     creditor_id: str | None = None
+    # Inclusive bounds on the absolute amount, for payees told apart only by size.
+    min_amount_cents: int | None = None
+    max_amount_cents: int | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +104,15 @@ def _parse_rule(raw: dict, categories: dict[str, str]) -> Rule:
     except re.error as exc:
         raise ValueError(f"rule for {category!r} has a bad regex: {exc}") from exc
 
+    min_amount_cents = _parse_amount_bound(raw, "min_amount_cents", category)
+    max_amount_cents = _parse_amount_bound(raw, "max_amount_cents", category)
+    if (
+        min_amount_cents is not None
+        and max_amount_cents is not None
+        and min_amount_cents > max_amount_cents
+    ):
+        raise ValueError(f"rule for {category!r} has min_amount_cents above max_amount_cents")
+
     iban = raw.get("iban")
     return Rule(
         category=category,
@@ -111,7 +123,19 @@ def _parse_rule(raw: dict, categories: dict[str, str]) -> Rule:
         sign=sign,
         iban=_normalize_iban(iban) if iban else None,
         creditor_id=raw.get("creditor_id"),
+        min_amount_cents=min_amount_cents,
+        max_amount_cents=max_amount_cents,
     )
+
+
+def _parse_amount_bound(raw: dict, key: str, category: str) -> int | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    # bool is an int subclass; reject it along with floats, strings and negatives.
+    if type(value) is not int or value < 0:
+        raise ValueError(f"rule for {category!r}: {key} must be a non-negative integer")
+    return value
 
 
 def _matches(tx: ParsedTransaction, rule: Rule) -> bool:
@@ -135,6 +159,11 @@ def _matches(tx: ParsedTransaction, rule: Rule) -> bool:
     if rule.iban is not None and rule.iban != _normalize_iban(tx.iban or ""):
         return False
     if rule.creditor_id is not None and rule.creditor_id != tx.creditor_id:
+        return False
+    amount = abs(tx.amount_cents)
+    if rule.min_amount_cents is not None and amount < rule.min_amount_cents:
+        return False
+    if rule.max_amount_cents is not None and amount > rule.max_amount_cents:
         return False
     return True
 

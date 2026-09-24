@@ -30,7 +30,7 @@ SPEC.md §1 and §2 are the source of truth. To resume work, read `.plan/state.m
 ## Categorization workflow
 
 1. Edit `src/sonar/categories.toml`: add or extend categories (income/fixed/variable/transfer) and ordered rules.
-2. Rules match on counterparty or purpose text (case-insensitive substring or regex), optionally with amount sign, IBAN, or creditor ID; first match wins.
+2. Rules match on counterparty or purpose text (case-insensitive substring or regex), optionally with amount sign, absolute amount range, IBAN, or creditor ID; first match wins.
 3. Add one test case per new rule to `tests/test_rules_table.py` with fake strings around the matched keyword.
 4. Rules may use real counterparty names and IBANs (the owner's choice); tests never do, they use fake strings.
 5. Run `uv run pytest` and touch nothing else.

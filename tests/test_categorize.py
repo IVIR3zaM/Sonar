@@ -209,6 +209,70 @@ def test_bad_regex_raises() -> None:
         )
 
 
+def test_amount_range_filter_is_inclusive_on_absolute_amount() -> None:
+    taxonomy = parse_taxonomy(
+        """
+        [[category]]
+        name = "Hosting"
+        type = "fixed"
+
+        [[category]]
+        name = "Friend loan"
+        type = "fixed"
+
+        [[rule]]
+        category = "Hosting"
+        purpose = "hoster"
+        max_amount_cents = 2500
+
+        [[rule]]
+        category = "Friend loan"
+        purpose = "hoster"
+        min_amount_cents = 2501
+        """
+    )
+    assert (
+        categorize(_tx(purpose="hoster invoice", amount_cents=-1146), taxonomy.rules) == "Hosting"
+    )
+    assert (
+        categorize(_tx(purpose="hoster invoice", amount_cents=-2500), taxonomy.rules) == "Hosting"
+    )
+    assert (
+        categorize(_tx(purpose="hoster invoice", amount_cents=-2501), taxonomy.rules)
+        == "Friend loan"
+    )
+    assert (
+        categorize(_tx(purpose="hoster invoice", amount_cents=-8570), taxonomy.rules)
+        == "Friend loan"
+    )
+    assert categorize(_tx(purpose="hoster refund", amount_cents=1146), taxonomy.rules) == "Hosting"
+
+
+@pytest.mark.parametrize(
+    "bounds,message",
+    [
+        ("min_amount_cents = -1", "must be a non-negative integer"),
+        ('max_amount_cents = "25"', "must be a non-negative integer"),
+        ("min_amount_cents = 12.5", "must be a non-negative integer"),
+        ("min_amount_cents = 3000\nmax_amount_cents = 2000", "min_amount_cents above"),
+    ],
+)
+def test_bad_amount_range_raises(bounds: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_taxonomy(
+            f"""
+[[category]]
+name = "Groceries"
+type = "variable"
+
+[[rule]]
+category = "Groceries"
+counterparty = "market"
+{bounds}
+"""
+        )
+
+
 def test_bad_sign_raises() -> None:
     with pytest.raises(ValueError, match="unknown sign"):
         parse_taxonomy(

@@ -1,7 +1,7 @@
 # Sonar plan state
 Milestone: none | phase: ALL MILESTONES DONE (M5 PASS after 2 replans; SPEC §11 checklist verified)
 Replans used: M1 1, M2 0, M3 2, M4 2, M5 2
-Plan: `.plan/plan.md` (milestones, task lines per milestone, sample layout). Commits: M0 13603a5, M1 95a052d, M2 a0d0170, M3 a16f99f, M4 28eb946, M5 see git log
+Plan: `.plan/plan.md` (milestones, task lines per milestone, sample layout). Commits: M0 13603a5, M1 95a052d, M2 a0d0170, M3 a16f99f, M4 28eb946, M5 45f4011
 
 ## Resume (fresh session = orchestrator)
 1. Read SPEC.md §1, this file, `.plan/plan.md`; run `git log --oneline -5` and `uv run pytest -q`.

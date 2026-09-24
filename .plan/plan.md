@@ -10,7 +10,8 @@ number under the milestone heading.
 - M1 Import | DONE 95a052d (1 replan)
 - M2 Categorization | DONE a0d0170 (0 replans)
 - M3 Recurring payments | DONE a16f99f (2 replans)
-- M4 Installments and loans | DONE (2 replans)
+- M4 Installments and loans | DONE 28eb946 (2 replans)
+- M5 Forecast, dashboard, settings | DONE 45f4011 (2 replans; + user amendment: overdraft limit)
 - M1 Import: importer registry, Deutsche Bank Girokonto CSV importer, idempotent storage, upload page | SPEC §4, §10
 - M2 Categorization: categories.toml taxonomy from sample, rule engine, re-apply on import+startup, Uncategorized page+copy export, CLAUDE.md workflow | SPEC §5 | deps: M1
 - M3 Recurring payments: detection (1/2/3/6/12 mo, ±7d, evidence), schedule periods, Fixed payments page edit/pause/resume/dismiss/add, water test | SPEC §6 | deps: M2 (category types), M1 (mandate/creditor)

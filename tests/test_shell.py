@@ -14,6 +14,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
 NAV = [
     ("/", "Dashboard"),
+    ("/monthly", "Monthly spending"),
     ("/import", "Import"),
     ("/uncategorized", "Uncategorized"),
     ("/recurring", "Fixed payments"),

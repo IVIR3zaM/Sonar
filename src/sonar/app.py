@@ -17,7 +17,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sonar import charts
 from sonar.categorize import Rule, load_taxonomy
-from sonar.categorizing import reapply_rules, uncategorized_count, uncategorized_transactions
+from sonar.categorizing import (
+    reapply_rules,
+    transactions_with_category,
+    uncategorized_count,
+    uncategorized_transactions,
+)
 from sonar.dashboard import load_dashboard
 from sonar.db import apply_migrations, connect
 from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
@@ -26,6 +31,16 @@ from sonar.display import cadence, days_until, display_date, eur
 from sonar.importers import UnknownFormatError
 from sonar.importing import import_file
 from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
+from sonar.monthly import (
+    UNCATEGORIZED,
+    adjacent_months,
+    monthly_spending,
+    only_category,
+    parse_month,
+    payment_months,
+    period_for,
+    salary_paydays,
+)
 from sonar.recurring import (
     PaymentNotFound,
     add_manual,
@@ -279,6 +294,52 @@ def create_app(
         finally:
             conn.close()
         return templates.TemplateResponse(request, "index.html", {"dashboard": board})
+
+    @app.get("/monthly", response_class=HTMLResponse)
+    async def monthly_page(
+        request: Request, month: str | None = None, category: str | None = None
+    ) -> HTMLResponse:
+        taxonomy = load_taxonomy(categories_path)
+        conn = connect(db_path)
+        try:
+            rows = transactions_with_category(conn)
+            salary_day = load_settings(conn).salary_day
+        finally:
+            conn.close()
+        paydays = salary_paydays(rows)
+        months = payment_months(rows, salary_day, paydays)
+        if month is None:
+            # The latest month with data rather than the clock's: exports are
+            # often weeks old, and an empty current month would open the page.
+            selected = months[0] if months else today().replace(day=1)
+        else:
+            try:
+                selected = parse_month(month)
+            except ValueError:
+                raise StarletteHTTPException(status_code=404) from None
+        older, newer = adjacent_months(months, selected)
+        spending = monthly_spending(
+            rows, taxonomy.categories, period_for(selected, salary_day, paydays)
+        )
+        # The category table always shows the whole month; only the payment
+        # list below it narrows to the chosen category.
+        category = category or None
+        return templates.TemplateResponse(
+            request,
+            "monthly.html",
+            {
+                "spending": spending,
+                "category": category,
+                "category_label": "Uncategorized" if category == UNCATEGORIZED else category,
+                "payments": (
+                    only_category(spending.payments, category) if category else spending.payments
+                ),
+                "salary_months": salary_day is not None,
+                "months": months,
+                "older": older,
+                "newer": newer,
+            },
+        )
 
     @app.get("/uncategorized", response_class=HTMLResponse)
     async def uncategorized_page(request: Request) -> HTMLResponse:

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/empty.html" import empty %}
+
+{#- Shared table styling; the wrapper scrolls so a wide table never widens the page at 375px. -#}
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set th_num = th ~ " text-right" %}
+{% set tr = "border-t border-line" %}
+{% set td = "py-2 pr-4 text-ink last:pr-0" %}
+{% set td_num = td ~ " text-right" %}
+
+{#- Month and category links swap only <main> in place (no jump to the top, URL
+    still updated) and fall back to a normal page load without JavaScript.
+    Kept off the page's other links, whose pages need the sidebar redrawn. -#}
+{% set boost = {"hx-boost": "true", "hx-target": "#main", "hx-select": "#main", "hx-swap": "outerHTML show:none"} %}
+
+{% macro month_url(month, category=none) -%}
+/monthly?month={{ month.strftime("%Y-%m") }}{% if category %}&amp;{{ {"category": category}|urlencode }}{% endif %}
+{%- endmacro %}
+
+{% macro month_link(month, category, id, label) -%}
+{{ button(label, variant="secondary", size="sm", href=month_url(month, category), id=id, attrs={"aria-label": label ~ " month: " ~ charts.month_label(month)}) }}
+{%- endmacro %}
+
+{% block content %}
+{%- set period = spending.period %}
+{%- set selected = spending.by_category|selectattr("key", "equalto", category)|first if category else none %}
+<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight text-ink">Monthly spending</h1>
+    <p class="mt-1 text-sm text-ink-muted">
+      <time id="month" datetime="{{ period.month.strftime("%Y-%m") }}" class="font-medium text-ink">{{ charts.month_label(period.month) }}</time>
+      · {{ date(period.start, id="period-start") }} – {{ date(period.end, id="period-end") }}
+    </p>
+    {%- if salary_months %}
+    <p class="mt-0.5 text-xs text-ink-muted">Salary month: from the day the salary came in to the day before the next one.</p>
+    {%- else %}
+    <p id="salary-day-hint" class="mt-0.5 text-xs text-ink-muted">Calendar month. Set your salary day in <a href="/settings" class="underline underline-offset-2 hover:text-ink">Settings</a> to count from payday to payday.</p>
+    {%- endif %}
+  </div>
+  <nav aria-label="Months" class="flex flex-wrap items-center gap-2"{{ boost|xmlattr }}>
+    {% if older %}{{ month_link(older, category, "older-month", "← Older") }}{% endif %}
+    {% if months %}
+    <form action="/monthly" method="get" class="flex items-center gap-2">
+      <label for="month-picker" class="sr-only">Month</label>
+      {%- if category %}
+      <input type="hidden" name="category" value="{{ category }}">
+      {%- endif %}
+      <select id="month-picker" name="month" onchange="this.form.requestSubmit()"
+              class="rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink shadow-xs focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25">
+        {%- for m in months %}
+        {%- set value = m.strftime("%Y-%m") %}
+        <option value="{{ value }}"{% if m == period.month %} selected{% endif %}>{{ charts.month_label(m) }}</option>
+        {%- endfor %}
+      </select>
+      <noscript>{{ button("Go", variant="secondary", size="sm") }}</noscript>
+    </form>
+    {% endif %}
+    {% if newer %}{{ month_link(newer, category, "newer-month", "Newer →") }}{% endif %}
+  </nav>
+</header>
+
+<div class="space-y-4 sm:space-y-6">
+  {% call card(title="By category", subtitle="Transfers are listed but not counted as spent. Pick one to list only its payments.", id="categories-card") %}
+    <div class="grid grid-cols-2 gap-6 sm:grid-cols-3 sm:gap-10">
+      {{ stat("Spent", value=amount(spending.spent_cents, id="month-total", colored=false)) }}
+      {{ stat("Transfers out", value=amount(spending.transfers_cents, id="transfers-total", colored=false)) }}
+      {{ stat("Payments", value=spending.payments|length, id="payments-count") }}
+    </div>
+
+    {% if spending.by_category %}
+    {%- set widths = charts.bars(spending.by_category|map(attribute="total_cents")|list, 100) %}
+    <div class="{{ table_wrap }} mt-6"{{ boost|xmlattr }}>
+      <table id="category-totals" class="w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th class="{{ th }} pl-2">Category</th>
+            <th class="{{ th_num }}">Count</th>
+            <th class="{{ th }} hidden w-2/5 sm:table-cell"><span class="sr-only">Share</span></th>
+            <th class="{{ th_num }}">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in spending.by_category %}
+          {%- set tone = "fill-ink-muted/40" if c.category_type == "transfer" else ("fill-warn" if c.category is none else "fill-accent") %}
+          {%- set is_selected = c.key == category %}
+          {#- The link stretches over the whole row, so any cell is a click target. #}
+          <tr data-row{% if is_selected %} aria-current="true"{% endif %}
+              class="{{ tr }} relative transition-colors hover:bg-surface-muted aria-[current=true]:bg-accent-soft{% if category and not is_selected %} text-ink-muted opacity-60 hover:opacity-100{% endif %}">
+            <td class="{{ td }} pl-2" data-field="category">
+              <a href="{{ month_url(period.month) if is_selected else month_url(period.month, c.key) }}"
+                 {%- if is_selected %} title="Show all categories"{% endif %}
+                 class="rounded-control after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-accent {{ 'font-semibold text-accent' if is_selected else ('text-warn' if c.category is none else '') }}">{{ c.category or "Uncategorized" }}</a>
+            </td>
+            <td class="{{ td_num }} tabular-nums text-ink-muted" data-field="count">{{ c.count }}</td>
+            <td class="{{ td }} hidden sm:table-cell">
+              <svg viewBox="0 0 100 6" preserveAspectRatio="none" class="block h-1.5 w-full" aria-hidden="true">
+                <rect width="100" height="6" rx="3" class="fill-surface-muted"/>
+                <rect width="{{ widths[loop.index0] }}" height="6" rx="3" class="{{ tone }}" data-cents="{{ c.total_cents }}"/>
+              </svg>
+            </td>
+            <td class="{{ td_num }} font-medium" data-field="total">{{ amount(c.total_cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endcall %}
+
+  {% call card(title="Payments", subtitle="Newest first", id="payments-card") %}
+    {% if category %}
+    <div id="category-filter" role="status" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-control bg-accent-soft px-3 py-2 text-sm text-ink"{{ boost|xmlattr }}>
+      <p class="min-w-0">
+        Only <strong class="font-semibold text-accent">{{ category_label }}</strong>
+        {%- if selected %} · {{ selected.count }} payment{{ "s" if selected.count != 1 }} · {{ amount(selected.total_cents, colored=false) }}{% endif %}
+      </p>
+      {{ button("Show all", variant="secondary", size="sm", href=month_url(period.month), id="reset-category") }}
+    </div>
+    {% endif %}
+    {% if payments %}
+    <div class="{{ table_wrap }}">
+      <table id="payments" class="w-full min-w-[32rem] text-left text-sm">
+        <thead>
+          <tr>
+            <th class="{{ th }}">Date</th>
+            <th class="{{ th }}">Paid to</th>
+            <th class="{{ th }}">Category</th>
+            <th class="{{ th_num }}">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for tx, tx_category in payments %}
+          <tr data-row class="{{ tr }}">
+            <td class="{{ td }} align-top text-ink-muted" data-field="date">{{ date(tx.booking_date) }}</td>
+            <td class="{{ td }} max-w-0 w-full">
+              <div data-field="counterparty" class="truncate">{{ tx.counterparty }}</div>
+              <div data-field="purpose" class="truncate text-xs text-ink-muted" title="{{ tx.purpose }}">{{ tx.purpose }}</div>
+            </td>
+            <td class="{{ td }}" data-field="category">{{ badge(tx_category) if tx_category else badge("Uncategorized", tone="warn") }}</td>
+            <td class="{{ td_num }}" data-field="amount">{{ amount(tx.amount_cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    {% if category %}
+    {{ empty("No " ~ category_label ~ " payments this month", "Nothing in this category was paid out in " ~ charts.month_label(period.month) ~ ".", id="no-payments") }}
+    {% else %}
+    {% call empty("No payments this month", "Nothing was paid out in " ~ charts.month_label(period.month) ~ ", or that month has not been imported yet.", id="no-payments") %}
+      {{ button("Import a bank export", variant="secondary", href="/import") }}
+    {% endcall %}
+    {% endif %}
+    {% endif %}
+  {% endcall %}
+</div>
+{% endblock %}

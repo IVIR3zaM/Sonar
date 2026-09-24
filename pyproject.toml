@@ -19,6 +19,8 @@ dev = [
     "pytest",
     "ruff",
     "httpx",
+    "pytailwindcss",
+    "beautifulsoup4",
 ]
 
 [tool.ruff]

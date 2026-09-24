@@ -1,10 +1,75 @@
 {% extends "base.html" %}
 
+{% from "components/card.html" import card %}
+{% from "components/button.html" import button %}
+
 {% block content %}
-<h1>Import</h1>
-<form hx-post="/import" hx-target="#results" hx-swap="innerHTML" hx-encoding="multipart/form-data">
-  <input type="file" name="files" multiple required>
-  <button type="submit">Import</button>
-</form>
-<div id="results"></div>
+<div class="space-y-6">
+  <div>
+    <h1 class="text-xl font-semibold tracking-tight text-ink">Import</h1>
+    <p class="mt-1 text-sm text-ink-muted">
+      Upload one or more bank export files. Files you have already imported are skipped automatically.
+    </p>
+  </div>
+
+  {% call card() %}
+  <form hx-post="/import" hx-target="#results" hx-swap="innerHTML" hx-encoding="multipart/form-data"
+        hx-indicator="#import-spinner" class="space-y-4">
+    {#- The dropzone is a label wrapping a visually hidden file input, so a
+        click or a drag onto the whole panel opens the file picker. #}
+    <label for="import-files" id="dropzone"
+           class="flex flex-col items-center justify-center gap-1.5 rounded-card border-2 border-dashed border-line bg-surface-muted/50 px-6 py-10 text-center transition-colors hover:border-accent hover:bg-accent-soft/40">
+      <span class="text-sm font-semibold text-ink">Drop files here, or click to browse</span>
+      <span class="text-xs text-ink-muted">Any number of CSV exports from your bank</span>
+      <span id="dropzone-filenames" class="mt-1 text-xs font-medium text-accent"></span>
+      <input id="import-files" type="file" name="files" multiple required class="sr-only">
+    </label>
+    <script>
+      // Dragging files anywhere over the label already opens no picker, so
+      // dragover/drop need their own preventDefault or the browser would
+      // navigate to the dropped file instead of handing it to the input.
+      (function () {
+        var zone = document.getElementById("dropzone");
+        var input = document.getElementById("import-files");
+        var names = document.getElementById("dropzone-filenames");
+        var highlight = ["border-accent", "bg-accent-soft/40"];
+        function showNames() {
+          names.textContent = Array.from(input.files)
+            .map(function (f) { return f.name; })
+            .join(", ");
+        }
+        input.addEventListener("change", showNames);
+        ["dragover", "dragenter"].forEach(function (type) {
+          zone.addEventListener(type, function (event) {
+            event.preventDefault();
+            zone.classList.add(highlight[0], highlight[1]);
+          });
+        });
+        zone.addEventListener("dragleave", function () {
+          zone.classList.remove(highlight[0], highlight[1]);
+        });
+        zone.addEventListener("drop", function (event) {
+          event.preventDefault();
+          zone.classList.remove(highlight[0], highlight[1]);
+          input.files = event.dataTransfer.files;
+          showNames();
+        });
+      })();
+    </script>
+
+    <div class="flex items-center gap-3">
+      {{ button("Import", type="submit") }}
+      <span id="import-spinner" class="htmx-indicator inline-flex items-center gap-2 text-sm text-ink-muted">
+        <svg class="size-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke-opacity="0.25"/>
+          <path d="M21 12a9 9 0 0 0-9-9"/>
+        </svg>
+        Importing…
+      </span>
+    </div>
+  </form>
+  {% endcall %}
+
+  <div id="results"></div>
+</div>
 {% endblock %}

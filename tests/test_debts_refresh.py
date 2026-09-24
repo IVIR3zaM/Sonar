@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
+from tests.html import fields, soup
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 FIXTURE_LINES = FIXTURE.read_text(encoding="utf-8-sig").splitlines()
@@ -36,6 +37,12 @@ def _empty_categories(tmp_path: Path) -> Path:
     path = tmp_path / "categories.toml"
     path.write_text("", encoding="utf-8")
     return path
+
+
+def _debts(client: TestClient) -> dict[str, dict[str, int | str]]:
+    """Every debt's shown fields on /debts, keyed by name."""
+    shown = [fields(debt) for debt in soup(client.get("/debts")).select("[data-debt-id]")]
+    return {debt["name"]: debt for debt in shown}
 
 
 def _debit_row(booking_date: str, counterparty: str, debit: str) -> str:
@@ -109,10 +116,8 @@ def test_debts_survive_restart_against_same_db(tmp_path):
 
     # A fresh app instance simulates a restart against the same database.
     with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
-        page = client.get("/debts")
-        assert page.status_code == 200
-        assert "Sofa" in page.text
-        assert "Car loan" in page.text
+        assert client.get("/debts").status_code == 200
+        assert sorted(_debts(client)) == ["Car loan", "Sofa"]
 
 
 def test_paid_so_far_tracks_reupload_and_new_debits(tmp_path):
@@ -144,17 +149,17 @@ def test_paid_so_far_tracks_reupload_and_new_debits(tmp_path):
         ]
         content_two = _csv_bytes(two_rows)
         client.post("/import", files=[("files", ("a.csv", content_two, "text/csv"))])
-        assert "200.00" in client.get("/debts").text
+        assert _debts(client)["Shop Debt"]["paid"] == 20_000
 
         # Re-uploading the exact same file must not double-count the debits.
         client.post("/import", files=[("files", ("a.csv", content_two, "text/csv"))])
-        assert "200.00" in client.get("/debts").text
+        assert _debts(client)["Shop Debt"]["paid"] == 20_000
 
         # An overlapping upload that adds one more debit brings the total up.
         three_rows = [*two_rows, _debit_row("3/5/2026", "Shop A", "-100.00")]
         content_three = _csv_bytes(three_rows)
         client.post("/import", files=[("files", ("a.csv", content_three, "text/csv"))])
-        assert "300.00" in client.get("/debts").text
+        assert _debts(client)["Shop Debt"]["paid"] == 30_000
 
 
 def test_upload_links_detected_series_without_extra_action(tmp_path):
@@ -181,18 +186,18 @@ def test_upload_links_detected_series_without_extra_action(tmp_path):
         )
 
         # Before any matching transactions exist, "Fake Gym" only shows up
-        # once, in the debt's own match-rule column.
-        before = client.get("/debts").text
-        assert before.count("Fake Gym") == 1
+        # in the debt's own match rule.
+        before = _debts(client)["Gym Membership"]
+        assert (before["match"], before["linked"]) == ("counterparty: Fake Gym", "")
 
         rows = [_debit_row(d, "Fake Gym", "-50.00") for d in ("7/1/2026", "8/1/2026", "9/1/2026")]
         client.post("/import", files=[("files", ("gym.csv", _csv_bytes(rows), "text/csv"))])
 
         # A single /import call both stores the debits and (via sync_detected)
         # detects the recurring series; /debts must show the link right away,
-        # once for the match rule and once for the linked payment's name.
-        after = client.get("/debts").text
-        assert after.count("Fake Gym") == 2
+        # next to the match rule.
+        after = _debts(client)["Gym Membership"]
+        assert (after["match"], after["linked"]) == ("counterparty: Fake Gym", "Fake Gym")
 
 
 def test_reapply_making_series_variable_removes_the_link(tmp_path):
@@ -215,7 +220,7 @@ def test_reapply_making_series_variable_removes_the_link(tmp_path):
         )
         rows = [_debit_row(d, "Fake Gym", "-50.00") for d in ("7/1/2026", "8/1/2026", "9/1/2026")]
         client.post("/import", files=[("files", ("gym.csv", _csv_bytes(rows), "text/csv"))])
-        assert client.get("/debts").text.count("Fake Gym") == 2  # linked, per the test above
+        assert _debts(client)["Gym Membership"]["linked"] == "Fake Gym"  # per the test above
 
         # Marking the matching counterparty's category "variable" makes
         # detection drop the series; /reapply must re-run detection and the
@@ -224,5 +229,5 @@ def test_reapply_making_series_variable_removes_the_link(tmp_path):
         response = client.post("/reapply")
         assert response.status_code == 200
 
-        after = client.get("/debts").text
-        assert after.count("Fake Gym") == 1  # back to just the match-rule column
+        after = _debts(client)["Gym Membership"]
+        assert (after["match"], after["linked"]) == ("counterparty: Fake Gym", "")

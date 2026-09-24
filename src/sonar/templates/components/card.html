@@ -1,0 +1,16 @@
+{#-
+  card(title=None, id=None, subtitle=None, attrs={})
+    A surface panel; the body is the {% call %} block. min-w-0 lets cards shrink
+    inside grid/flex parents so wide tables scroll instead of widening the page.
+-#}
+{% macro card(title=None, id=None, subtitle=None, attrs={}) -%}
+<section{% if id %} id="{{ id }}"{% endif %} class="min-w-0 rounded-card border border-line bg-surface p-5 shadow-xs sm:p-6"{{ attrs|xmlattr }}>
+  {%- if title %}
+  <header class="mb-4">
+    <h2 class="text-sm font-semibold text-ink">{{ title }}</h2>
+    {%- if subtitle %}<p class="mt-0.5 text-xs text-ink-muted">{{ subtitle }}</p>{% endif %}
+  </header>
+  {%- endif %}
+  {% if caller %}{{ caller() }}{% endif %}
+</section>
+{%- endmacro %}

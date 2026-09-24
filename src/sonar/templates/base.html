@@ -1,12 +1,134 @@
+{%- set icons = {
+  "brand": '<circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
+  "dashboard": '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  "import": '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+  "uncategorized": '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  "recurring": '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  "debts": '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
+  "settings": '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+  "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  "close": '<path d="M18 6 6 18M6 6l12 12"/>',
+  "moon": '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>',
+} -%}
+{%- set nav_items = [
+  ("/", "Dashboard", "dashboard"),
+  ("/import", "Import", "import"),
+  ("/uncategorized", "Uncategorized", "uncategorized"),
+  ("/recurring", "Fixed payments", "recurring"),
+  ("/debts", "Installments and loans", "debts"),
+  ("/settings", "Settings", "settings"),
+] -%}
+{%- set path = request.url.path if request else "" -%}
+{%- macro icon(name, class="size-5 shrink-0") -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="{{ class }}" aria-hidden="true">{{ icons[name]|safe }}</svg>
+{%- endmacro -%}
+{%- macro brand() -%}
+<a href="/" class="inline-flex items-center gap-2 rounded-control text-base font-semibold tracking-tight text-ink">
+  <span class="grid size-8 place-items-center rounded-control bg-accent text-accent-ink">{{ icon("brand", "size-5") }}</span>
+  Sonar
+</a>
+{%- endmacro -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sonar</title>
-  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <script>
+    // Runs before the stylesheet loads so the first paint already has the
+    // right theme; setting it later would flash light before going dark.
+    (function () {
+      var stored = null;
+      try { stored = localStorage.getItem("theme"); } catch (e) {}
+      var dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.classList.toggle("dark", dark);
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/sonar.css">
+  <script src="/static/vendor/htmx.min.js"></script>
 </head>
-<body>
-  <nav><a href="/">Dashboard</a> | <a href="/import">Import</a> | <a href="/uncategorized">Uncategorized</a> | <a href="/recurring">Fixed payments</a> | <a href="/debts">Installments and loans</a> | <a href="/settings">Settings</a></nav>
-  {% block content %}{% endblock %}
+<body class="min-h-dvh">
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-control focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow">Skip to content</a>
+
+  <header class="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur lg:hidden">
+    {{ brand() }}
+    <button id="nav-open" type="button" aria-controls="nav-drawer" aria-label="Open menu"
+            onclick="document.getElementById('nav-drawer').showModal()"
+            class="grid size-10 place-items-center rounded-control text-ink-muted hover:bg-surface-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+      {{ icon("menu") }}
+    </button>
+  </header>
+
+  <div class="lg:flex">
+    {#- One nav for both layouts: a modal drawer on mobile, and on desktop the
+        closed dialog is forced visible as a sticky sidebar, so ids and
+        aria-current exist once. A link click navigates away, which closes it. -#}
+    <dialog id="nav-drawer" aria-label="Menu"
+            onclick="if (event.target === this) this.close()"
+            class="m-0 h-dvh max-h-none w-72 max-w-[85vw] border-0 border-r border-line bg-surface p-0 text-ink backdrop:bg-black/40 lg:sticky lg:top-0 lg:block lg:w-64 lg:max-w-none lg:shrink-0 lg:overflow-y-auto">
+      <div class="flex h-full flex-col">
+        <div class="flex items-center justify-between px-5 py-4">
+          {{ brand() }}
+          <form method="dialog" class="lg:hidden">
+            <button type="submit" aria-label="Close menu"
+                    class="grid size-10 place-items-center rounded-control text-ink-muted hover:bg-surface-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+              {{ icon("close") }}
+            </button>
+          </form>
+        </div>
+
+        <nav aria-label="Main" class="flex-1 px-3 py-2">
+          <ul class="space-y-1">
+            {%- for href, label, name in nav_items %}
+            {#- "/" is a prefix of every path, so Dashboard only matches exactly. #}
+            {%- set current = (path == href) if href == "/" else (path == href or path.startswith(href ~ "/")) %}
+            <li>
+              <a href="{{ href }}"{% if current %} aria-current="page"{% endif %}
+                 class="flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent">
+                {{ icon(name) }}
+                <span class="min-w-0 flex-1 truncate">{{ label }}</span>
+                {%- if href == "/uncategorized" %}
+                <span id="nav-uncategorized-badge" hx-get="/uncategorized/badge" hx-trigger="load" hx-swap="outerHTML"></span>
+                {%- endif %}
+              </a>
+            </li>
+            {%- endfor %}
+          </ul>
+        </nav>
+
+        <div class="border-t border-line p-3">
+          <button id="theme-toggle" type="button"
+                  onclick="var dark = document.documentElement.classList.toggle('dark'); try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch (e) {}"
+                  class="flex w-full items-center gap-3 rounded-control px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+            {{ icon("moon", "size-5 shrink-0 dark:hidden") }}
+            {{ icon("sun", "hidden size-5 shrink-0 dark:block") }}
+            <span class="dark:hidden">Dark mode</span>
+            <span class="hidden dark:inline">Light mode</span>
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    {#- min-w-0 lets the column shrink below its content; bare tables (not yet in
+        a scroll wrapper) scroll on their own so 375px never scrolls sideways. #}
+    <div class="min-w-0 flex-1 [&_:not(.overflow-x-auto)>table]:block [&_:not(.overflow-x-auto)>table]:max-w-full [&_:not(.overflow-x-auto)>table]:overflow-x-auto [&_textarea]:max-w-full">
+      <main id="main" class="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // A 400 re-render can land the error far below the fold (e.g. inside a
+    // closed-looking drawer); center it and move focus so it is never missed.
+    (function () {
+      var alert = document.getElementById("form-error");
+      if (alert) {
+        alert.scrollIntoView({ block: "center" });
+        alert.focus();
+      }
+    })();
+  </script>
 </body>
 </html>

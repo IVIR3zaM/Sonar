@@ -1,0 +1,36 @@
+{#-
+  field(name, label, value="", type="text", help=None, error=None, id=None,
+        required=false, options=None, attrs={})
+    A labelled input with optional help text and an inline error.
+    id defaults to "field-<name>"; pass one when a page repeats the same form
+    (e.g. one edit form per row) so every label still points at its own input.
+    options: list of (value, label) pairs renders a <select> instead of <input>.
+    attrs carries extra input attributes (placeholder, min, max, step, ...).
+    value is kept as given, so a 400 re-render shows what the user typed.
+-#}
+{% macro field(name, label, value="", type="text", help=None, error=None, id=None, required=false, options=None, attrs={}) -%}
+{%- set field_id = id or "field-" ~ name -%}
+{%- set help_id = field_id ~ "-help" if help else none -%}
+{%- set error_id = field_id ~ "-error" if error else none -%}
+{%- set describedby = [help_id, error_id] | select | join(" ") -%}
+{%- set current = "" if value is none else value | string -%}
+{%- set control = "block w-full min-w-0 rounded-control border bg-surface px-3 py-2 text-sm text-ink shadow-xs placeholder:text-ink-muted/70 focus:outline-none focus:ring-2 " ~ ("border-negative focus:ring-negative/25" if error else "border-line focus:border-accent focus:ring-accent/25") -%}
+<div class="min-w-0 space-y-1.5">
+  <label for="{{ field_id }}" class="block text-sm font-medium text-ink">{{ label }}</label>
+  {%- if options is not none %}
+  <select id="{{ field_id }}" name="{{ name }}" class="{{ control }}"{% if required %} required{% endif %}{% if error %} aria-invalid="true"{% endif %}{% if describedby %} aria-describedby="{{ describedby }}"{% endif %}{{ attrs|xmlattr }}>
+    {%- for option_value, option_label in options %}
+    <option value="{{ option_value }}"{% if option_value | string == current %} selected{% endif %}>{{ option_label }}</option>
+    {%- endfor %}
+  </select>
+  {%- else %}
+  <input id="{{ field_id }}" name="{{ name }}" type="{{ type }}" value="{{ current }}" class="{{ control }}"{% if required %} required{% endif %}{% if error %} aria-invalid="true"{% endif %}{% if describedby %} aria-describedby="{{ describedby }}"{% endif %}{{ attrs|xmlattr }}>
+  {%- endif %}
+  {%- if help %}
+  <p id="{{ help_id }}" class="text-xs text-ink-muted">{{ help }}</p>
+  {%- endif %}
+  {%- if error %}
+  <p id="{{ error_id }}" class="text-xs font-medium text-negative">{{ error }}</p>
+  {%- endif %}
+</div>
+{%- endmacro %}

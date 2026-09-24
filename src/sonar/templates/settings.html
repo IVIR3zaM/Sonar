@@ -1,29 +1,78 @@
 {% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/field.html" import field %}
+{% from "components/stat.html" import stat %}
+{% from "components/button.html" import button %}
+{% from "components/amount.html" import amount, date %}
+
+{#- Shared alert styling for the inline #form-error re-render (SPEC §12 Friendly errors). -#}
+{% set form_error_class = "mb-4 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm font-medium text-negative" %}
 
 {% block content %}
-<h1>Settings</h1>
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Settings</h1>
+  <p class="mt-1 text-sm text-ink-muted">Salary day, overdraft limit and the current account balance used by the forecast.</p>
+</header>
 
-<h2>Household</h2>
-<form method="post" action="/settings">
-  <label>Salary day
-    <input name="salary_day" value="{{ settings.salary_day if settings.salary_day is not none else '' }}" required>
-  </label>
-  <label>Overdraft limit
-    <input name="overdraft_limit" value="{{ settings.overdraft_limit_cents | money }}" required>
-  </label>
-  <button type="submit">Save</button>
-</form>
+<div class="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
 
-<h2>Balance</h2>
-{% if balance %}
-<p>Current balance: {{ balance.amount_cents | money }} as of {{ balance.as_of.isoformat() }} ({{ balance.source }})</p>
-{% else %}
-<p>No balance yet</p>
-{% endif %}
+  {% call card(title="Household", subtitle="Used to work out payday and the traffic light", id="household-card") %}
+  {% set settings_error = error if error and error.form == "settings" else None %}
+  <form id="settings-form" method="post" action="/settings" class="space-y-4">
+    {% if settings_error %}
+    <div id="form-error" role="alert" tabindex="-1" class="{{ form_error_class }}">{{ settings_error.message }}</div>
+    {% endif %}
+    {{ field(
+      "salary_day",
+      "Salary day",
+      value=settings_error.fields.salary_day if settings_error else (settings.salary_day if settings.salary_day is not none else ""),
+      help="Day of the month you get paid, 1-31. A weekend payday moves to the Friday before.",
+      required=true,
+    ) }}
+    {{ field(
+      "overdraft_limit",
+      "Overdraft limit",
+      value=settings_error.fields.overdraft_limit if settings_error else (settings.overdraft_limit_cents | money),
+      help="The most negative balance the account is allowed to reach, e.g. -500.00. Use 0 if overdraft is not allowed.",
+      required=true,
+    ) }}
+    {{ button("Save", type="submit") }}
+  </form>
+  {% endcall %}
 
-<form method="post" action="/settings/balance">
-  <label>Amount <input name="amount" placeholder="Amount" required></label>
-  <label>As of <input name="as_of" type="date" value="{{ today.isoformat() }}" required></label>
-  <button type="submit">Save balance</button>
-</form>
+  {% call card(title="Balance", subtitle="A manual entry wins over an imported balance on the same date", id="balance-card") %}
+  <div id="current-balance" class="mb-5">
+    {% if balance %}
+    {{ stat("Current balance", value=amount(balance.amount_cents, attrs={"data-field": "amount"})) }}
+    <p class="mt-1 text-xs text-ink-muted">as of <span data-field="as_of">{{ date(balance.as_of) }}</span> &middot; <span data-field="source">{{ balance.source }}</span></p>
+    {% else %}
+    <p class="text-sm text-ink-muted">No balance yet</p>
+    {% endif %}
+  </div>
+
+  {% set balance_error = error if error and error.form == "balance" else None %}
+  <form id="balance-form" method="post" action="/settings/balance" class="space-y-4">
+    {% if balance_error %}
+    <div id="form-error" role="alert" tabindex="-1" class="{{ form_error_class }}">{{ balance_error.message }}</div>
+    {% endif %}
+    {{ field(
+      "amount",
+      "Amount",
+      value=balance_error.fields.amount if balance_error else "",
+      help="Money in the account right now, e.g. -250.50 if it is overdrawn.",
+      required=true,
+    ) }}
+    {{ field(
+      "as_of",
+      "As of",
+      type="date",
+      value=balance_error.fields.as_of if balance_error else today.isoformat(),
+      help="Defaults to today; it cannot be in the future.",
+      required=true,
+    ) }}
+    {{ button("Save balance", type="submit") }}
+  </form>
+  {% endcall %}
+
+</div>
 {% endblock %}

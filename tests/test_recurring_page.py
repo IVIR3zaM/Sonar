@@ -6,10 +6,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from sonar.app import MIGRATIONS_DIR, create_app
+from sonar.app import MIGRATIONS_DIR, _format_cents, create_app
 from sonar.db import apply_migrations
 from sonar.recurring import list_payments
 from sonar.schedule import occurrences
+from tests.html import cents, fields, soup
 
 TODAY = date(2026, 9, 23)
 
@@ -31,6 +32,18 @@ def _payment_id(db_path: Path):
         return payment.id
     finally:
         conn.close()
+
+
+def _payment_rows(response) -> list:
+    return soup(response).select("#payments [data-payment-id]")
+
+
+def _periods(row) -> list[tuple[list[str], int]]:
+    """Each period's dates (start, then until if set) and amount in cents."""
+    return [
+        ([time["datetime"] for time in period.select("time")], cents(period))
+        for period in row.select("[data-period]")
+    ]
 
 
 def test_water_example_end_to_end_via_forms(tmp_path):
@@ -73,15 +86,19 @@ def test_water_example_end_to_end_via_forms(tmp_path):
 
         page = client.get("/recurring")
         assert page.status_code == 200
-        assert "Next due" in page.text
-        assert "Last paid" in page.text
-        assert 'href="/recurring"' in page.text
-        assert "2026-11-15" in page.text
-        assert "2025-11-15" in page.text
-        assert "2026-11-30" in page.text
-        assert "2027-02-01" in page.text
-        assert "240.00" in page.text
-        assert "260.00" in page.text
+        assert soup(page).select_one('a[href="/recurring"]') is not None
+        assert soup(page).select_one("form#add-payment")["action"] == "/recurring"
+        [row] = _payment_rows(page)
+        assert int(row["data-payment-id"]) == payment_id
+        shown = fields(row)
+        assert shown["name"] == "Water"
+        assert shown["amount"] == 26_000
+        assert shown["last_paid"] == ""
+        assert shown["next_due"] == "2026-11-15"
+        assert _periods(row) == [
+            (["2025-11-15", "2026-11-30"], 24_000),
+            (["2027-02-01"], 26_000),
+        ]
 
         conn = sqlite3.connect(db_path)
         try:
@@ -135,9 +152,9 @@ def test_edit_survives_restart(tmp_path):
         assert payment.name == "Fitness Studio"
         assert payment.periods[-1].amount_cents == 5500
 
-        page = client.get("/recurring")
-        assert "Fitness Studio" in page.text
-        assert "55.00" in page.text
+        [row] = _payment_rows(client.get("/recurring"))
+        assert fields(row)["name"] == "Fitness Studio"
+        assert fields(row)["amount"] == 5_500
 
 
 def test_dismiss_removes_from_page_and_stays_dismissed_after_restart(tmp_path):
@@ -156,16 +173,15 @@ def test_dismiss_removes_from_page_and_stays_dismissed_after_restart(tmp_path):
             },
         )
         payment_id = _payment_id(db_path)
+        assert len(_payment_rows(client.get("/recurring"))) == 1
 
         dismissed = client.post(f"/recurring/{payment_id}/dismiss", follow_redirects=False)
         assert dismissed.status_code == 303
 
-        page = client.get("/recurring")
-        assert "Streaming" not in page.text
+        assert _payment_rows(client.get("/recurring")) == []
 
     with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
-        page = client.get("/recurring")
-        assert "Streaming" not in page.text
+        assert _payment_rows(client.get("/recurring")) == []
 
 
 def test_bad_amount_returns_400_and_stores_nothing(tmp_path):
@@ -225,8 +241,9 @@ def test_detected_payment_shows_last_paid_date(tmp_path):
     with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
         page = client.get("/recurring")
         assert page.status_code == 200
-        assert "2026-09-01" in page.text
-        assert "Test Payment" in page.text
+        [row] = _payment_rows(page)
+        assert fields(row)["name"] == "Test Payment"
+        assert fields(row)["last_paid"] == "2026-09-01"
 
 
 def test_resume_with_empty_day_defaults_to_starts_on_day(tmp_path):
@@ -277,3 +294,160 @@ def test_resume_with_empty_day_defaults_to_starts_on_day(tmp_path):
             assert latest_period.day == 10
         finally:
             conn.close()
+
+
+def test_row_shows_cadence_confirm_and_prefilled_edit_amount(tmp_path):
+    """SPEC §12: compact row with cadence text, a confirm on dismiss, the edit
+    amount input prefilled with `money`, and the displayed amount carrying
+    data-cents."""
+    db_path = tmp_path / "t.db"
+    categories_path = _empty_categories(tmp_path)
+
+    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+        client.post(
+            "/recurring",
+            data={
+                "name": "Quarterly Insurance",
+                "amount": "180.00",
+                "interval_months": "3",
+                "day": "15",
+                "starts_on": "2026-06-15",
+            },
+        )
+        payment_id = _payment_id(db_path)
+
+        [row] = _payment_rows(client.get("/recurring"))
+
+        cadence_cell = row.select_one('[data-field="cadence"]')
+        assert cadence_cell is not None
+        assert cadence_cell.get_text(strip=True) == "every 3 mo · day 15"
+
+        amount_cell = row.select_one('[data-field="amount"]')
+        assert cents(amount_cell) == 18_000
+
+        dismiss_form = row.select_one('form[action$="/dismiss"]')
+        assert dismiss_form is not None
+        assert "confirm(" in dismiss_form.get("onsubmit", "")
+
+        edit_amount_input = row.select_one(f'input[id="edit-amount-payment-{payment_id}"]')
+        assert edit_amount_input is not None
+        assert edit_amount_input["value"] == _format_cents(18_000)
+
+        # SPEC §12: every row shares a sign in this table, so red/green everywhere
+        # would be noise; amount(..., colored=false) keeps data-cents but drops
+        # the tone class.
+        amount_span = amount_cell.select_one("[data-cents]")
+        assert "text-negative" not in amount_span.get("class", [])
+        assert "text-positive" not in amount_span.get("class", [])
+
+
+def test_drawer_colspan_matches_header_count(tmp_path):
+    db_path = tmp_path / "t.db"
+    categories_path = _empty_categories(tmp_path)
+
+    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+        client.post(
+            "/recurring",
+            data={
+                "name": "Gym",
+                "amount": "50.00",
+                "interval_months": "1",
+                "day": "1",
+                "starts_on": "2026-01-01",
+            },
+        )
+        page = soup(client.get("/recurring"))
+        header_count = len(page.select("#payments thead th"))
+        [drawer] = page.select("#payments [data-drawer-for]")
+        assert int(drawer.select_one("td")["colspan"]) == header_count
+
+
+def test_get_shows_all_drawers_hidden_and_toggle_script(tmp_path):
+    db_path = tmp_path / "t.db"
+    categories_path = _empty_categories(tmp_path)
+
+    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+        for name in ("Gym", "Rent"):
+            client.post(
+                "/recurring",
+                data={
+                    "name": name,
+                    "amount": "50.00",
+                    "interval_months": "1",
+                    "day": "1",
+                    "starts_on": "2026-01-01",
+                },
+            )
+        page = soup(client.get("/recurring"))
+        drawers = page.select("#payments [data-drawer-for]")
+        assert len(drawers) == 2
+        assert all(drawer.has_attr("hidden") for drawer in drawers)
+        # Two toggles per row (SPEC §12): the desktop "Edit" button in the
+        # Manage cell, and an icon-only one in the Amount cell for mobile,
+        # where Manage is hidden.
+        toggles = page.select("[data-drawer-toggle]")
+        assert len(toggles) == 4
+        assert all(toggle["aria-expanded"] == "false" for toggle in toggles)
+
+        script = "".join(tag.get_text() for tag in page.select("script"))
+        assert "data-drawer-toggle" in script
+
+
+def test_mobile_row_fits(tmp_path):
+    """SPEC §12: no horizontal scroll at 375px. Below sm, only Name and Amount
+    stay visible; Category/Cadence/Last paid/Next due/Manage collapse, and the
+    Amount cell repeats the next due date plus an icon-only drawer toggle."""
+    db_path = tmp_path / "t.db"
+    categories_path = _empty_categories(tmp_path)
+
+    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+        client.post(
+            "/recurring",
+            data={
+                "name": "Gym",
+                "amount": "50.00",
+                "interval_months": "1",
+                "day": "1",
+                "starts_on": "2026-01-01",
+            },
+        )
+        response = client.get("/recurring")
+        [row] = _payment_rows(response)
+        payment_id = int(row["data-payment-id"])
+
+        page = soup(response)
+        header_count = len(page.select("#payments thead th"))
+        cells = row.select_one("tr[data-row]").select("td")
+        assert len(cells) == header_count
+
+        # Name and Amount are the only tds without the hidden-below-sm classes.
+        for field, cell in zip(
+            ("name", "category", "amount", "cadence", "last_paid", "next_due"),
+            cells[:6],
+            strict=True,
+        ):
+            classes = cell.get("class", [])
+            hidden = "hidden" in classes and "sm:table-cell" in classes
+            assert hidden == (field not in ("name", "amount")), field
+        manage_cell = cells[-1]
+        assert "hidden" in manage_cell.get("class", [])
+        assert "sm:table-cell" in manage_cell.get("class", [])
+
+        # Two toggles: the icon-only mobile one lives in the Amount cell, the
+        # desktop "Edit" one in the (now hidden-below-sm) Manage cell.
+        toggles = row.select("[data-drawer-toggle]")
+        assert len(toggles) == 2
+        amount_cell = cells[2]
+        mobile_toggle = amount_cell.select_one("[data-drawer-toggle]")
+        assert mobile_toggle is not None
+        assert mobile_toggle["aria-label"] == "Edit Gym"
+        assert manage_cell.select_one("[data-drawer-toggle]") is not None
+
+        # The Amount cell repeats the next due date for mobile users.
+        hidden_time = row.select_one('[data-field="next_due"] time')
+        mobile_time = amount_cell.select_one("time")
+        assert mobile_time is not None
+        assert mobile_time["datetime"] == hidden_time["datetime"]
+
+        drawer = page.select_one(f"#drawer-{payment_id}")
+        assert int(drawer.select_one("td")["colspan"]) == header_count

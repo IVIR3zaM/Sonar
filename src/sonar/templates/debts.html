@@ -1,104 +1,168 @@
 {% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/empty.html" import empty %}
+
+{% set match_options = [("counterparty", "Counterparty"), ("mandate", "Mandate")] %}
+{% set grid = "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" %}
+{% set dt = "text-xs text-ink-muted" %}
+{% set dd = "font-medium text-ink tabular-nums" %}
+
+{#- Round-half-up on integer cents, then clamp to [0, 100], so the bar never
+   depends on float math or breaks when a growing loan balance overtakes the
+   statement balance. #}
+{% macro paid_percent(paid_cents, whole_cents) -%}
+{%- set raw = (200 * paid_cents + whole_cents) // (2 * whole_cents) -%}
+{{ [[raw, 100] | min, 0] | max }}
+{%- endmacro %}
+
+{% macro progress(percent, label) -%}
+<div>
+  <div role="progressbar" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ label }}"
+       class="h-2 w-full overflow-hidden rounded-full bg-surface-muted">
+    <div class="h-full rounded-full bg-accent" style="width: {{ percent }}%"></div>
+  </div>
+  <p class="mt-1 text-xs text-ink-muted">{{ percent }}% paid off</p>
+</div>
+{%- endmacro %}
+
+{% macro kind_badges(kind, paid_off) -%}
+<div class="flex items-center gap-1.5">
+  {{ badge(kind, tone="accent") }}
+  {% if paid_off %}{{ badge("Paid off", tone="positive", attrs={"data-badge": "paid-off"}) }}{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro delete_form(id, name) -%}
+<form method="post" action="/debts/{{ id }}/delete" class="mt-4"
+      onsubmit="return confirm('Delete {{ name }}? This cannot be undone.')">
+  {{ button("Delete", variant="danger", size="sm") }}
+</form>
+{%- endmacro %}
 
 {% block content %}
-<h1>Installments and loans</h1>
+<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight text-ink">Installments and loans</h1>
+    <p class="mt-1 text-sm text-ink-muted">What is left to pay off, and what it is matched against.</p>
+  </div>
+  {{ stat("Total remaining", value=amount(total_remaining, colored=false), id="debts-total") }}
+</header>
 
-<h2>Installments</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Name</th><th>Rate</th><th>Every</th><th>Total</th><th>Paid so far</th>
-      <th>Remaining</th><th>Payments left</th><th>End date</th><th>Match</th>
-      <th>Linked payments</th><th>Status</th><th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
+<section class="mb-10">
+  <h2 class="mb-3 text-sm font-semibold text-ink">Installments</h2>
+  {% if installments %}
+  <div class="{{ grid }}">
     {% for view in installments %}
-    <tr>
-      <td>{{ view.debt.name }}</td>
-      <td>{{ view.debt.rate_cents | money }}</td>
-      <td>{{ view.debt.interval_months }} month(s)</td>
-      <td>{{ view.debt.total_cents | money }}</td>
-      <td>{{ view.status.paid_cents | money }}</td>
-      <td>{{ view.status.remaining_cents | money }}</td>
-      <td>{{ view.status.payments_remaining }}</td>
-      <td>{{ view.status.end_date.isoformat() }}</td>
-      <td>{{ view.debt.match.field }}: {{ view.debt.match.value }}</td>
-      <td>{{ view.linked_payments | map(attribute="name") | join(", ") }}</td>
-      <td>{{ "paid off" if view.status.paid_off else "" }}</td>
-      <td>
-        <form method="post" action="/debts/{{ view.id }}/delete">
-          <button type="submit">Delete</button>
-        </form>
-      </td>
-    </tr>
+    {% set debt = view.debt %}
+    {% set status = view.status %}
+    {% set percent = paid_percent(status.paid_cents, debt.total_cents) %}
+    {% call card(attrs={"data-debt-id": view.id, "data-kind": "installment"}) %}
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <h3 class="text-sm font-semibold text-ink" data-field="name">{{ debt.name }}</h3>
+        {{ kind_badges("Installment", status.paid_off) }}
+      </div>
+
+      <div class="mt-3">{{ progress(percent, debt.name ~ " paid off") }}</div>
+
+      <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <div><dt class="{{ dt }}">Rate</dt><dd class="{{ dd }}" data-field="rate">{{ amount(debt.rate_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Every</dt><dd class="{{ dd }}" data-field="every">{{ debt.interval_months }} month(s)</dd></div>
+        <div><dt class="{{ dt }}">Total</dt><dd class="{{ dd }}" data-field="total">{{ amount(debt.total_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Paid so far</dt><dd class="{{ dd }}" data-field="paid">{{ amount(status.paid_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Remaining</dt><dd class="{{ dd }}" data-field="remaining">{{ amount(status.remaining_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Payments left</dt><dd class="{{ dd }}" data-field="payments_left">{{ status.payments_remaining }}</dd></div>
+        <div><dt class="{{ dt }}">End date</dt><dd class="{{ dd }}" data-field="end_date">{{ date(status.end_date) }}</dd></div>
+      </dl>
+
+      <p class="mt-3 text-xs text-ink-muted" data-field="match">{{ debt.match.field }}: {{ debt.match.value }}</p>
+      <p class="mt-1 text-xs text-ink-muted">Linked payments: <span data-field="linked">{{ view.linked_payments | map(attribute="name") | join(", ") }}</span></p>
+
+      {{ delete_form(view.id, debt.name) }}
+    {% endcall %}
     {% endfor %}
-  </tbody>
-</table>
+  </div>
+  {% else %}
+  {{ empty("No installments yet", message="Add one below once a matching debit shows up in your imports.") }}
+  {% endif %}
+</section>
 
-<h3>Add an installment</h3>
-<form method="post" action="/debts/installments">
-  <input name="name" placeholder="Name" required>
-  <input name="total" placeholder="Total" required>
-  <input name="rate" placeholder="Rate" required>
-  <label>every <input name="interval_months" type="number" min="1" placeholder="N" required> month(s)</label>
-  <label>first payment <input name="first_payment_date" type="date" required></label>
-  <input name="payments_count" type="number" min="1" placeholder="Payments" required>
-  <select name="match_field">
-    <option value="counterparty">Counterparty</option>
-    <option value="mandate">Mandate</option>
-  </select>
-  <input name="match_value" placeholder="Match value" required>
-  <button type="submit">Add</button>
-</form>
+<details id="add-installment-details" class="mb-10 rounded-card border border-line bg-surface"{% if installment_error %} open{% endif %}>
+  <summary class="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-ink">Add an installment</summary>
+  <div class="border-t border-line p-5">
+    {% set v = installment_error.fields if installment_error else {} %}
+    <form id="add-installment" method="post" action="/debts/installments" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% if installment_error %}<div id="form-error" role="alert" tabindex="-1" class="sm:col-span-2 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ installment_error.message }}</div>{% endif %}
+      {{ field("name", "Name", value=v.name or '', required=true) }}
+      {{ field("total", "Total", value=v.total or '', required=true, help="e.g. 1200.00") }}
+      {{ field("rate", "Rate", value=v.rate or '', required=true, help="Amount paid each installment") }}
+      {{ field("interval_months", "Every N month(s)", type="number", value=v.interval_months or '', required=true, attrs={"min": 1}) }}
+      {{ field("first_payment_date", "First payment", type="date", value=v.first_payment_date or '', required=true) }}
+      {{ field("payments_count", "Number of payments", type="number", value=v.payments_count or '', required=true, attrs={"min": 1}) }}
+      {{ field("match_field", "Match on", value=v.match_field or '', options=match_options) }}
+      {{ field("match_value", "Match value", value=v.match_value or '', required=true, help="Counterparty text or SEPA mandate reference") }}
+      <div class="sm:col-span-2">{{ button("Add installment") }}</div>
+    </form>
+  </div>
+</details>
 
-<h2>Loans</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Name</th><th>Balance</th><th>As of</th><th>Monthly rate</th><th>Interest</th>
-      <th>Projected balance</th><th>Payoff date</th><th>Paid since statement</th>
-      <th>Match</th><th>Linked payments</th><th>Status</th><th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
+<section class="mb-10">
+  <h2 class="mb-3 text-sm font-semibold text-ink">Loans</h2>
+  {% if loans %}
+  <div class="{{ grid }}">
     {% for view in loans %}
-    <tr>
-      <td>{{ view.debt.name }}</td>
-      <td>{{ view.debt.balance_cents | money }}</td>
-      <td>{{ view.debt.balance_as_of.isoformat() }}</td>
-      <td>{{ view.debt.rate_cents | money }}</td>
-      <td>{{ view.debt.interest_bp | percent }}</td>
-      <td>{{ view.status.projected_balance_cents | money }}</td>
-      <td>{{ view.status.payoff_date.isoformat() if view.status.payoff_date else "never" }}</td>
-      <td>{{ view.status.paid_since_statement_cents | money }}</td>
-      <td>{{ view.debt.match.field }}: {{ view.debt.match.value }}</td>
-      <td>{{ view.linked_payments | map(attribute="name") | join(", ") }}</td>
-      <td>{{ "paid off" if view.status.paid_off else "" }}</td>
-      <td>
-        <form method="post" action="/debts/{{ view.id }}/delete">
-          <button type="submit">Delete</button>
-        </form>
-      </td>
-    </tr>
+    {% set debt = view.debt %}
+    {% set status = view.status %}
+    {% set percent = paid_percent(debt.balance_cents - status.projected_balance_cents, debt.balance_cents) %}
+    {% call card(attrs={"data-debt-id": view.id, "data-kind": "loan"}) %}
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <h3 class="text-sm font-semibold text-ink" data-field="name">{{ debt.name }}</h3>
+        {{ kind_badges("Loan", status.paid_off) }}
+      </div>
+
+      <div class="mt-3">{{ progress(percent, debt.name ~ " paid off") }}</div>
+
+      <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <div><dt class="{{ dt }}">Balance</dt><dd class="{{ dd }}" data-field="balance">{{ amount(debt.balance_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">As of</dt><dd class="{{ dd }}" data-field="as_of">{{ date(debt.balance_as_of) }}</dd></div>
+        <div><dt class="{{ dt }}">Monthly rate</dt><dd class="{{ dd }}" data-field="rate">{{ amount(debt.rate_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Interest</dt><dd class="{{ dd }}" data-field="interest">{{ debt.interest_bp | percent }}</dd></div>
+        <div><dt class="{{ dt }}">Projected balance</dt><dd class="{{ dd }}" data-field="projected">{{ amount(status.projected_balance_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Payoff date</dt><dd class="{{ dd }}" data-field="payoff">{% if status.payoff_date %}{{ date(status.payoff_date) }}{% else %}never{% endif %}</dd></div>
+        <div><dt class="{{ dt }}">Paid since statement</dt><dd class="{{ dd }}" data-field="paid_since">{{ amount(status.paid_since_statement_cents, colored=false) }}</dd></div>
+      </dl>
+
+      <p class="mt-3 text-xs text-ink-muted" data-field="match">{{ debt.match.field }}: {{ debt.match.value }}</p>
+      <p class="mt-1 text-xs text-ink-muted">Linked payments: <span data-field="linked">{{ view.linked_payments | map(attribute="name") | join(", ") }}</span></p>
+
+      {{ delete_form(view.id, debt.name) }}
+    {% endcall %}
     {% endfor %}
-  </tbody>
-</table>
+  </div>
+  {% else %}
+  {{ empty("No loans yet", message="Add one below once a matching debit shows up in your imports.") }}
+  {% endif %}
+</section>
 
-<h3>Add a loan</h3>
-<form method="post" action="/debts/loans">
-  <input name="name" placeholder="Name" required>
-  <input name="balance" placeholder="Balance" required>
-  <label>as of <input name="balance_as_of" type="date" required></label>
-  <input name="rate" placeholder="Monthly rate" required>
-  <input name="interest" placeholder="Interest % (optional)">
-  <select name="match_field">
-    <option value="counterparty">Counterparty</option>
-    <option value="mandate">Mandate</option>
-  </select>
-  <input name="match_value" placeholder="Match value" required>
-  <button type="submit">Add</button>
-</form>
-
-<p>Total remaining: {{ total_remaining | money }}</p>
+<details id="add-loan-details" class="rounded-card border border-line bg-surface"{% if loan_error %} open{% endif %}>
+  <summary class="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-ink">Add a loan</summary>
+  <div class="border-t border-line p-5">
+    {% set v = loan_error.fields if loan_error else {} %}
+    <form id="add-loan" method="post" action="/debts/loans" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% if loan_error %}<div id="form-error" role="alert" tabindex="-1" class="sm:col-span-2 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ loan_error.message }}</div>{% endif %}
+      {{ field("name", "Name", value=v.name or '', required=true) }}
+      {{ field("balance", "Balance", value=v.balance or '', required=true, help="Statement balance, e.g. 5000.00") }}
+      {{ field("balance_as_of", "As of", type="date", value=v.balance_as_of or '', required=true) }}
+      {{ field("rate", "Monthly rate", value=v.rate or '', required=true, help="Amount paid each month") }}
+      {{ field("interest", "Interest % (optional)", value=v.interest or '', help="e.g. 6.00% - leave empty for a linear payoff") }}
+      {{ field("match_field", "Match on", value=v.match_field or '', options=match_options) }}
+      {{ field("match_value", "Match value", value=v.match_value or '', required=true, help="Counterparty text or SEPA mandate reference") }}
+      <div class="sm:col-span-2">{{ button("Add loan") }}</div>
+    </form>
+  </div>
+</details>
 {% endblock %}

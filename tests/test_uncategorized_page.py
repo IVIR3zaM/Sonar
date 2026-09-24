@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from sonar.uncategorized_export import HEADER
+from tests.html import records, soup, text
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
@@ -41,6 +42,10 @@ counterparty = "ACME GmbH"
 """
 
 
+def _count(response) -> int:
+    return int(text(soup(response).select_one("#uncategorized-count")))
+
+
 def test_uncategorized_page_lists_header_groups_and_reapply_narrows_them(tmp_path):
     content = FIXTURE.read_bytes()
     categories_path = tmp_path / "categories.toml"
@@ -48,39 +53,51 @@ def test_uncategorized_page_lists_header_groups_and_reapply_narrows_them(tmp_pat
 
     with TestClient(create_app(tmp_path / "t.db", categories_path=categories_path)) as client:
         upload = client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
-        assert ">7<" in upload.text  # all 7 rows added, none matched by the empty taxonomy
+        # All 7 rows added, none matched by the empty taxonomy.
+        [giro] = soup(upload).select('[data-filename="giro.csv"]')
+        assert int(text(giro.select_one('[data-field="added"]'))) == 7
 
         page = client.get("/uncategorized")
         assert page.status_code == 200
+        request_text = soup(page).select_one("#categorization-request").get_text()
         # Exact first line of the copy-to-Claude-Code export.
-        assert HEADER in page.text
+        assert request_text.splitlines()[0] == HEADER
         # The fixture's two identical "Restaurant XYZ" rows form one group.
         assert (
             "2x restaurant xyz | -28.75..-28.75 EUR | 2026-09-21..2026-09-21 "
-            "| Dinner with colleagues" in page.text
+            "| Dinner with colleagues" in request_text
         )
-        assert 'id="uncategorized-count">7<' in page.text
-        assert "Restaurant XYZ" in page.text  # row table shows the raw counterparty
+        assert _count(page) == 7
+        rows = records(soup(page).select_one("#transactions"))
+        assert len(rows) == 7
+        # The row table shows the raw counterparty, with its amount in cents.
+        restaurant_rows = [row for row in rows if row["counterparty"] == "Restaurant XYZ"]
+        assert [(row["date"], row["amount"]) for row in restaurant_rows] == [
+            ("2026-09-21", -2_875),
+            ("2026-09-21", -2_875),
+        ]
 
         # Add a rule for "Restaurant XYZ" and re-upload the same file: no
         # duplicates are added, but the previously stored matching rows are
         # now categorized and disappear from the page.
         categories_path.write_text(RESTAURANT_RULE_TOML, encoding="utf-8")
         reupload = client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
-        assert ">0<" in reupload.text  # 0 rows added, all duplicates
+        [giro] = soup(reupload).select('[data-filename="giro.csv"]')
+        assert int(text(giro.select_one('[data-field="added"]'))) == 0  # all duplicates
 
         page_after = client.get("/uncategorized")
-        assert 'id="uncategorized-count">5<' in page_after.text
-        assert "restaurant xyz" not in page_after.text.casefold()
+        assert _count(page_after) == 5
+        assert "restaurant xyz" not in text(soup(page_after)).casefold()
 
         # A further rule change without re-uploading takes effect via /reapply.
         categories_path.write_text(RESTAURANT_AND_ACME_TOML, encoding="utf-8")
         reapply = client.post("/reapply")
         assert reapply.status_code == 200
-        assert 'id="uncategorized-count">4<' in reapply.text
+        assert _count(reapply) == 4
 
         page_final = client.get("/uncategorized")
-        assert 'id="uncategorized-count">4<' in page_final.text
+        assert _count(page_final) == 4
+        assert len(records(soup(page_final).select_one("#transactions"))) == 4
 
 
 def test_nav_links_to_uncategorized_page(tmp_path):
@@ -89,4 +106,50 @@ def test_nav_links_to_uncategorized_page(tmp_path):
     with TestClient(create_app(tmp_path / "t.db")) as client:
         response = client.get("/import")
 
-    assert 'href="/uncategorized"' in response.text
+    assert soup(response).select_one('a[href="/uncategorized"]') is not None
+
+
+def test_reapply_button_has_loading_indicator_and_copy_targets_the_request_panel(tmp_path):
+    with TestClient(create_app(tmp_path / "t.db")) as client:
+        page = soup(client.get("/uncategorized"))
+
+    reapply = page.select_one('[hx-post="/reapply"]')
+    assert reapply is not None
+    indicator_id = reapply["hx-indicator"].lstrip("#")
+    assert page.select_one(f"#{indicator_id}") is not None
+
+    copy_button = page.select_one("#copy-request")
+    assert copy_button is not None
+    assert page.select_one("#categorization-request") is not None
+
+
+def test_copy_button_falls_back_when_clipboard_is_unavailable_or_rejects(tmp_path):
+    with TestClient(create_app(tmp_path / "t.db")) as client:
+        page = client.get("/uncategorized")
+
+    scripts = "\n".join(tag.get_text() for tag in soup(page).select("script"))
+    # Both the success and fallback button texts must be reachable from script.
+    assert "Copied" in scripts
+    assert "Press ⌘C / Ctrl+C" in scripts
+    # A clipboard existence check, so old browsers/denied permissions fall back.
+    assert "navigator.clipboard" in scripts and "writeText" in scripts
+    # writeText().then(success, rejection) -- a rejection handler runs the fallback.
+    assert ".then(succeeded, fallback)" in scripts
+    # The fallback selects the #categorization-request text for manual copying.
+    assert 'getElementById("categorization-request")' in scripts
+    assert "getSelection" in scripts and "selectNodeContents" in scripts
+
+
+def test_row_amounts_carry_data_cents(tmp_path):
+    content = FIXTURE.read_bytes()
+    categories_path = tmp_path / "categories.toml"
+    categories_path.write_text(EMPTY_TOML, encoding="utf-8")
+
+    with TestClient(create_app(tmp_path / "t.db", categories_path=categories_path)) as client:
+        client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
+        page = soup(client.get("/uncategorized"))
+
+    cells = page.select_one("#transactions").select('[data-field="amount"] [data-cents]')
+    assert cells, "expected at least one amount cell with data-cents"
+    for cell in cells:
+        int(cell["data-cents"])  # every amount is a parseable integer of cents

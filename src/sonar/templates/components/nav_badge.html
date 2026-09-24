@@ -1,0 +1,15 @@
+{#-
+  nav_badge(count, oob=False)
+    The Uncategorized count in the nav. Served by GET /uncategorized/badge and
+    appended out of band by POST /reapply, so both share this one markup.
+    Hidden at zero: an empty inbox needs no pill.
+-#}
+{% from "components/badge.html" import badge %}
+{% macro nav_badge(count, oob=False) -%}
+{{ badge(count, tone="warn", id="nav-uncategorized-badge", attrs={
+  "data-count": count,
+  "hidden": "" if count == 0 else none,
+  "hx-swap-oob": "true" if oob else none,
+  "aria-label": count ~ " uncategorized",
+}) }}
+{%- endmacro %}

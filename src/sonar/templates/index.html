@@ -1,91 +1,230 @@
 {% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/empty.html" import empty %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/charts.html" import runway_bar, month_columns, category_bars %}
+
+{#- Shared table styling; the wrapper scrolls so a wide table never widens the page at 375px. -#}
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set table = "w-full text-left text-sm" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set th_num = th ~ " text-right" %}
+{% set tr = "border-t border-line" %}
+{% set td = "py-2 pr-4 text-ink last:pr-0" %}
+{% set td_num = td ~ " text-right" %}
+{% set details_summary = "cursor-pointer select-none text-xs font-medium text-ink-muted hover:text-ink" %}
+
+{% set pills = {
+  "green": ("On track", "positive"),
+  "yellow": ("Tight", "warn"),
+  "red": ("Overdraft risk", "negative"),
+} %}
 
 {% block content %}
-<h1>Sonar</h1>
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Dashboard</h1>
+  <p class="mt-1 text-sm text-ink-muted">Are we going to be OK until payday?</p>
+</header>
 
-{% if dashboard.light %}
-<div id="traffic-light" class="light-{{ dashboard.light }}">
-<p>[{{ dashboard.projection.worst_cents | money }}, {{ dashboard.projection.best_cents | money }}]</p>
-<p>Overdraft limit: {{ dashboard.overdraft_limit_cents | money }}</p>
+{% if dashboard.uncategorized_count > 0 %}
+<div id="uncategorized-callout" role="status"
+     class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-ink">
+  <p class="min-w-0">Uncategorized transactions: <a href="/uncategorized" class="font-semibold text-warn underline underline-offset-2">{{ dashboard.uncategorized_count }}</a>. They stay out of the variable forecast until a rule matches them.</p>
+  {{ button("Review", variant="secondary", size="sm", href="/uncategorized") }}
 </div>
-{% else %}
-<p><a href="/settings">Set up your salary day and balance</a> to see the traffic light.</p>
 {% endif %}
 
-<section>
-<h2>Until payday</h2>
-{% if dashboard.payday %}
-<p>Until next payday ({{ dashboard.payday.isoformat() }}, in {{ dashboard.days_to_payday }} days)</p>
-{% endif %}
-{% if dashboard.balance %}
-<p>Balance: {{ dashboard.balance.amount_cents | money }} as of {{ dashboard.balance.as_of.isoformat() }}</p>
-{% endif %}
+<div class="grid grid-cols-1 items-start gap-4 sm:gap-6 lg:grid-cols-2">
 
-<h3>Due</h3>
-<p>{{ dashboard.due_total_cents | money }} expected</p>
-<table id="due">
-<thead><tr><th>Name</th><th>Date</th><th>Amount</th></tr></thead>
-<tbody>
-{% for item in dashboard.due %}
-<tr><td>{{ item.name }}</td><td>{{ item.due_date.isoformat() }}</td><td>{{ item.amount_cents | money }}</td></tr>
-{% endfor %}
-</tbody>
-</table>
+  <div class="min-w-0 lg:col-span-2">
+  {% if dashboard.light %}
+    {% set pill_text, pill_tone = pills[dashboard.light] %}
+    {% call card(id="hero") %}
+    <div class="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+      <div id="traffic-light" class="light-{{ dashboard.light }} min-w-0" data-light="{{ dashboard.light }}">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-ink">Projected at payday</h2>
+          {{ badge(pill_text, tone=pill_tone, id="status-pill") }}
+        </div>
+        <p id="projection" data-worst="{{ dashboard.projection.worst_cents }}" data-best="{{ dashboard.projection.best_cents }}"
+           class="mt-2 flex flex-wrap items-baseline gap-x-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+          {{ amount(dashboard.projection.worst_cents, attrs={"data-field": "worst"}) }}
+          <span class="text-ink-muted" aria-hidden="true">→</span><span class="sr-only">to</span>
+          {{ amount(dashboard.projection.best_cents, attrs={"data-field": "best"}) }}
+        </p>
+        <p class="mt-1 text-xs text-ink-muted">Worst to best case · overdraft limit {{ amount(dashboard.overdraft_limit_cents, id="overdraft-limit", colored=false, attrs={"data-field": "limit"}) }}</p>
+      </div>
 
-<h3>Variable spending</h3>
-{% if dashboard.variable %}
-<p title="25th to 75th percentile of total variable spending in the last {{ dashboard.variable.cycles_used }} complete salary cycles (at most 6), each scaled to the days from the balance date to payday; categories show their median.">{{ dashboard.variable.low_cents | money }}–{{ dashboard.variable.high_cents | money }} more</p>
-<table id="variable-breakdown">
-<thead><tr><th>Category</th><th>Median</th></tr></thead>
-<tbody>
-{% for row in dashboard.variable.by_category %}
-<tr><td>{{ row.category }}</td><td>{{ row.median_cents | money }}</td></tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}
-<p>not enough data</p>
-{% endif %}
+      <div class="grid grid-cols-2 gap-6 sm:gap-10">
+        <div id="balance" class="min-w-0">
+          {{ stat("Balance", value=amount(dashboard.balance.amount_cents, attrs={"data-field": "amount"})) }}
+          <p class="mt-0.5 text-xs text-ink-muted">as of <span data-field="as_of">{{ date(dashboard.balance.as_of) }}</span></p>
+        </div>
+        <div class="min-w-0">
+          {{ stat("Payday", value=date(dashboard.payday, id="payday")) }}
+          <p id="days-to-payday" data-days="{{ dashboard.days_to_payday }}" class="mt-0.5 text-xs text-ink-muted">{{ dashboard.days_to_payday | days_until }}</p>
+        </div>
+      </div>
+    </div>
 
-{% if dashboard.projection %}
-<p>Projected: [{{ dashboard.projection.worst_cents | money }}, {{ dashboard.projection.best_cents | money }}]</p>
-{% endif %}
-</section>
+    <div id="runway" class="mt-6">
+      {{ runway_bar(dashboard.overdraft_limit_cents, dashboard.balance.amount_cents, dashboard.projection.worst_cents, dashboard.projection.best_cents) }}
+      <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted" aria-hidden="true">
+        <li class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-red-200 dark:bg-red-900"></span>Overdraft zone</li>
+        <li class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500/50 dark:bg-sky-400/50"></span>Projected at payday</li>
+        <li class="inline-flex items-center gap-1.5"><span class="h-2.5 w-1 rounded-sm bg-gray-900 dark:bg-white"></span>Balance today</li>
+      </ul>
+    </div>
+    {% endcall %}
+  {% else %}
+    {% call empty("Set up your salary day and balance", message="The dashboard needs both to project where you land at payday.", id="setup-prompt") %}
+      {{ button("Open settings", href="/settings") }}
+    {% endcall %}
+  {% endif %}
+  </div>
 
-<section>
-<h2>Fixed costs</h2>
-<p>Monthly equivalent: {{ dashboard.fixed_costs.monthly_equivalent_cents | money }}</p>
-<table id="fixed-costs">
-<thead><tr><th>Name</th><th>Day</th><th>Every</th><th>Amount</th><th>Next due</th></tr></thead>
-<tbody>
-{% for row in dashboard.fixed_costs.rows %}
-<tr><td>{{ row.name }}</td><td>{{ row.day }}</td><td>{{ row.interval_months }}</td><td>{{ row.amount_cents | money }}</td><td>{{ row.next_due.isoformat() if row.next_due else "" }}</td></tr>
-{% endfor %}
-</tbody>
-</table>
+  {% call card(title="Due before payday", subtitle="Fixed payments still expected", id="due-card") %}
+    {{ stat("Expected", value=amount(dashboard.due_total_cents, colored=false), id="due-total") }}
+    {% if dashboard.due %}
+    <div class="{{ table_wrap }} mt-4">
+      <table id="due" class="{{ table }}">
+        <thead><tr><th class="{{ th }}">Name</th><th class="{{ th }}">Date</th><th class="{{ th_num }}">Amount</th></tr></thead>
+        <tbody>
+        {% for item in dashboard.due[:8] %}
+          <tr data-row class="{{ tr }}">
+            <td class="{{ td }}" data-field="name">{{ item.name }}</td>
+            <td class="{{ td }}" data-field="date">{{ date(item.due_date) }}</td>
+            <td class="{{ td_num }}" data-field="amount">{{ amount(item.amount_cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if dashboard.due|length > 8 %}
+    <details id="due-more" class="mt-3">
+      <summary class="{{ details_summary }}">Show all {{ dashboard.due|length }}</summary>
+      <div class="{{ table_wrap }} mt-2">
+        <table class="{{ table }}">
+          <tbody>
+          {% for item in dashboard.due[8:] %}
+            <tr data-row class="{{ tr }}">
+              <td class="{{ td }}" data-field="name">{{ item.name }}</td>
+              <td class="{{ td }}" data-field="date">{{ date(item.due_date) }}</td>
+              <td class="{{ td_num }}" data-field="amount">{{ amount(item.amount_cents, colored=false) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+    {% else %}
+    <p class="mt-4 text-sm text-ink-muted">Nothing due before payday.</p>
+    {% endif %}
+  {% endcall %}
 
-<table id="months">
-<thead><tr><th>Month</th><th>Total</th></tr></thead>
-<tbody>
-{% for m in dashboard.fixed_costs.months %}
-<tr><td>{{ m.month.strftime("%Y-%m") }}</td><td>{{ m.total_cents | money }}</td></tr>
-{% endfor %}
-</tbody>
-</table>
-</section>
+  {% call card(title="Variable spending", subtitle="Forecast until payday", id="variable-card") %}
+    {% if dashboard.variable %}
+    <div>
+      <p class="text-xs font-medium uppercase tracking-wide text-ink-muted">Likely range</p>
+      <p id="variable-range" class="mt-1 inline-flex cursor-help flex-wrap items-baseline gap-x-1 text-2xl font-semibold tracking-tight text-ink underline decoration-line decoration-dotted underline-offset-4" title="25th to 75th percentile of total variable spending in the last {{ dashboard.variable.cycles_used }} complete salary cycles (at most 6), each scaled to the days from the balance date to payday; categories show their median.">{{ amount(dashboard.variable.low_cents, colored=false, attrs={"data-field": "low"}) }}<span aria-hidden="true">–</span><span class="sr-only">to</span>{{ amount(dashboard.variable.high_cents, colored=false, attrs={"data-field": "high"}) }}<span class="text-sm font-normal text-ink-muted">more</span></p>
+    </div>
+    {% if dashboard.variable.by_category %}
+    <div id="category-bars" class="mt-4">
+      {{ category_bars(dashboard.variable.by_category) }}
+    </div>
+    <details class="mt-3">
+      <summary class="{{ details_summary }}">Show as table</summary>
+      <div class="{{ table_wrap }} mt-2">
+        <table id="variable-breakdown" class="{{ table }}">
+          <thead><tr><th class="{{ th }}">Category</th><th class="{{ th_num }}">Median</th></tr></thead>
+          <tbody>
+          {% for row in dashboard.variable.by_category %}
+            <tr data-row class="{{ tr }}">
+              <td class="{{ td }}" data-field="category">{{ row.category }}</td>
+              <td class="{{ td_num }}" data-field="median">{{ amount(row.median_cents, colored=false) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+    {% else %}
+    <p id="variable-range" class="text-sm font-semibold text-ink">not enough data</p>
+    <p class="mt-1 text-sm text-ink-muted">The forecast needs at least 3 complete salary cycles of history.</p>
+    {% endif %}
+  {% endcall %}
 
-<section>
-<h2>Installments and loans</h2>
-<table id="debts">
-<thead><tr><th>Name</th><th>Remaining</th></tr></thead>
-<tbody>
-{% for name, cents in dashboard.debts %}
-<tr><td>{{ name }}</td><td>{{ cents | money }}</td></tr>
-{% endfor %}
-</tbody>
-</table>
-<p id="debts-total">Total remaining: {{ dashboard.debts_total_cents | money }}</p>
-</section>
+  <div class="min-w-0 lg:col-span-2">
+  {% call card(title="Fixed costs", subtitle="Recurring payments, installments and loans", id="fixed-card") %}
+    {{ stat("Monthly equivalent", value=amount(dashboard.fixed_costs.monthly_equivalent_cents, colored=false), id="monthly-equivalent") }}
+    {% if dashboard.fixed_costs.months %}
+    <div id="month-columns" class="mt-4">
+      {{ month_columns(dashboard.fixed_costs.months) }}
+    </div>
+    <details class="mt-3">
+      <summary class="{{ details_summary }}">Monthly totals as table</summary>
+      <div class="{{ table_wrap }} mt-2">
+        <table id="months" class="{{ table }}">
+          <thead><tr><th class="{{ th }}">Month</th><th class="{{ th_num }}">Total</th></tr></thead>
+          <tbody>
+          {% for m in dashboard.fixed_costs.months %}
+            <tr data-row class="{{ tr }}">
+              <td class="{{ td }}" data-field="month"><time datetime="{{ m.month.strftime("%Y-%m") }}">{{ charts.month_label(m.month) }}</time></td>
+              <td class="{{ td_num }}" data-field="total">{{ amount(m.total_cents, colored=false) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+    {% if dashboard.fixed_costs.rows %}
+    <div class="{{ table_wrap }} mt-4">
+      <table id="fixed-costs" class="{{ table }}">
+        <thead><tr><th class="{{ th }}">Name</th><th class="{{ th }}">Cadence</th><th class="{{ th_num }}">Amount</th><th class="{{ th }}">Next due</th></tr></thead>
+        <tbody>
+        {% for row in dashboard.fixed_costs.rows %}
+          <tr data-row class="{{ tr }}">
+            <td class="{{ td }}" data-field="name">{{ row.name }}</td>
+            <td class="{{ td }} whitespace-nowrap text-ink-muted" data-field="cadence">{{ row.interval_months | cadence(row.day) }}</td>
+            <td class="{{ td_num }}" data-field="amount">{{ amount(row.amount_cents, colored=false) }}</td>
+            <td class="{{ td }}" data-field="next_due">{% if row.next_due %}{{ date(row.next_due) }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="mt-4 text-sm text-ink-muted">No fixed payments yet. <a href="/recurring" class="font-medium text-accent underline-offset-2 hover:underline">Add one</a>.</p>
+    {% endif %}
+  {% endcall %}
+  </div>
 
-<p>Uncategorized: <a href="/uncategorized">{{ dashboard.uncategorized_count }}</a></p>
+  {% call card(title="Installments and loans", subtitle="Amount remaining", id="debts-card") %}
+    {{ stat("Total remaining", value=amount(dashboard.debts_total_cents, colored=false), id="debts-total") }}
+    {% if dashboard.debts %}
+    <div class="{{ table_wrap }} mt-4">
+      <table id="debts" class="{{ table }}">
+        <thead><tr><th class="{{ th }}">Name</th><th class="{{ th_num }}">Remaining</th></tr></thead>
+        <tbody>
+        {% for name, cents in dashboard.debts %}
+          <tr data-row class="{{ tr }}">
+            <td class="{{ td }}" data-field="name">{{ name }}</td>
+            <td class="{{ td_num }}" data-field="remaining">{{ amount(cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="mt-4 text-sm text-ink-muted">No installments or loans. <a href="/debts" class="font-medium text-accent underline-offset-2 hover:underline">Add one</a>.</p>
+    {% endif %}
+  {% endcall %}
+
+</div>
 {% endblock %}

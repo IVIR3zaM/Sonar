@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from sonar.app import MIGRATIONS_DIR, create_app
 from sonar.db import apply_migrations
 from sonar.recurring import dismiss, list_payments
+from tests.html import fields, soup
 
 TODAY = date(2026, 9, 23)
 
@@ -66,6 +67,15 @@ def _insert_debit(
         conn.close()
 
 
+def _car_loan(client: TestClient) -> dict[str, int | str]:
+    [loan] = [
+        fields(debt)
+        for debt in soup(client.get("/debts")).select("[data-debt-id]")
+        if fields(debt)["name"] == "Car loan"
+    ]
+    return loan
+
+
 def test_debt_link_shown_on_recurring_page_and_removed_from_debts_on_dismiss(tmp_path):
     db_path = tmp_path / "t.db"
     categories_path = _empty_categories(tmp_path)
@@ -107,12 +117,11 @@ def test_debt_link_shown_on_recurring_page_and_removed_from_debts_on_dismiss(tmp
         )
         assert add_response.status_code == 303
 
-        recurring_text = client.get("/recurring").text
-        assert "Debt: Car loan" in recurring_text
-        assert recurring_text.count("Debt:") == 1  # the gym row shows no debt link
+        recurring_rows = soup(client.get("/recurring")).select("#payments [data-payment-id]")
+        # Only the loan series links to the debt; the gym row shows no debt link.
+        assert sorted(fields(row).get("debt", "") for row in recurring_rows) == ["", "Car loan"]
 
-        debts_text = client.get("/debts").text
-        assert "Auto Finance" in debts_text  # the detected payment's name, in the loan row
+        assert _car_loan(client)["linked"] == "Auto Finance"
 
         conn = sqlite3.connect(db_path)
         try:
@@ -123,5 +132,4 @@ def test_debt_link_shown_on_recurring_page_and_removed_from_debts_on_dismiss(tmp
         finally:
             conn.close()
 
-        debts_text_after_dismiss = client.get("/debts").text
-        assert "Auto Finance" not in debts_text_after_dismiss
+        assert _car_loan(client)["linked"] == ""

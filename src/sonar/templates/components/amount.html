@@ -1,0 +1,18 @@
+{#-
+  amount(cents, id=None, colored=true, attrs={})
+    Displays integer cents as "1.234,56 €" in span[data-cents][data-sign].
+    data-sign ("negative" | "positive" | "zero") lets tests and styles key on the
+    sign without parsing the text. colored=false keeps the marker but drops the
+    tone, for lists where every row shares a sign and red everywhere is noise.
+  date(d, id=None)
+    Displays a datetime.date as "24 Sep 2026" inside time[datetime=YYYY-MM-DD].
+-#}
+{% macro amount(cents, id=None, colored=true, attrs={}) -%}
+{%- set sign = "negative" if cents < 0 else ("positive" if cents > 0 else "zero") -%}
+{%- set tone = ("text-negative" if sign == "negative" else ("text-positive" if sign == "positive" else "")) if colored else "" -%}
+<span{% if id %} id="{{ id }}"{% endif %} data-cents="{{ cents }}" data-sign="{{ sign }}" class="whitespace-nowrap tabular-nums {{ tone }}"{{ attrs|xmlattr }}>{{ cents|eur }}</span>
+{%- endmacro %}
+
+{% macro date(d, id=None) -%}
+<time{% if id %} id="{{ id }}"{% endif %} datetime="{{ d.isoformat() }}" class="whitespace-nowrap">{{ d|date }}</time>
+{%- endmacro %}

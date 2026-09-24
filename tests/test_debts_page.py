@@ -4,7 +4,6 @@ Expected cents/dates come from the T2/T3/T5 worked examples in the plan or are
 computed here through amortization.py directly, never copied from page output.
 """
 
-import re
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -15,6 +14,7 @@ from sonar import amortization
 from sonar.app import create_app
 from sonar.db import apply_migrations
 from sonar.debt_store import list_debts
+from tests.html import cents, fields, soup
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
@@ -59,13 +59,26 @@ def _insert_debit(
         conn.close()
 
 
-def _row_cells(html: str, name: str) -> list[str]:
-    """Cell texts of the <tr> whose first <td> is exactly `name`, minus Actions."""
-    for row in re.findall(r"<tr>(.*?)</tr>", html, re.S):
-        cells = [cell.strip() for cell in re.findall(r"<td>(.*?)</td>", row, re.S)]
-        if cells and cells[0] == name:
-            return cells[:-1]
-    raise AssertionError(f"no row found for {name!r}")
+def _cards(response) -> list:
+    """Every debt card element ([data-debt-id]), in page order."""
+    return soup(response).select("[data-debt-id]")
+
+
+def _debts(response) -> dict[str, dict[str, int | str]]:
+    """Every debt's shown fields, keyed by name."""
+    shown = [fields(debt) for debt in _cards(response)]
+    return {debt["name"]: debt for debt in shown}
+
+
+def _card(response, name: str):
+    [card] = [c for c in _cards(response) if fields(c)["name"] == name]
+    return card
+
+
+def _paid_percent(paid_cents: int, whole_cents: int) -> int:
+    """Same round-half-up-then-clamp formula as debts.html's paid_percent macro."""
+    raw = (200 * paid_cents + whole_cents) // (2 * whole_cents)
+    return max(min(raw, 100), 0)
 
 
 def _debt_id(db_path: Path, name: str) -> int:
@@ -237,38 +250,51 @@ def test_debts_page_shows_installments_loans_and_total(tmp_path):
 
         page = client.get("/debts")
         assert page.status_code == 200
-        text = page.text
+        html = soup(page)
+        debts = _debts(page)
 
-        assert 'href="/debts"' in text  # nav link added to base.html
+        assert html.select_one('a[href="/debts"]') is not None  # nav link added to base.html
+        assert html.select_one("form#add-installment")["action"] == "/debts/installments"
+        assert html.select_one("form#add-loan")["action"] == "/debts/loans"
 
-        # Installment columns: Name, Rate, Every, Total, Paid so far, Remaining,
-        # Payments left, End date, Match, Linked payments, Status.
-        assert _row_cells(text, "Sofa") == [
-            "Sofa",
-            "100.00",
-            "1 month(s)",
-            "1200.00",
-            "300.00",
-            "900.00",
-            "9",
-            "2026-12-05",
-            "counterparty: Sofa Shop",
-            "",
-            "",
-        ]
-        assert _row_cells(text, "Fully Paid") == [
-            "Fully Paid",
-            "50.00",
-            "1 month(s)",
-            "50.00",
-            "50.00",
-            "0.00",
-            "0",
-            "2026-01-10",
-            "counterparty: Paid Shop",
-            "",
-            "paid off",
-        ]
+        assert debts["Sofa"] == {
+            "name": "Sofa",
+            "rate": 10_000,
+            "every": "1 month(s)",
+            "total": 120_000,
+            "paid": 30_000,
+            "remaining": 90_000,
+            "payments_left": "9",
+            "end_date": "2026-12-05",
+            "match": "counterparty: Sofa Shop",
+            "linked": "",
+        }
+        assert debts["Fully Paid"] == {
+            "name": "Fully Paid",
+            "rate": 5_000,
+            "every": "1 month(s)",
+            "total": 5_000,
+            "paid": 5_000,
+            "remaining": 0,
+            "payments_left": "0",
+            "end_date": "2026-01-10",
+            "match": "counterparty: Paid Shop",
+            "linked": "",
+        }
+
+        # Progress bar: aria-valuenow is the paid share of the total, rounded
+        # half up and clamped to [0, 100] (paid_percent in debts.html).
+        sofa_bar = _card(page, "Sofa").select_one('[role="progressbar"]')
+        assert sofa_bar["aria-valuenow"] == str(_paid_percent(30_000, 120_000))
+        assert _card(page, "Sofa").select_one('[data-badge="paid-off"]') is None
+
+        fully_paid_bar = _card(page, "Fully Paid").select_one('[role="progressbar"]')
+        assert fully_paid_bar["aria-valuenow"] == str(_paid_percent(5_000, 5_000)) == "100"
+        assert _card(page, "Fully Paid").select_one('[data-badge="paid-off"]') is not None
+
+        # Delete asks for confirmation before submitting.
+        sofa_delete = _card(page, "Sofa").select_one("form")
+        assert "confirm(" in sofa_delete["onsubmit"]
 
         # Linear loan: expected values from amortization.py directly.
         car_schedule = amortization.loan_schedule(500_000, date(2026, 6, 30), 100_000, None)
@@ -276,21 +302,21 @@ def test_debts_page_shows_installments_loans_and_total(tmp_path):
         car_payoff = amortization.payoff_date(car_schedule)
         assert car_projected == 300_000
         assert car_payoff == date(2026, 11, 30)
-        # Loan columns: Name, Balance, As of, Monthly rate, Interest, Projected
-        # balance, Payoff date, Paid since statement, Match, Linked, Status.
-        assert _row_cells(text, "Car loan") == [
-            "Car loan",
-            "5000.00",
-            "2026-06-30",
-            "1000.00",
-            "linear",
-            "3000.00",
-            "2026-11-30",
-            "1000.00",
-            "mandate: CAR-1",
-            "",
-            "",
-        ]
+        assert debts["Car loan"] == {
+            "name": "Car loan",
+            "balance": 500_000,
+            "as_of": "2026-06-30",
+            "rate": 100_000,
+            "interest": "linear",
+            "projected": car_projected,
+            "payoff": car_payoff.isoformat(),
+            "paid_since": 100_000,
+            "match": "mandate: CAR-1",
+            "linked": "",
+        }
+        car_bar = _card(page, "Car loan").select_one('[role="progressbar"]')
+        assert car_bar["aria-valuenow"] == str(_paid_percent(500_000 - car_projected, 500_000))
+        assert _card(page, "Car loan").select_one('[data-badge="paid-off"]') is None
 
         # 6.00% loan: expected values from amortization.py directly.
         interest_schedule = amortization.loan_schedule(1_000_000, date(2026, 8, 15), 100_000, 600)
@@ -298,71 +324,72 @@ def test_debts_page_shows_installments_loans_and_total(tmp_path):
         expected_payoff = amortization.payoff_date(interest_schedule)
         assert expected_projected == 905_000
         assert expected_payoff is not None
-        assert _row_cells(text, "Mortgage") == [
-            "Mortgage",
-            "10000.00",
-            "2026-08-15",
-            "1000.00",
-            "6.00%",
-            "9050.00",
-            expected_payoff.isoformat(),
-            "0.00",
-            "mandate: MORT-1",
-            "",
-            "",
-        ]
+        assert debts["Mortgage"] == {
+            "name": "Mortgage",
+            "balance": 1_000_000,
+            "as_of": "2026-08-15",
+            "rate": 100_000,
+            "interest": "6.00%",
+            "projected": expected_projected,
+            "payoff": expected_payoff.isoformat(),
+            "paid_since": 0,
+            "match": "mandate: MORT-1",
+            "linked": "",
+        }
 
         # 12.00% loan whose rate never outpaces the interest: never pays off.
         never_schedule = amortization.loan_schedule(1_000_000, date(2026, 8, 15), 10_000, 1200)
         assert amortization.payoff_date(never_schedule) is None
         never_projected = amortization.balance_on(1_000_000, never_schedule, TODAY)
         assert never_projected == 1_000_000
-        assert _row_cells(text, "Credit card") == [
-            "Credit card",
-            "10000.00",
-            "2026-08-15",
-            "100.00",
-            "12.00%",
-            "10000.00",
-            "never",
-            "0.00",
-            "mandate: CC-1",
-            "",
-            "",
-        ]
+        assert debts["Credit card"] == {
+            "name": "Credit card",
+            "balance": 1_000_000,
+            "as_of": "2026-08-15",
+            "rate": 10_000,
+            "interest": "12.00%",
+            "projected": never_projected,
+            "payoff": "never",
+            "paid_since": 0,
+            "match": "mandate: CC-1",
+            "linked": "",
+        }
+        assert _card(page, "Credit card").select_one('[data-badge="paid-off"]') is None
 
         # Paid-off linear loan: payments 2026-02-15 leave 50_000, 2026-03-15
         # leaves 0.
         old_schedule = amortization.loan_schedule(100_000, date(2026, 1, 15), 50_000, None)
         assert amortization.payoff_date(old_schedule) == date(2026, 3, 15)
         assert amortization.balance_on(100_000, old_schedule, TODAY) == 0
-        assert _row_cells(text, "Old loan") == [
-            "Old loan",
-            "1000.00",
-            "2026-01-15",
-            "500.00",
-            "linear",
-            "0.00",
-            "2026-03-15",
-            "0.00",
-            "mandate: OLD-1",
-            "",
-            "paid off",
-        ]
+        assert debts["Old loan"] == {
+            "name": "Old loan",
+            "balance": 100_000,
+            "as_of": "2026-01-15",
+            "rate": 50_000,
+            "interest": "linear",
+            "projected": 0,
+            "payoff": "2026-03-15",
+            "paid_since": 0,
+            "match": "mandate: OLD-1",
+            "linked": "",
+        }
+        old_bar = _card(page, "Old loan").select_one('[role="progressbar"]')
+        assert old_bar["aria-valuenow"] == "100"
+        assert _card(page, "Old loan").select_one('[data-badge="paid-off"]') is not None
+        assert len(debts) == 6
 
         # Total remaining = installment remaining (Sofa 900.00 + Fully Paid 0)
         # plus every loan's projected balance (linear + 6% + 12% + the
         # paid-off loan, which adds 0).
         total_remaining_cents = 90_000 + 0 + car_projected + expected_projected + never_projected
         assert total_remaining_cents == 2_295_000
-        assert "22950.00" in text
+        assert cents(html.select_one("#debts-total")) == total_remaining_cents
 
         # Delete removes the row.
         fully_paid_id = _debt_id(db_path, "Fully Paid")
         deleted = client.post(f"/debts/{fully_paid_id}/delete", follow_redirects=False)
         assert deleted.status_code == 303
-        page_after_delete = client.get("/debts")
-        assert "Fully Paid" not in page_after_delete.text
+        assert "Fully Paid" not in _debts(client.get("/debts"))
 
 
 def test_bad_installment_field_returns_400_and_stores_nothing(tmp_path):

@@ -1,0 +1,15 @@
+{#-
+  stat(label, value=None, id=None, hint=None, attrs={})
+    A labelled headline figure. value is text or markup (e.g. amount(...));
+    a {% call %} block replaces it when the figure needs more than one element.
+    id goes on the wrapper; put data hooks on the value itself (amount(id=...)).
+-#}
+{% macro stat(label, value=None, id=None, hint=None, attrs={}) -%}
+<div{% if id %} id="{{ id }}"{% endif %} class="min-w-0"{{ attrs|xmlattr }}>
+  <p class="text-xs font-medium uppercase tracking-wide text-ink-muted">{{ label }}</p>
+  <p class="mt-1 text-2xl font-semibold tracking-tight text-ink tabular-nums">{% if caller %}{{ caller() }}{% else %}{{ value }}{% endif %}</p>
+  {%- if hint %}
+  <p class="mt-0.5 text-xs text-ink-muted">{{ hint }}</p>
+  {%- endif %}
+</div>
+{%- endmacro %}

@@ -1,20 +1,36 @@
-<table>
-  <thead>
-    <tr><th>File</th><th>Format</th><th>Added</th><th>Duplicates</th><th>Uncategorized</th></tr>
-  </thead>
-  <tbody>
-    {% for r in results %}
-    {% if r.error %}
-    <tr><td>{{ r.filename }}</td><td colspan="4">{{ r.error }}</td></tr>
-    {% else %}
-    <tr>
-      <td>{{ r.filename }}</td>
-      <td>{{ r.format }}</td>
-      <td>{{ r.added }}</td>
-      <td>{{ r.duplicates }}</td>
-      <td>{{ r.uncategorized }}</td>
-    </tr>
-    {% endif %}
-    {% endfor %}
-  </tbody>
-</table>
+{#- Fragment: swapped into #results by the import form, never rendered on its
+    own, so it has no <html>/base shell. -#}
+{% from "components/badge.html" import badge %}
+{% if results %}
+<div class="overflow-x-auto rounded-card border border-line">
+  <table id="results-table" class="w-full text-left text-sm">
+    <thead class="bg-surface-muted text-xs font-medium uppercase tracking-wide text-ink-muted">
+      <tr>
+        <th class="px-4 py-2">File</th>
+        <th class="px-4 py-2">Format</th>
+        <th class="px-4 py-2">Added</th>
+        <th class="px-4 py-2">Duplicates</th>
+        <th class="px-4 py-2">Uncategorized</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-line">
+      {% for r in results %}
+      {% if r.error %}
+      <tr data-row data-filename="{{ r.filename }}" role="alert" class="bg-negative-soft/40">
+        <td class="px-4 py-2 font-medium text-ink">{{ r.filename }}</td>
+        <td colspan="4" class="px-4 py-2 text-negative" data-field="error">{{ r.error }}</td>
+      </tr>
+      {% else %}
+      <tr data-row data-filename="{{ r.filename }}">
+        <td class="px-4 py-2 font-medium text-ink">{{ r.filename }}</td>
+        <td class="px-4 py-2 text-ink-muted" data-field="format">{{ r.format }}</td>
+        <td class="px-4 py-2" data-field="added">{{ badge(r.added, tone="positive") }}</td>
+        <td class="px-4 py-2" data-field="duplicates">{{ badge(r.duplicates, tone="neutral") }}</td>
+        <td class="px-4 py-2" data-field="uncategorized">{{ badge(r.uncategorized, tone="warn" if r.uncategorized > 0 else "neutral") }}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

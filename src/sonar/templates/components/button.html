@@ -1,0 +1,21 @@
+{#-
+  button(label=None, variant="primary", type="submit", href=None, size="md", id=None, attrs={})
+    variant: "primary" | "secondary" | "ghost" | "danger"; size: "md" | "sm".
+    With href it renders a link styled as a button. A {% call %} block replaces
+    the label, e.g. to put a spinner next to the text. attrs carries hx-* etc.
+-#}
+{% macro button(label=None, variant="primary", type="submit", href=None, size="md", id=None, attrs={}) -%}
+{%- set variants = {
+  "primary": "bg-accent text-accent-ink shadow-xs hover:bg-accent/90",
+  "secondary": "border border-line bg-surface text-ink shadow-xs hover:bg-surface-muted",
+  "ghost": "text-ink-muted hover:bg-surface-muted hover:text-ink",
+  "danger": "border border-negative/30 bg-surface text-negative hover:bg-negative-soft",
+} -%}
+{%- set sizes = {"md": "px-3.5 py-2 text-sm", "sm": "px-2.5 py-1 text-xs"} -%}
+{%- set classes = "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50 " ~ variants[variant] ~ " " ~ sizes[size] -%}
+{%- if href -%}
+<a href="{{ href }}"{% if id %} id="{{ id }}"{% endif %} data-variant="{{ variant }}" class="{{ classes }}"{{ attrs|xmlattr }}>{% if caller %}{{ caller() }}{% else %}{{ label }}{% endif %}</a>
+{%- else -%}
+<button type="{{ type }}"{% if id %} id="{{ id }}"{% endif %} data-variant="{{ variant }}" class="{{ classes }}"{{ attrs|xmlattr }}>{% if caller %}{{ caller() }}{% else %}{{ label }}{% endif %}</button>
+{%- endif -%}
+{%- endmacro %}

@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
+from tests.html import cents, soup
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 TODAY = date(2026, 9, 23)
@@ -27,6 +28,16 @@ def _empty_categories(tmp_path: Path) -> Path:
     path = tmp_path / "categories.toml"
     path.write_text("", encoding="utf-8")
     return path
+
+
+def _figures(client: TestClient) -> tuple[int, str, int]:
+    """Balance cents, traffic light and overdraft limit cents shown on GET /."""
+    page = soup(client.get("/"))
+    return (
+        cents(page.select_one("#balance")),
+        page.select_one("#traffic-light")["data-light"],
+        cents(page.select_one("#overdraft-limit")),
+    )
 
 
 def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
@@ -46,13 +57,10 @@ def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
             == 303
         )
 
-        page = client.get("/").text
-        assert "-448.43" in page
         # due_total = 0 (no recurring payments/debts) and no variable category
         # exists in the empty toml, so worst == best == -44843. -44843 is
         # more than -50000, so green.
-        assert 'class="light-green"' in page
-        assert "Overdraft limit: -500.00" in page
+        assert _figures(client) == (-44_843, "green", -50_000)
 
         # The import's footer balance is dated 2026-09-23; posting a manual
         # balance for that same date is a tie, and manual wins ties.
@@ -65,12 +73,9 @@ def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
             == 303
         )
 
-        page = client.get("/").text
-        assert "-600.00" in page
         # worst == best == -60000, which is below -50000 (not green) and
         # below -50000 again for the yellow check (best < limit), so red.
-        assert 'class="light-red"' in page
-        assert "Overdraft limit: -500.00" in page
+        assert _figures(client) == (-60_000, "red", -50_000)
 
         assert (
             client.post(
@@ -81,32 +86,21 @@ def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
             == 303
         )
 
-        page = client.get("/").text
         # worst == best == -60000, which is >= -100000, so green.
-        assert 'class="light-green"' in page
-        assert "Overdraft limit: -1000.00" in page
+        assert _figures(client) == (-60_000, "green", -100_000)
 
         # POST /reapply must not change any of the figures above.
         reapply_response = client.post("/reapply")
         assert reapply_response.status_code == 200
 
-        page = client.get("/").text
-        assert "-600.00" in page
-        assert 'class="light-green"' in page
-        assert "Overdraft limit: -1000.00" in page
+        assert _figures(client) == (-60_000, "green", -100_000)
 
         # Re-uploading the same file adds 0 rows and re-stores the same
         # import balance (same date, same amount), which changes nothing.
         client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
 
-        page = client.get("/").text
-        assert "-600.00" in page
-        assert 'class="light-green"' in page
-        assert "Overdraft limit: -1000.00" in page
+        assert _figures(client) == (-60_000, "green", -100_000)
 
     # A fresh app instance simulates a restart against the same database.
     with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
-        page = client.get("/").text
-        assert "-600.00" in page
-        assert 'class="light-green"' in page
-        assert "Overdraft limit: -1000.00" in page
+        assert _figures(client) == (-60_000, "green", -100_000)

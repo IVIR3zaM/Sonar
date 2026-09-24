@@ -1,0 +1,16 @@
+{#-
+  empty(title, message=None, id=None, attrs={})
+    A placeholder for a section with nothing to show yet. An optional
+    {% call %} block holds the next-step actions (links or buttons).
+-#}
+{% macro empty(title, message=None, id=None, attrs={}) -%}
+<div{% if id %} id="{{ id }}"{% endif %} class="flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface-muted/50 px-6 py-10 text-center"{{ attrs|xmlattr }}>
+  <p class="text-sm font-semibold text-ink">{{ title }}</p>
+  {%- if message %}
+  <p class="max-w-sm text-sm text-ink-muted">{{ message }}</p>
+  {%- endif %}
+  {%- if caller %}
+  <div class="mt-2 flex flex-wrap justify-center gap-2">{{ caller() }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}

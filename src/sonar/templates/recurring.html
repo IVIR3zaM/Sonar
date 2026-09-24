@@ -1,74 +1,201 @@
 {% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/empty.html" import empty %}
+
+{#- Shared table styling; the wrapper scrolls so a wide table never widens
+    the page at 375px (SPEC §12). Category/Cadence/Last paid are hidden below
+    the sm breakpoint, since the row itself is the primary mobile view and its
+    Edit drawer repeats every value that does not fit. -#}
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set table = "w-full text-left text-sm" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set th_num = th ~ " text-right" %}
+{% set th_hide = "hidden sm:table-cell" %}
+{% set tr = "border-t border-line align-top" %}
+{% set td = "py-3 pr-4 text-ink last:pr-0" %}
+{% set td_num = td ~ " text-right whitespace-nowrap" %}
+{% set td_hide = "hidden sm:table-cell" %}
+{#- Amount stays visible below sm alongside Name, so it drops the shared
+    pr-4 in favour of pr-0 (no trailing gutter needed once it is the last
+    visible column) and restores pr-4 from sm up. -#}
+{% set td_amount = "py-3 pr-0 text-right text-ink whitespace-nowrap sm:pr-4" %}
+{% set section_title = "text-xs font-semibold uppercase tracking-wide text-ink-muted" %}
+{% set form_grid = "mt-2 grid grid-cols-2 gap-3" %}
+
+{% macro form_error(err) %}
+{%- if err %}
+<div id="form-error" role="alert" tabindex="-1" class="col-span-2 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ err.message }}</div>
+{%- endif %}
+{% endmacro %}
 
 {% block content %}
-<h1>Fixed payments</h1>
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Fixed payments</h1>
+  <p class="mt-1 text-sm text-ink-muted">Recurring payments detected from imports, or added by hand.</p>
+</header>
 
-<table>
-  <thead>
-    <tr>
-      <th>Name</th><th>Category</th><th>Amount</th><th>Every</th><th>Day</th>
-      <th>Last paid</th><th>Next due</th><th>Periods</th><th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    {% set payment = row.payment %}
-    <tr>
-      <td>
-        {{ payment.name }}
-        {% if row.debt_name %}<br>Debt: {{ row.debt_name }}{% endif %}
-      </td>
-      <td>{{ payment.category or "" }}</td>
-      <td>{{ row.latest.amount_cents | money }}</td>
-      <td>{{ row.latest.interval_months }} month(s)</td>
-      <td>{{ row.latest.day }}</td>
-      <td>{{ payment.last_paid_date.isoformat() if payment.last_paid_date else "" }}</td>
-      <td>{{ row.next_due.isoformat() if row.next_due else "" }}</td>
-      <td>
-        <ul>
-          {% for period in payment.periods %}
-          <li>
-            {{ period.starts_on.isoformat() }}..{{ period.until.isoformat() if period.until else "" }}:
-            {{ period.amount_cents | money }} every {{ period.interval_months }} month(s), day {{ period.day }}
-          </li>
-          {% endfor %}
-        </ul>
-      </td>
-      <td>
-        <form method="post" action="/recurring/{{ payment.id }}/edit">
-          <input name="name" value="{{ payment.name }}" required>
-          <input name="amount" value="{{ row.latest.amount_cents | money }}" required>
-          <input name="interval_months" type="number" min="1" value="{{ row.latest.interval_months }}" required>
-          <input name="day" type="number" min="1" max="31" value="{{ row.latest.day }}" required>
-          <button type="submit">Save</button>
-        </form>
-        <form method="post" action="/recurring/{{ payment.id }}/dismiss">
-          <button type="submit">Dismiss</button>
-        </form>
-        <form method="post" action="/recurring/{{ payment.id }}/pause">
-          <label>Ends/pauses after <input name="last_date" type="date" required></label>
-          <button type="submit">Pause</button>
-        </form>
-        <form method="post" action="/recurring/{{ payment.id }}/resume">
-          <label>Resumes on <input name="starts_on" type="date" required></label>
-          <input name="amount" placeholder="Amount" required>
-          <label>every <input name="interval_months" type="number" min="1" placeholder="N" required> month(s)</label>
-          <input name="day" type="number" min="1" max="31" placeholder="Day (optional)">
-          <button type="submit">Resume</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="space-y-6">
+  {% if rows %}
+  {% call card(id="payments-card") %}
+  <div class="{{ table_wrap }}">
+    <table id="payments" class="{{ table }}">
+      <thead>
+        <tr>
+          <th class="{{ th }}">Name</th>
+          <th class="{{ th }} {{ th_hide }}">Category</th>
+          <th class="{{ th_num }}">Amount</th>
+          <th class="{{ th }} {{ th_hide }}">Cadence</th>
+          <th class="{{ th }} {{ th_hide }}">Last paid</th>
+          <th class="{{ th }} {{ th_hide }}">Next due</th>
+          <th class="{{ th }} {{ th_hide }}"><span class="sr-only">Manage</span></th>
+        </tr>
+      </thead>
+      {% for row in rows %}
+      {% set payment = row.payment %}
+      {% set has_error = row.edit_error or row.pause_error or row.resume_error %}
+      {% set uid = "payment-" ~ payment.id %}
+      {% set drawer_id = "drawer-" ~ payment.id %}
+      {#- One <tbody> per payment keeps the data row and its drawer row
+          together, so a CSS/JS toggle never has to reach across siblings. -#}
+      <tbody data-payment-id="{{ payment.id }}">
+        <tr data-row class="{{ tr }}">
+          <td class="{{ td }} [overflow-wrap:anywhere]">
+            <span data-field="name" class="font-medium text-ink">{{ payment.name }}</span>
+            {% if row.debt_name %}
+            <div class="mt-1">{{ badge(row.debt_name, tone="accent", attrs={"data-field": "debt"}) }}</div>
+            {% endif %}
+          </td>
+          <td class="{{ td }} {{ td_hide }}" data-field="category">
+            {% if payment.category %}{{ badge(payment.category) }}{% endif %}
+          </td>
+          <td class="{{ td_amount }}" data-field="amount">
+            {{ amount(row.latest.amount_cents, colored=false) }}
+            {#- Below sm, Cadence/Last paid/Next due/Manage are hidden, so the
+                Amount cell repeats the next due date and carries the drawer
+                toggle as an icon button (size-8 = 32px, the min touch target). -#}
+            <div class="mt-1 flex items-center justify-end gap-1 sm:hidden">
+              {% if row.next_due %}<span class="text-xs text-ink-muted">{{ date(row.next_due) }}</span>{% endif %}
+              <button type="button" data-drawer-toggle aria-controls="{{ drawer_id }}" aria-expanded="{{ 'true' if has_error else 'false' }}" aria-label="Edit {{ payment.name }}"
+                      class="group inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-accent hover:bg-accent-soft">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+          </td>
+          <td class="{{ td }} {{ td_hide }} whitespace-nowrap text-ink-muted" data-field="cadence">{{ row.latest.interval_months | cadence(row.latest.day) }}</td>
+          <td class="{{ td }} {{ td_hide }} whitespace-nowrap" data-field="last_paid">{% if payment.last_paid_date %}{{ date(payment.last_paid_date) }}{% endif %}</td>
+          <td class="{{ td }} {{ td_hide }} whitespace-nowrap" data-field="next_due">{% if row.next_due %}{{ date(row.next_due) }}{% endif %}</td>
+          <td class="{{ td }} {{ td_hide }}">
+            <button type="button" data-drawer-toggle aria-controls="{{ drawer_id }}" aria-expanded="{{ 'true' if has_error else 'false' }}"
+                    class="group inline-flex cursor-pointer select-none items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-accent hover:bg-accent-soft">
+              Edit
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </td>
+        </tr>
+        <tr data-drawer-for="{{ payment.id }}" id="{{ drawer_id }}"{% if not has_error %} hidden{% endif %}>
+          <td colspan="7" class="bg-surface-muted/50 px-4 py-4">
+            <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <section>
+                <h3 class="{{ section_title }}">Edit</h3>
+                <form method="post" action="/recurring/{{ payment.id }}/edit" class="{{ form_grid }}">
+                  {{ form_error(row.edit_error) }}
+                  <div class="col-span-2">{{ field("name", "Name", value=(row.edit_error.fields.name if row.edit_error else payment.name), id="edit-name-" ~ uid, required=true) }}</div>
+                  {{ field("amount", "Amount", value=(row.edit_error.fields.amount if row.edit_error else (row.latest.amount_cents | money)), id="edit-amount-" ~ uid, required=true) }}
+                  {{ field("interval_months", "Every (months)", type="number", value=(row.edit_error.fields.interval_months if row.edit_error else row.latest.interval_months), id="edit-interval-" ~ uid, required=true, attrs={"min": 1}) }}
+                  <div class="col-span-2">{{ field("day", "Day", type="number", value=(row.edit_error.fields.day if row.edit_error else row.latest.day), id="edit-day-" ~ uid, required=true, attrs={"min": 1, "max": 31}) }}</div>
+                  <div class="col-span-2">{{ button("Save", size="sm") }}</div>
+                </form>
+              </section>
 
-<h2>Add a payment</h2>
-<form method="post" action="/recurring">
-  <input name="name" placeholder="Name" required>
-  <input name="amount" placeholder="Amount" required>
-  <label>every <input name="interval_months" type="number" min="1" placeholder="N" required> month(s)</label>
-  <input name="day" type="number" min="1" max="31" placeholder="Day of month" required>
-  <label>first due <input name="starts_on" type="date" required></label>
-  <button type="submit">Add</button>
-</form>
+              <section>
+                <h3 class="{{ section_title }}">Pause</h3>
+                <form method="post" action="/recurring/{{ payment.id }}/pause" class="{{ form_grid }}">
+                  {{ form_error(row.pause_error) }}
+                  <div class="col-span-2">{{ field("last_date", "Ends/pauses after", type="date", value=(row.pause_error.fields.last_date if row.pause_error else ""), id="pause-last-date-" ~ uid, required=true) }}</div>
+                  <div class="col-span-2">{{ button("Pause", variant="secondary", size="sm") }}</div>
+                </form>
+              </section>
+
+              <section>
+                <h3 class="{{ section_title }}">Resume</h3>
+                <form method="post" action="/recurring/{{ payment.id }}/resume" class="{{ form_grid }}">
+                  {{ form_error(row.resume_error) }}
+                  <div class="col-span-2">{{ field("starts_on", "Resumes on", type="date", value=(row.resume_error.fields.starts_on if row.resume_error else ""), id="resume-starts-on-" ~ uid, required=true) }}</div>
+                  {{ field("amount", "Amount", value=(row.resume_error.fields.amount if row.resume_error else ""), id="resume-amount-" ~ uid, required=true, attrs={"placeholder": "Amount"}) }}
+                  {{ field("interval_months", "Every (months)", type="number", value=(row.resume_error.fields.interval_months if row.resume_error else ""), id="resume-interval-" ~ uid, required=true, attrs={"min": 1, "placeholder": "N"}) }}
+                  <div class="col-span-2">{{ field("day", "Day (optional)", type="number", value=(row.resume_error.fields.day if row.resume_error else ""), id="resume-day-" ~ uid, attrs={"min": 1, "max": 31}) }}</div>
+                  <div class="col-span-2">{{ button("Resume", variant="secondary", size="sm") }}</div>
+                </form>
+              </section>
+
+              {% if payment.periods %}
+              <section class="sm:col-span-2 lg:col-span-4">
+                <h3 class="{{ section_title }}">Period history</h3>
+                <ol class="mt-2 flex flex-wrap gap-x-6 gap-y-1.5 border-l border-line pl-3 text-xs text-ink-muted">
+                  {% for period in payment.periods %}
+                  <li data-period>
+                    {{ date(period.starts_on) }}<span aria-hidden="true"> – </span><span class="sr-only">to</span>{% if period.until %}{{ date(period.until) }}{% else %}<span>ongoing</span>{% endif %}:
+                    {{ amount(period.amount_cents, colored=false) }} · {{ period.interval_months | cadence(period.day) }}
+                  </li>
+                  {% endfor %}
+                </ol>
+              </section>
+              {% endif %}
+            </div>
+
+            <form method="post" action="/recurring/{{ payment.id }}/dismiss" class="mt-4"
+                  onsubmit="return confirm('Dismiss this payment? You can re-add it later.');">
+              {{ button("Dismiss", variant="danger", size="sm") }}
+            </form>
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  {% endcall %}
+  {% else %}
+  {{ empty("No fixed payments yet", message="Payments detected from an import show up here, or add one by hand below.") }}
+  {% endif %}
+
+  {% call card(title="Add a payment", subtitle="For a payment not yet detected from an import.", id="add-payment-card") %}
+  <form id="add-payment" method="post" action="/recurring" class="space-y-4">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {{ form_error(add_error) }}
+      {{ field("name", "Name", value=(add_error.fields.name if add_error else ""), required=true, attrs={"placeholder": "e.g. Netflix"}) }}
+      {{ field("amount", "Amount", value=(add_error.fields.amount if add_error else ""), required=true, attrs={"placeholder": "12.99"}) }}
+      {{ field("interval_months", "Every (months)", type="number", value=(add_error.fields.interval_months if add_error else ""), required=true, help="1 = monthly, 3 = quarterly, 12 = yearly", attrs={"min": 1, "placeholder": "1"}) }}
+      {{ field("day", "Day of month", type="number", value=(add_error.fields.day if add_error else ""), required=true, attrs={"min": 1, "max": 31, "placeholder": "15"}) }}
+      <div class="sm:col-span-2">{{ field("starts_on", "First due date", type="date", value=(add_error.fields.starts_on if add_error else ""), required=true) }}</div>
+    </div>
+    <div>{{ button("Add payment") }}</div>
+  </form>
+  {% endcall %}
+</div>
+<script>
+  (function () {
+    /* eslint-disable no-var */
+    // A drawer row starts hidden unless its own form has an error (server-rendered
+    // open); a row has two toggles (desktop Manage cell, mobile Amount cell),
+    // so a click syncs every toggle that controls the same drawer, and only
+    // that row's drawer ever moves.
+    document.querySelectorAll("[data-drawer-toggle]").forEach(function (toggle) {
+      toggle.addEventListener("click", function () {
+        var drawerId = toggle.getAttribute("aria-controls");
+        var drawer = document.getElementById(drawerId);
+        if (!drawer) return;
+        var expanded = toggle.getAttribute("aria-expanded") === "true";
+        var next = String(!expanded);
+        document.querySelectorAll('[data-drawer-toggle][aria-controls="' + drawerId + '"]').forEach(function (t) {
+          t.setAttribute("aria-expanded", next);
+        });
+        drawer.hidden = expanded;
+      });
+    });
+  })();
+</script>
 {% endblock %}

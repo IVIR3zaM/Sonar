@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@source "../../templates";
+
+/* Dark mode is a class on <html> (set from localStorage or prefers-color-scheme)
+   so the user's toggle can override the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic tokens: templates use bg-surface / text-positive etc. and never
+   raw palette colors, so one token swap below restyles both themes. */
+@theme {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --radius-card: 0.875rem;
+  --radius-control: 0.5rem;
+
+  --color-canvas: oklch(0.982 0.003 255);
+  --color-surface: oklch(1 0 0);
+  --color-surface-muted: oklch(0.965 0.004 255);
+  --color-line: oklch(0.915 0.006 255);
+  --color-ink: oklch(0.22 0.02 260);
+  --color-ink-muted: oklch(0.51 0.02 260);
+
+  --color-accent: oklch(0.53 0.15 255);
+  --color-accent-ink: oklch(0.99 0 0);
+  --color-accent-soft: oklch(0.95 0.025 255);
+
+  --color-positive: oklch(0.52 0.12 158);
+  --color-positive-soft: oklch(0.955 0.035 158);
+  --color-negative: oklch(0.55 0.18 25);
+  --color-negative-soft: oklch(0.955 0.025 25);
+  --color-warn: oklch(0.56 0.12 65);
+  --color-warn-soft: oklch(0.965 0.045 85);
+}
+
+@layer base {
+  /* Dark values are lighter and less saturated than their light twins so the
+     semantic colors keep contrast on dark surfaces without glowing. */
+  .dark {
+    --color-canvas: oklch(0.165 0.01 260);
+    --color-surface: oklch(0.205 0.012 260);
+    --color-surface-muted: oklch(0.245 0.012 260);
+    --color-line: oklch(0.3 0.012 260);
+    --color-ink: oklch(0.95 0.005 260);
+    --color-ink-muted: oklch(0.7 0.015 260);
+
+    --color-accent: oklch(0.72 0.12 255);
+    --color-accent-ink: oklch(0.17 0.02 260);
+    --color-accent-soft: oklch(0.3 0.06 255);
+
+    --color-positive: oklch(0.76 0.13 158);
+    --color-positive-soft: oklch(0.29 0.05 158);
+    --color-negative: oklch(0.72 0.15 25);
+    --color-negative-soft: oklch(0.3 0.07 25);
+    --color-warn: oklch(0.81 0.12 80);
+    --color-warn-soft: oklch(0.31 0.06 75);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+}

@@ -1,6 +1,6 @@
 # Sonar plan state
-Milestone: M6 UI redesign | phase: NOT PLANNED, next: dispatch Planner with SPEC §12, §2, §3 (M0–M5 done)
-Replans used: M1 1, M2 0, M3 2, M4 2, M5 2, M6 0
+Milestone: none | phase: ALL MILESTONES DONE (M0–M6); next: wait for the user
+Replans used: M1 1, M2 0, M3 2, M4 2, M5 2, M6 2
 Plan: `.plan/plan.md` (milestones, task lines per milestone, sample layout). Commits: M0 13603a5, M1 95a052d, M2 a0d0170, M3 a16f99f, M4 28eb946, M5 45f4011
 
 ## Resume (fresh session = orchestrator)
@@ -12,10 +12,10 @@ Plan: `.plan/plan.md` (milestones, task lines per milestone, sample layout). Com
 5. On FAIL: send findings to Planner, replan failing tasks only, bump Replans. Stop after 2.
 
 ## Tasks
-- none yet; Planner produces the M6 graph into plan.md
+- M6 T1-T25 done; Verifier PASS; §12 visual check PASS (temp DB, desktop+375px, light+dark)
 
 ## Milestones
-- M0–M5 done; M6 UI redesign next
+- M0–M6 done
 
 ## Decisions
 - htmx CDN (M6: vendored); NNNN_*.sql; English-locale importer; optional parse_balance(); uncategorized = added rows w/o category

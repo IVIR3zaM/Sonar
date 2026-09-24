@@ -83,6 +83,7 @@ Stop and wait for me only in these cases:
 - FastAPI with server-rendered Jinja2 pages and HTMX for small interactions. No SPA, no JS build step.
 - SQLite via stdlib `sqlite3` with plain SQL. No ORM.
 - pytest and ruff.
+- M6 amendment (user, 2026-09-24): styling uses Tailwind CSS v4 via the `pytailwindcss` standalone CLI (dev only, no Node). The built `src/sonar/static/sonar.css` is committed, so `uv run sonar` still needs no build step. htmx is vendored under `src/sonar/static/`, not loaded from a CDN.
 
 Why this stack: Python has the best tooling for CSV and PDF parsing (pdfplumber later) and for German banking (python-fints, Enable Banking examples), and this is the fewest moving parts for a local app.
 
@@ -216,6 +217,7 @@ The Planner refines these into tasks. Each milestone must end in a usable state:
 - **M3 Recurring payments:** detection, schedule periods, and the UI to edit, pause, resume, dismiss and add payments.
 - **M4 Installments and loans.**
 - **M5 Forecast, dashboard and settings.**
+- **M6 UI redesign:** see section 12.
 
 ## 11. Acceptance checklist (the Verifier uses this at the end)
 
@@ -232,5 +234,59 @@ The Planner refines these into tasks. Each milestone must end in a usable state:
 - [ ] The Fixed costs section shows the monthly equivalent, when each payment occurs, and the next 12 months per month.
 - [ ] Installments and loans each show their remaining amount.
 - [ ] All tests are green, ruff is clean, and the code meets section 2.
+
+## 12. UI (M6)
+
+Presentation only. Domain modules (`forecast.py`, `dashboard.py`, `debts.py`, `recurring.py`, `variable_forecast.py`, ...) and their tests stay unchanged, unless a template needs a value no domain object exposes yet.
+
+**Tooling**
+
+- Tailwind source is `src/sonar/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command goes in `CLAUDE.md` Setup. Never hand-edit `sonar.css`; rebuild it after any template or CSS change.
+- Mount `StaticFiles` at `/static` in `create_app`. Vendor htmx under `static/vendor/`.
+- No JS framework. Use native `<details>`/`<dialog>`, `hx-confirm` and small inline progressive-enhancement scripts only.
+
+**Design system**
+
+- Jinja macros in `templates/components/`: card, stat, badge, button, field (label, input, error), amount, empty state, charts. Pages compose them; no page-level inline `<style>`.
+- Shell in `base.html`: sidebar on desktop, top bar with a drawer on mobile. Active item from `request.url.path`. An Uncategorized count badge loaded from a small htmx fragment route, and updated out of band by `/reapply`.
+- Light and dark themes follow `prefers-color-scheme`, with a toggle remembered in `localStorage`. No horizontal scroll at 375px width.
+
+**Display formats**
+
+- New `eur` filter/macro: `1.234,56 €` (non-breaking space, `−` minus), colored by sign, wrapped with `data-cents="<int>"`.
+- `money` stays unchanged for form `value=` prefills, because `parse_signed_cents` must round-trip them.
+- Dates display as `24 Sep 2026` inside `<time datetime="YYYY-MM-DD">`.
+
+**Pages**
+
+- **Dashboard:** hero card with a status pill (green "On track", yellow "Tight", red "Overdraft risk"), the worst→best range at payday, days to payday, and balance with its as-of date. An SVG runway bar spanning overdraft limit, 0 and balance, with the projected band marked. A Due card (list plus total) and a Variable spending card (range, bars per category median, the existing method tooltip kept). A Fixed costs card: monthly-equivalent stat, 12-month SVG column chart, rows table. A Debts card with the total. An uncategorized callout when the count is above 0. Charts are server-rendered inline SVG macros with `<title>` and accessible labels; no chart library.
+- **Fixed payments:** compact table (name with debt badge, category badge, amount, cadence like "every 3 mo · day 15", last paid, next due). One Edit drawer per row with Edit, Pause and Resume sections and the period timeline. Dismiss asks for confirmation. Add payment is a card form.
+- **Installments and loans:** one card per debt with kind badge, paid-off badge, progress bar, facts grid, match line and linked payments. Delete asks for confirmation. The Add forms are collapsible cards. Total remaining as a stat.
+- **Import:** dropzone around the file input, htmx loading indicator, results with added/duplicate/uncategorized badges; an error row renders as an alert.
+- **Uncategorized:** count badge, "Re-apply rules" with a spinner, rows table, the Claude request in a monospace panel, Copy with "Copied" feedback.
+- **Settings:** Household and Balance cards with labelled fields and help text; current balance as a stat.
+
+**Friendly errors**
+
+- Every POST that returns a plain-text 400 today re-renders its page with status 400, an inline `#form-error` alert, and the entered values kept. GET and error paths share one render helper per page.
+- A 404 renders a styled `error.html`.
+
+**Tests**
+
+- The first M6 task pins stable hooks while the markup is still raw: ids on key tables and totals, `#traffic-light[data-light]`, `data-worst`/`data-best` on the projection, `data-cents` on amounts. Page tests are rewritten against these hooks with a small `beautifulsoup4` helper module (`tests/html.py`), so restyling never breaks them.
+- Every behavior needs a test: filters, routes, error re-render, badge fragment, nav active state, chart macro geometry and hooks. Pure CSS classes need no test.
+
+**Models:** opus for the design-system foundation (tokens, components, shell) and the dashboard; sonnet for the other pages and error handling; haiku for vendoring and config only.
+
+**Visual check (orchestrator, before the M6 commit):** start the app on a temp DB (never `data/sonar.db`), import the real sample, set salary day and balance. In the built-in browser pane, screenshot every page at desktop and 375px, in light and dark; exercise drawers, confirms, invalid forms, the dropzone and Copy. Defects go to the Planner as Verifier-style findings and count toward the 2 replans.
+
+**M6 acceptance (the Verifier checks this)**
+
+- [ ] pytest green, ruff clean; the section 11 checklist still holds.
+- [ ] Rebuilding the CSS leaves `src/sonar/static/sonar.css` unchanged (`git diff --exit-code`).
+- [ ] `uv run sonar` starts without the Tailwind binary or network access.
+- [ ] Every page extends `base.html`, uses the component macros, and has no inline `<style>`.
+- [ ] Invalid form input shows an inline error with status 400 and keeps the entered values.
+- [ ] Displayed amounts use `eur`; form prefills use `money`.
 
 **Start now:** set up M0, have the Planner produce the milestone plan, then stop at the first checkpoint.

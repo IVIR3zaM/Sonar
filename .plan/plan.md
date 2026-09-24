@@ -17,8 +17,13 @@ number under the milestone heading.
 - M3 Recurring payments: detection (1/2/3/6/12 mo, ±7d, evidence), schedule periods, Fixed payments page edit/pause/resume/dismiss/add, water test | SPEC §6 | deps: M2 (category types), M1 (mandate/creditor)
 - M4 Installments and loans: debt model, match rules, paid so far, amortization/linear, link to recurring | SPEC §7 | deps: M1, M3 (link)
 - M5 Forecast, dashboard, settings: salary day (weekend→Fri), manual balance latest-wins, traffic light, variable range, fixed-costs 12-month view | SPEC §8, §9, §4 balance | deps: M2–M4
+- M6 UI redesign: design system, shell, dashboard charts, page redesigns, friendly errors, eur display, hook-based page tests | SPEC §12, §3 amendment | deps: M5
 
-M4–M5 get their task graphs from the Planner when each milestone starts.
+M4–M6 get their task graphs from the Planner when each milestone starts.
+
+## M6 UI redesign (SPEC §12)
+
+Task graph pending: the Planner fills this in when M6 starts.
 
 ### M5 amendment (user: overdraft limit; not a replan) — supersedes the T8–T14 lines above
 

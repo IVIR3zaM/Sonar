@@ -23,7 +23,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N17 | Categorization JSON API | exec | N09 | sonnet/sonnet | 2 | 0 | DONE | |
 | N10 | Keep the lights on page | exec | N04,N07,N09,N17 | sonnet/sonnet | 1 | 0 | DONE | |
 | N11 | Retire categories.toml | exec | N05,N09,N17 | sonnet/sonnet | 1 | 1 | DONE | |
-| N12 | Rebuild CSS | exec | N06,N07,N08,N09,N10 | haiku/haiku | 1 | 0 | VERIFYING | |
+| N12 | Rebuild CSS | exec | N06,N07,N08,N09,N10 | haiku/haiku | 1 | 0 | DONE | |
 | N13 | Import the owner's categories | gate | N11 | - | 0 | 0 | TODO | |
 | N14 | visual check | gate | N12,N13 | - | 0 | 0 | TODO | |
 | N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17 | -/opus | 0 | 0 | TODO | |

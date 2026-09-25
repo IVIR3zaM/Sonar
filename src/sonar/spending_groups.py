@@ -5,7 +5,7 @@ reduce but not bring to zero, e.g. groceries, transport, shopping) and
 `occasional` (fees, education, donations, health, dining and similar
 one-offs). This module is the single source for the five type values, their
 display labels, the ordered spending groups, and the set excluded from
-recurring detection, so categorize.py, recurrence.py and variable_forecast.py
+recurring detection, so categorize.py, recurrence.py and lights_on.py
 never repeat the literals.
 """
 

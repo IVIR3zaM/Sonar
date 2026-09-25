@@ -4,7 +4,8 @@ Seed data for the row-scoped test is picked so the numbers can be checked by
 hand: salary day 26 and today 2026-09-10 give payday Friday 2026-09-25 (the
 26th is a Saturday) and a window of [2026-09-11, 2026-09-24] (14 days) once
 the balance is set as of today. Three Groceries debits, one per complete
-salary cycle before that window, give an exact 25th/75th percentile range.
+salary month before that window, give daily averages of 30.00, 20.00 and
+10.00 over 31, 28 and 33 days, so the lights-on range is exact.
 """
 
 import sqlite3
@@ -22,13 +23,17 @@ from tests.seed import seed
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 10)
 
-# Groceries is `variable` and matches the fake counterparty "Fake Market", so
+# Groceries is `lights_on` and matches the fake counterparty "Fake Market", so
 # the seeded debits below are categorized by the app's own startup rule pass
-# instead of being inserted pre-categorized.
+# instead of being inserted pre-categorized. Dining is `occasional`.
 GROCERIES_TOML = """
 [[category]]
 name = "Groceries"
-type = "variable"
+type = "lights_on"
+
+[[category]]
+name = "Dining"
+type = "occasional"
 
 [[rule]]
 category = "Groceries"
@@ -154,6 +159,21 @@ def test_overdrawn_balance_is_green_at_default_limit_and_red_at_zero(tmp_path):
 
 def test_not_enough_history_shows_not_enough_data(tmp_path):
     db_path = tmp_path / "t.db"
+    seed(db_path, GROCERIES_TOML)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        client.post("/settings/balance", data={"amount": "100.00", "as_of": "2026-09-10"})
+
+        page = soup(client.get("/"))
+
+    expected = page.select_one("#lights-on-card #lights-on-expected")
+    assert expected.select("[data-cents]") == []
+    assert text(expected) == "not enough data"
+
+
+def test_no_lights_on_category_links_to_the_categories_page(tmp_path):
+    db_path = tmp_path / "t.db"
     seed(db_path)
 
     with TestClient(create_app(db_path, today=_today)) as client:
@@ -162,9 +182,9 @@ def test_not_enough_history_shows_not_enough_data(tmp_path):
 
         page = soup(client.get("/"))
 
-    variable_range = page.select_one("#variable-range")
-    assert variable_range.select("[data-cents]") == []
-    assert text(variable_range) == "not enough data"
+    assert page.select_one('#lights-on-card #lights-on-empty a[href="/categories"]') is not None
+    assert page.select_one("#lights-on-expected") is None
+    assert _projection(page) == (10_000, 10_000)
 
 
 def test_full_dashboard_row_scoped(tmp_path):
@@ -241,16 +261,29 @@ def test_full_dashboard_row_scoped(tmp_path):
             {"name": "Rent", "date": "2026-09-15", "amount": 50_000},
             {"name": "Sofa", "date": "2026-09-20", "amount": 10_000},
         ]
-        variable_range = page.select_one("#variable-range")
-        assert fields(variable_range) == {"low": 21_000, "high": 35_000}
-        assert records(page.select_one("#variable-breakdown")) == [
-            {"category": "Groceries", "median": 28_000}
+        # Expected: 182,000 cents over 92 days x 14 days = 27,695.65 -> 27,696.
+        # Range: the lowest and highest daily average (1,000, 3,000) x 14 days.
+        card = page.select_one("#lights-on-card")
+        assert fields(card.select_one("#lights-on-forecast")) == {
+            "expected": 27_696,
+            "low": 14_000,
+            "high": 42_000,
+        }
+        assert records(card.select_one("#lights-on-breakdown")) == [
+            {"category": "Groceries", "amount": 27_696}
         ]
-        assert variable_range["title"] == (
-            "25th to 75th percentile of total variable spending in the last 3 complete"
-            " salary cycles (at most 6), each scaled to the days from the balance date to"
-            " payday; categories show their median."
-        )
+        method = card.select_one("#lights-on-expected")["title"]
+        assert "Groceries" in method
+        assert "3 complete months" in method
+        assert "14 days" in method
+        assert card.select_one('a[href="/lights-on"]') is not None
+        occasional = card.select_one("#occasional-note")
+        assert "Dining" in text(occasional)
+        assert occasional.select_one('a[href="/monthly"]') is not None
+        # 800.00 - 600.00 due - 276.96 expected = 76.96 short.
+        shortfall = page.select_one("#shortfall")
+        assert cents(shortfall) == -7_696
+        assert text(shortfall) == "About 76,96 € short before payday"
         assert fields(page.select_one("#balance")) == {"amount": 80_000, "as_of": "2026-09-10"}
         assert page.select_one("#balance [data-field=amount]").get_text() == "800,00\u00a0€"
         assert text(page.select_one("#payday")) == "25 Sep 2026"
@@ -300,7 +333,8 @@ def test_full_dashboard_row_scoped(tmp_path):
 
         assert page.select_one("#uncategorized-callout") is None
 
-        # 800.00 - 600.00 due - 210.00..350.00 variable = [-150.00, -10.00]: red.
+        # 700.00 - 600.00 due - 140.00..420.00 lights-on = [-320.00, -40.00]: red.
+        client.post("/settings/balance", data={"amount": "700.00", "as_of": "2026-09-10"})
         assert (
             client.post(
                 "/settings",
@@ -310,26 +344,29 @@ def test_full_dashboard_row_scoped(tmp_path):
             == 303
         )
         page = soup(client.get("/"))
-        assert _light(page) == {"light": "red", "worst": -15_000, "best": -1_000, "limit": 0}
-        assert _projection(page) == (-15_000, -1_000)
+        assert _light(page) == {"light": "red", "worst": -32_000, "best": -4_000, "limit": 0}
+        assert _projection(page) == (-32_000, -4_000)
         assert _pill(page) == PILL_TEXT["red"]
-        assert _runway(page) == (-15_000, -1_000)
+        assert _runway(page) == (-32_000, -4_000)
 
-        # 900.00 gives [-50.00, 90.00]: only the best case stays above 0.00, so yellow.
-        client.post("/settings/balance", data={"amount": "900.00", "as_of": "2026-09-10"})
+        # 800.00 gives [-220.00, 60.00]: only the best case stays above 0.00, so yellow.
+        client.post("/settings/balance", data={"amount": "800.00", "as_of": "2026-09-10"})
         page = soup(client.get("/"))
-        assert _light(page) == {"light": "yellow", "worst": -5_000, "best": 9_000, "limit": 0}
-        assert _projection(page) == (-5_000, 9_000)
+        assert _light(page) == {"light": "yellow", "worst": -22_000, "best": 6_000, "limit": 0}
+        assert _projection(page) == (-22_000, 6_000)
         assert _pill(page) == PILL_TEXT["yellow"]
-        assert _runway(page) == (-5_000, 9_000)
+        assert _runway(page) == (-22_000, 6_000)
 
-        # 1000.00 gives [50.00, 190.00]: both cases stay above 0.00, so green.
-        client.post("/settings/balance", data={"amount": "1000.00", "as_of": "2026-09-10"})
+        # 1100.00 gives [80.00, 360.00]: both cases stay above 0.00, so green,
+        # and 1100.00 - 600.00 - 276.96 leaves 223.04 to spare.
+        client.post("/settings/balance", data={"amount": "1100.00", "as_of": "2026-09-10"})
         page = soup(client.get("/"))
-        assert _light(page) == {"light": "green", "worst": 5_000, "best": 19_000, "limit": 0}
-        assert _projection(page) == (5_000, 19_000)
+        assert _light(page) == {"light": "green", "worst": 8_000, "best": 36_000, "limit": 0}
+        assert _projection(page) == (8_000, 36_000)
         assert _pill(page) == PILL_TEXT["green"]
-        assert _runway(page) == (5_000, 19_000)
+        assert _runway(page) == (8_000, 36_000)
+        assert cents(page.select_one("#shortfall")) == 22_304
+        assert text(page.select_one("#shortfall")) == "About 223,04 € to spare"
 
 
 def test_uncategorized_callout_links_to_the_page_when_count_is_above_zero(tmp_path):

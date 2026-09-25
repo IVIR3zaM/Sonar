@@ -1,6 +1,6 @@
 """DB shell for the dashboard (SPEC §9): gathers every figure the page shows.
 
-The pure pieces (payday, forecast, variable_forecast, debts) do the math; this
+The pure pieces (payday, forecast, lights_on, debts) do the math; this
 module only reads the stored data and wires them together, so the web layer
 renders a single `Dashboard` and never repeats a forecast rule.
 """
@@ -12,15 +12,15 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Literal
 
-from sonar import debts, forecast, payday
+from sonar import debts, forecast, lights_on, payday, spending_groups
 from sonar.balance import BalanceEntry
 from sonar.categorizing import transactions_with_category, uncategorized_count
 from sonar.debt_store import DebtView, debt_overview, remaining_cents
 from sonar.forecast import DueItem, FixedCosts, FixedSource, Projection
+from sonar.lights_on import LightsOnForecast
 from sonar.recurring import list_payments
 from sonar.settings_store import current_balance, load_settings
 from sonar.transactions import ParsedTransaction
-from sonar.variable_forecast import HISTORY_CYCLES, VariableForecast, variable_forecast
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,13 @@ class Dashboard:
     overdraft_limit_cents: int
     due: list[DueItem]
     due_total_cents: int
-    variable: VariableForecast | None
+    window_days: int | None
+    lights_on_categories: tuple[str, ...]
+    occasional_categories: tuple[str, ...]
+    lights_on: LightsOnForecast | None
+    # Balance - due - expected lights-on spending: the margin (or, negative,
+    # the shortfall) against 0 at payday.
+    expected_cents: int | None
     projection: Projection | None
     light: Literal["green", "yellow", "red"] | None
     fixed_costs: FixedCosts
@@ -59,7 +65,11 @@ def load_dashboard(
         overdraft_limit_cents=settings.overdraft_limit_cents,
         due=[],
         due_total_cents=0,
-        variable=None,
+        window_days=None,
+        lights_on_categories=_names_of_type(category_types, spending_groups.LIGHTS_ON),
+        occasional_categories=_names_of_type(category_types, spending_groups.OCCASIONAL),
+        lights_on=None,
+        expected_cents=None,
         projection=None,
         light=None,
         fixed_costs=forecast.fixed_costs(sources, today),
@@ -82,24 +92,29 @@ def load_dashboard(
     window_days = max((end - start).days + 1, 0)
     due = forecast.fixed_due(sources, start, end)
     due_total = sum(item.amount_cents for item in due)
-    variable = variable_forecast(
-        rows,
-        category_types,
-        payday.complete_cycles(today, settings.salary_day, HISTORY_CYCLES),
-        window_days,
-    )
-    variable_range = None if variable is None else (variable.low_cents, variable.high_cents)
-    projection = forecast.project(balance.amount_cents, due_total, variable_range)
+    # Learning stops at the balance date: later bookings are already in the
+    # balance and must not also shape the forecast of what is still to come.
+    months = lights_on.month_spends(rows, category_types, settings.salary_day, balance.as_of)
+    lights = lights_on.lights_on_forecast(months, window_days)
+    lights_range = None if lights is None else (lights.low_cents, lights.high_cents)
+    projection = forecast.project(balance.amount_cents, due_total, lights_range)
+    lights_expected = 0 if lights is None else lights.expected_cents
     return replace(
         board,
         payday=next_payday,
         days_to_payday=(next_payday - today).days,
         due=due,
         due_total_cents=due_total,
-        variable=variable,
+        window_days=window_days,
+        lights_on=lights,
+        expected_cents=balance.amount_cents - due_total - lights_expected,
         projection=projection,
         light=forecast.traffic_light(projection, settings.overdraft_limit_cents),
     )
+
+
+def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[str, ...]:
+    return tuple(sorted(name for name, type_ in category_types.items() if type_ == category_type))
 
 
 def _fixed_sources(

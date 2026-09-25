@@ -158,6 +158,6 @@ def _next_month(month: date) -> date:
 
 
 def _cents(amount: Fraction) -> int:
-    # Half a cent rounds up, like variable_forecast.py; floor(x + 1/2) is half
-    # up because these amounts are never negative.
+    # Half a cent rounds up; floor(x + 1/2) is half up because these amounts
+    # are never negative.
     return math.floor(amount + Fraction(1, 2))

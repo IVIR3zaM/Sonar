@@ -137,8 +137,8 @@ def test_month_columns_macro_has_one_rect_per_month(render):
 
 def test_category_bars_macro_has_one_rect_per_category(render):
     categories = [
-        SimpleNamespace(category="groceries", median_cents=20000),
-        SimpleNamespace(category="fuel", median_cents=5000),
+        SimpleNamespace(category="groceries", expected_cents=20000),
+        SimpleNamespace(category="fuel", expected_cents=5000),
     ]
     soup = render("category_bars", "category_bars(categories)", categories=categories)
     svg = soup.find("svg")

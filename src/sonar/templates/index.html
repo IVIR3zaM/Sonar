@@ -32,7 +32,7 @@
 {% if dashboard.uncategorized_count > 0 %}
 <div id="uncategorized-callout" role="status"
      class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-ink">
-  <p class="min-w-0">Uncategorized transactions: <a href="/uncategorized" class="font-semibold text-warn underline underline-offset-2">{{ dashboard.uncategorized_count }}</a>. They stay out of the variable forecast until a rule matches them.</p>
+  <p class="min-w-0">Uncategorized transactions: <a href="/uncategorized" class="font-semibold text-warn underline underline-offset-2">{{ dashboard.uncategorized_count }}</a>. They stay out of the forecast until a rule matches them.</p>
   {{ button("Review", variant="secondary", size="sm", href="/uncategorized") }}
 </div>
 {% endif %}
@@ -56,6 +56,10 @@
           {{ amount(dashboard.projection.best_cents, attrs={"data-field": "best"}) }}
         </p>
         <p class="mt-1 text-xs text-ink-muted">Worst to best case · overdraft limit {{ amount(dashboard.overdraft_limit_cents, id="overdraft-limit", colored=false, attrs={"data-field": "limit"}) }}</p>
+        <p id="shortfall" data-cents="{{ dashboard.expected_cents }}" class="mt-2 text-sm font-medium text-ink">
+          About {{ amount(dashboard.expected_cents|abs, colored=false) }}
+          {%- if dashboard.expected_cents < 0 %} short before payday{% else %} to spare{% endif %}
+        </p>
       </div>
 
       <div class="grid grid-cols-2 gap-6 sm:gap-10">
@@ -86,7 +90,7 @@
   {% endif %}
   </div>
 
-  {% call card(title="Due before payday", subtitle="Fixed payments still expected", id="due-card") %}
+  {% call card(title="1 · Fixed payments due before payday", subtitle="Still expected", id="due-card") %}
     {{ stat("Expected", value=amount(dashboard.due_total_cents, colored=false), id="due-total") }}
     {% if dashboard.due %}
     <div class="{{ table_wrap }} mt-4">
@@ -126,26 +130,31 @@
     {% endif %}
   {% endcall %}
 
-  {% call card(title="Variable spending", subtitle="Forecast until payday", id="variable-card") %}
-    {% if dashboard.variable %}
-    <div>
-      <p class="text-xs font-medium uppercase tracking-wide text-ink-muted">Likely range</p>
-      <p id="variable-range" class="mt-1 inline-flex cursor-help flex-wrap items-baseline gap-x-1 text-2xl font-semibold tracking-tight text-ink underline decoration-line decoration-dotted underline-offset-4" title="25th to 75th percentile of total variable spending in the last {{ dashboard.variable.cycles_used }} complete salary cycles (at most 6), each scaled to the days from the balance date to payday; categories show their median.">{{ amount(dashboard.variable.low_cents, colored=false, attrs={"data-field": "low"}) }}<span aria-hidden="true">–</span><span class="sr-only">to</span>{{ amount(dashboard.variable.high_cents, colored=false, attrs={"data-field": "high"}) }}<span class="text-sm font-normal text-ink-muted">more</span></p>
+  {% call card(title="2 · Keep the lights on", subtitle="Expected spending until payday", id="lights-on-card") %}
+    {% set lights = dashboard.lights_on %}
+    {% if not dashboard.lights_on_categories %}
+    <p id="lights-on-empty" class="text-sm text-ink-muted">No category is in Keep the lights on yet, so nothing is forecast. <a href="/categories" class="font-medium text-accent underline-offset-2 hover:underline">Set up categories</a>.</p>
+    {% elif lights %}
+    {% set first, last = lights.months_used[0], lights.months_used[-1] %}
+    <div id="lights-on-forecast">
+      <p class="text-xs font-medium uppercase tracking-wide text-ink-muted">Expected</p>
+      <p id="lights-on-expected" class="mt-1 inline-flex cursor-help flex-wrap items-baseline gap-x-1 text-2xl font-semibold tracking-tight text-ink underline decoration-line decoration-dotted underline-offset-4" title="Day-weighted daily average of debit spending in {{ dashboard.lights_on_categories|join(', ') }} over the last {{ lights.months_used|length }} complete months ({{ first.start|date }} to {{ last.end|date }}), times the {{ dashboard.window_days }} days from the balance date to payday. The range uses the lowest and highest monthly daily average.">{{ amount(lights.expected_cents, colored=false, attrs={"data-field": "expected"}) }}<span class="text-sm font-normal text-ink-muted">more</span></p>
+      <p class="mt-1 text-sm text-ink-muted">Range {{ amount(lights.low_cents, colored=false, attrs={"data-field": "low"}) }}<span aria-hidden="true">–</span><span class="sr-only">to</span>{{ amount(lights.high_cents, colored=false, attrs={"data-field": "high"}) }}</p>
     </div>
-    {% if dashboard.variable.by_category %}
+    {% if lights.by_category %}
     <div id="category-bars" class="mt-4">
-      {{ category_bars(dashboard.variable.by_category) }}
+      {{ category_bars(lights.by_category) }}
     </div>
     <details class="mt-3">
       <summary class="{{ details_summary }}">Show as table</summary>
       <div class="{{ table_wrap }} mt-2">
-        <table id="variable-breakdown" class="{{ table }}">
-          <thead><tr><th class="{{ th }}">Category</th><th class="{{ th_num }}">Median</th></tr></thead>
+        <table id="lights-on-breakdown" class="{{ table }}">
+          <thead><tr><th class="{{ th }}">Category</th><th class="{{ th_num }}">Expected</th></tr></thead>
           <tbody>
-          {% for row in dashboard.variable.by_category %}
+          {% for row in lights.by_category %}
             <tr data-row class="{{ tr }}">
               <td class="{{ td }}" data-field="category">{{ row.category }}</td>
-              <td class="{{ td_num }}" data-field="median">{{ amount(row.median_cents, colored=false) }}</td>
+              <td class="{{ td_num }}" data-field="amount">{{ amount(row.expected_cents, colored=false) }}</td>
             </tr>
           {% endfor %}
           </tbody>
@@ -154,9 +163,14 @@
     </details>
     {% endif %}
     {% else %}
-    <p id="variable-range" class="text-sm font-semibold text-ink">not enough data</p>
-    <p class="mt-1 text-sm text-ink-muted">The forecast needs at least 3 complete salary cycles of history.</p>
+    <p id="lights-on-expected" class="text-sm font-semibold text-ink">not enough data</p>
+    <p class="mt-1 text-sm text-ink-muted">The forecast needs at least one complete month of history.</p>
     {% endif %}
+    <p class="mt-4 text-sm"><a href="/lights-on" class="font-medium text-accent underline-offset-2 hover:underline">Daily average per month</a></p>
+    <p id="occasional-note" class="mt-2 text-xs text-ink-muted">
+      {%- if dashboard.occasional_categories %}Occasional payments ({{ dashboard.occasional_categories|join(", ") }}) are not forecast.
+      {%- else %}Occasional payments are not forecast.{% endif %}
+      <a href="/monthly" class="font-medium text-accent underline-offset-2 hover:underline">See them per month</a>.</p>
   {% endcall %}
 
   <div class="min-w-0 lg:col-span-2">

@@ -17,8 +17,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N04 | Lights-on pure module | exec | N02 | opus/opus | 1 | 0 | DONE | |
 | N05 | App and CLI read the DB taxonomy | exec | N03 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | Monthly: group totals and net transfers | exec | N02,N05 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | Dashboard forecast in two parts | exec | N04,N05 | opus/opus | 0 | 1 | TODO | |
-| N08 | Categories page: categories | exec | N03,N05,N06 | sonnet/sonnet | 0 | 0 | TODO | |
+| N07 | Dashboard forecast in two parts | exec | N04,N05 | opus/opus | 1 | 1 | DONE | |
+| N08 | Categories page: categories | exec | N03,N05,N06 | sonnet/sonnet | 1 | 0 | VERIFYING | |
 | N09 | Categories page: rules | exec | N08 | sonnet/sonnet | 0 | 0 | TODO | |
 | N17 | Categorization JSON API | exec | N09 | sonnet/sonnet | 0 | 0 | TODO | |
 | N10 | Keep the lights on page | exec | N04,N07,N09,N17 | sonnet/sonnet | 0 | 0 | TODO | |

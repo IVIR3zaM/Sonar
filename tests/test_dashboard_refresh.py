@@ -2,10 +2,10 @@
 
 Seed data: the real fixture's footer balance is -448.43 (-44843 cents) as of
 2026-09-23, salary day 26, today pinned to 2026-09-23. No recurring payments
-or debts are added, so due stays empty and there is no variable category
-(the categories.toml is empty), which leaves worst == best == the balance
-itself for the traffic light (SPEC §9, T9: "fewer than 3 cycles" gives
-worst == best; here there are zero variable rows at all).
+or debts are added, so due stays empty and there is no Keep-the-lights-on
+category (the taxonomy is empty), which leaves worst == best == the balance
+itself for the traffic light (SPEC §9, §13 Forecast: nothing to forecast
+gives worst == best; here there are zero lights-on rows at all).
 """
 
 from datetime import date
@@ -52,8 +52,8 @@ def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
             == 303
         )
 
-        # due_total = 0 (no recurring payments/debts) and no variable category
-        # exists in the empty toml, so worst == best == -44843. -44843 is
+        # due_total = 0 (no recurring payments/debts) and no lights-on category
+        # exists in the empty taxonomy, so worst == best == -44843. -44843 is
         # more than -50000, so green.
         assert _figures(client) == (-44_843, "green", -50_000)
 

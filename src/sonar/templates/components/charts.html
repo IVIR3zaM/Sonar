@@ -64,18 +64,18 @@
 {% macro category_bars(categories) %}
 {%- set width = 300 -%}
 {%- set row = 24 -%}
-{%- set widths = charts.bars(categories|map(attribute="median_cents")|list, width) -%}
-<svg role="img" aria-label="Median variable spending per category"
+{%- set widths = charts.bars(categories|map(attribute="expected_cents")|list, width) -%}
+<svg role="img" aria-label="Keep the lights on: expected spending per category"
      viewBox="0 0 {{ width }} {{ categories|length * row }}" class="block w-full">
-  <title>Median variable spending per category</title>
+  <title>Keep the lights on: expected spending per category</title>
   {%- for c in categories %}
   {%- set y = loop.index0 * row %}
   <text x="0" y="{{ y + 10 }}" font-size="10" class="fill-gray-700 dark:fill-gray-300">{{ c.category }}</text>
   <text x="{{ width }}" y="{{ y + 10 }}" font-size="10" text-anchor="end"
-        class="fill-gray-700 dark:fill-gray-300">{{ c.median_cents|eur }}</text>
+        class="fill-gray-700 dark:fill-gray-300">{{ c.expected_cents|eur }}</text>
   <rect x="0" y="{{ y + 14 }}" width="{{ widths[loop.index0] }}" height="6" rx="3"
-        class="fill-sky-500 dark:fill-sky-400" data-cents="{{ c.median_cents }}">
-    <title>{{ c.category }}: median {{ c.median_cents|eur }}</title>
+        class="fill-sky-500 dark:fill-sky-400" data-cents="{{ c.expected_cents }}">
+    <title>{{ c.category }}: expected {{ c.expected_cents|eur }}</title>
   </rect>
   {%- endfor %}
 </svg>

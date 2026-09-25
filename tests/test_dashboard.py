@@ -16,15 +16,15 @@ from sonar.db import apply_migrations
 from sonar.debt_store import add_debt
 from sonar.debts import Installment, Loan, MatchRule
 from sonar.forecast import DueItem, Projection
+from sonar.lights_on import CategoryExpected
 from sonar.recurring import add_manual
 from sonar.schedule import SchedulePeriod
 from sonar.settings_store import save_settings, set_manual_balance
-from sonar.variable_forecast import CategorySpend, VariableForecast
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 10)
 PAYDAY = date(2026, 9, 25)
-CATEGORY_TYPES = {"Groceries": "lights_on", "Rent": "fixed"}
+CATEGORY_TYPES = {"Groceries": "lights_on", "Dining": "occasional", "Rent": "fixed"}
 
 
 @pytest.fixture
@@ -139,7 +139,8 @@ def test_unsaved_settings_leave_the_forecast_empty_but_fill_the_rest(
     assert board.overdraft_limit_cents == -50_000
     assert board.balance is not None and board.balance.amount_cents == 100_000
     assert (board.payday, board.days_to_payday) == (None, None)
-    assert (board.projection, board.light, board.variable) == (None, None, None)
+    assert (board.projection, board.light, board.lights_on) == (None, None, None)
+    assert (board.window_days, board.expected_cents) == (None, None)
     assert (board.due, board.due_total_cents) == ([], 0)
     assert [row.name for row in board.fixed_costs.rows] == ["Rent", "Sofa"]
     assert board.debts == [("Sofa", 120_000)]
@@ -289,38 +290,62 @@ def test_paid_off_debt_is_absent_from_due_but_listed_with_nothing_left(
     assert board.debts_total_cents == 300_000
 
 
-def test_variable_range_is_scaled_to_the_window_days(conn: sqlite3.Connection) -> None:
+def _three_months_of_spending(conn: sqlite3.Connection) -> None:
+    # Salary months for day 26 (as on the Monthly page), all complete by the
+    # balance date: [05-26,06-25] 31d, [06-26,07-23] 28d, [07-24,08-25] 33d.
+    # Groceries spends 300, 100 and 200 cents a day in them; Dining is
+    # `occasional`, so its debits must not move the forecast.
+    _insert_tx(conn, "2026-05-26", -9_300, category="Groceries")
+    _insert_tx(conn, "2026-07-01", -2_800, category="Groceries")
+    _insert_tx(conn, "2026-08-01", -6_600, category="Groceries")
+    _insert_tx(conn, "2026-06-10", -50_000, category="Dining")
+    _insert_tx(conn, "2026-08-10", -40_000, category="Dining")
+
+
+def test_lights_on_forecast_is_scaled_to_the_window_days(conn: sqlite3.Connection) -> None:
     # _configured pins the balance to 2026-09-08, so the window
     # [2026-09-09, 2026-09-24] up to payday is 16 days long.
     _configured(conn, 100_000, as_of=date(2026, 9, 8))
-    # The 6 most recent complete salary cycles before TODAY (2026-09-10) are,
-    # oldest to newest: 03-01 [02-26,03-25] 28d, 04-01 [03-26,04-23] 29d,
-    # 05-01 [04-24,05-25] 32d, 06-01 [05-26,06-25] 31d, 07-01 [06-26,07-23]
-    # 28d, 08-01 [07-24,08-25] 33d. One Groceries debit per cycle, each sized
-    # cycle length x 100 x m (m = 1..6, newest to oldest), scales to 16 days
-    # as 1600*m: 1600, 3200, 4800, 6400, 8000, 9600.
-    _insert_tx(conn, "2026-08-01", -3_300, category="Groceries")
-    _insert_tx(conn, "2026-07-01", -5_600, category="Groceries")
-    _insert_tx(conn, "2026-06-01", -9_300, category="Groceries")
-    _insert_tx(conn, "2026-05-01", -12_800, category="Groceries")
-    _insert_tx(conn, "2026-04-01", -14_500, category="Groceries")
-    _insert_tx(conn, "2026-03-01", -16_800, category="Groceries")
-    # A 7th, older debit sitting in the cycle before the 6-cycle history
-    # window (HISTORY_CYCLES = 6): it must be ignored, not just clamped.
-    _insert_tx(conn, "2026-01-26", -310_000, category="Groceries")
+    _monthly(conn, "Gym", 15, 3_000)
+    _three_months_of_spending(conn)
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
-    assert board.variable == VariableForecast(3_600, 7_600, (CategorySpend("Groceries", 5_600),), 6)
-    assert board.projection == Projection(92_400, 96_400)
+    # Expected: 18,700 cents over 92 days x 16 days = 3,252.17 -> 3,252.
+    # Range: the lowest and highest daily average (100, 300) x 16 days.
+    assert board.window_days == 16
+    assert board.lights_on is not None
+    assert (board.lights_on.expected_cents, board.lights_on.low_cents) == (3_252, 1_600)
+    assert board.lights_on.high_cents == 4_800
+    assert board.lights_on.by_category == (CategoryExpected("Groceries", 3_252),)
+    assert len(board.lights_on.months_used) == 3
+    # 100,000 balance - 3,000 due - the lights-on range.
+    assert board.projection == Projection(92_200, 95_400)
+    assert board.expected_cents == 100_000 - 3_000 - 3_252
+    assert board.lights_on_categories == ("Groceries",)
+    assert board.occasional_categories == ("Dining",)
 
 
-def test_fewer_than_three_cycles_give_no_variable_range(conn: sqlite3.Connection) -> None:
+def test_no_lights_on_category_forecasts_nothing(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000, as_of=date(2026, 9, 8))
+    _monthly(conn, "Gym", 15, 3_000)
+    _three_months_of_spending(conn)
+
+    board = load_dashboard(conn, {"Dining": "occasional", "Groceries": "fixed"}, TODAY)
+
+    assert board.lights_on_categories == ()
+    assert board.projection == Projection(97_000, 97_000)
+    assert board.expected_cents == 97_000
+
+
+def test_no_complete_month_gives_no_lights_on_forecast(conn: sqlite3.Connection) -> None:
     _configured(conn, 100_000)
     _monthly(conn, "Gym", 15, 3_000)
+    # The first booking falls inside [07-24, 08-25], so no month is complete.
     _insert_tx(conn, "2026-07-27", -5_000, category="Groceries")
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
-    assert board.variable is None
+    assert board.lights_on is None
     assert board.projection == Projection(97_000, 97_000)
+    assert board.expected_cents == 97_000

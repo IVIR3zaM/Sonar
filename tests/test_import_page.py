@@ -104,9 +104,10 @@ def test_nav_links_to_import_page(tmp_path) -> None:
 def test_upload_reports_per_file_uncategorized_from_tmp_toml(tmp_path) -> None:
     content = FIXTURE.read_bytes()
     db_path = tmp_path / "t.db"
-    # Never the shipped src/sonar/categories.toml: a fake rule matching one
-    # of the fixture's counterparties, so exactly one row of the fixture's
-    # 7 gets categorized and the rest stay uncategorized.
+    # Tests seed their own fake taxonomy (categories live only in the DB,
+    # N11): a fake rule matching one of the fixture's counterparties, so
+    # exactly one row of the fixture's 7 gets categorized and the rest stay
+    # uncategorized.
     seed(
         db_path,
         """

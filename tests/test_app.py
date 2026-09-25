@@ -10,8 +10,8 @@ from sonar.db import apply_migrations
 from sonar.taxonomy_store import add_category, add_rule
 from tests.seed import seed
 
-# Never the shipped src/sonar/categories.toml: tests seed their own fake
-# taxonomy so they don't depend on (or break from editing) the real rules.
+# Tests seed their own fake taxonomy (categories live only in the DB, N11)
+# so they don't depend on (or break from editing) anyone's real rules.
 FAKE_TOML = """
 [[category]]
 name = "Rent"

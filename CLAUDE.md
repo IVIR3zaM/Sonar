@@ -14,6 +14,7 @@ uv run sonar         # Start the app (http://127.0.0.1:8000)
 uv run pytest        # Run tests
 uv run ruff check .  # Check style and lint
 uv run ruff format --check .  # Check formatting
+uv run sonar import-categories data/categories.toml  # One-off: load the owner's local rules into the DB
 ```
 
 ## Layout
@@ -95,10 +96,35 @@ Use these two skills, not the global `graph-plan` skill.
 
 ## Categorization workflow
 
-1. Edit `src/sonar/categories.toml`: add or extend categories (income/fixed/variable/transfer) and ordered rules.
-2. Rules match on counterparty or purpose text (case-insensitive substring or regex), optionally with amount sign, absolute amount range, IBAN, or creditor ID; first match wins.
-3. Add one test case per new rule to `tests/test_rules_table.py` with fake strings around the matched keyword.
-4. Rules may use real counterparty names and IBANs (the owner's choice); tests never do, they use fake strings.
-5. Run `uv run pytest` and touch nothing else.
-6. Reply in at most 5 lines listing the new rules.
-7. Handle it directly in the main session, without the agent graph.
+Categories and rules live only in the DB (N11); nothing here edits a file.
+
+1. **Trigger:** a pasted export starting with `HEADER` (`uncategorized_export.py:21`), or an owner request to categorize.
+2. **Use the running app:** `curl -s http://127.0.0.1:8000/api/categories`; if it doesn't answer, start `uv run sonar` in the background (stop it at the end if you started it).
+3. **Read:** `GET /api/categories`, `GET /api/rules`, `GET /api/uncategorized`.
+4. **Propose:** the exact category adds/edits/removes and rule adds/edits/removes (category name and group; rule fields and position; first match wins). Ask the owner to confirm. Write nothing before confirmation.
+5. **Write:** after confirmation, call the endpoints below with `curl -s -X POST -H 'Content-Type: application/json' -d '{...}' ...` (PUT/DELETE the same way). Stop and report on any 4xx. Every write re-applies rules and re-runs recurring detection.
+6. **Reply** in at most 5 lines: the changes made and the uncategorized count before and after.
+7. Edit no repo file, add no tests for rules, never write real names, IBANs or creditor IDs into a tracked file (they live only in the local DB). Handle it in the main session, without the agent graph.
+
+Endpoints (all under `/api`, `Content-Type: application/json`):
+
+| Method | Path | Body fields |
+|---|---|---|
+| GET | `/categories` | - |
+| POST | `/categories` | `name`, `group` |
+| PUT | `/categories/{id}` | `name`, `group` |
+| DELETE | `/categories/{id}` | - |
+| GET | `/rules` | - |
+| POST | `/rules` | `category`, `counterparty`, `counterparty_regex`, `purpose`, `purpose_regex`, `sign`, `iban`, `creditor_id`, `min_amount`, `max_amount`, `position` |
+| PUT | `/rules/{id}` | same fields as POST `/rules` |
+| DELETE | `/rules/{id}` | - |
+| POST | `/rules/{id}/move` | `position` |
+| GET | `/uncategorized` | - |
+
+The five `group` values, and what each means for the forecast:
+
+- `income`: money earned; not spending.
+- `transfer`: money moved between the owner's own accounts; not spending.
+- `fixed`: recurring and hard to change (the dashboard's Fixed costs forecast).
+- `lights_on`: reducible but never zero -- groceries, transport, shopping (the Keep the lights on page).
+- `occasional`: one-off spending -- fees, education, donations, health, dining and similar.

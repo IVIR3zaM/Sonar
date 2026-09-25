@@ -1,5 +1,8 @@
 samples/
 data/
+# Local categorization files hold personal data; import them with
+# `uv run sonar import-categories`.
+categories*.toml
 .venv/
 __pycache__/
 *.pyc

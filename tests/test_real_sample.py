@@ -23,13 +23,16 @@ from sonar.taxonomy_store import load_stored_taxonomy, replace_taxonomy
 REPO_ROOT = Path(__file__).parent.parent
 MIGRATIONS_DIR = REPO_ROOT / "src" / "sonar" / "migrations"
 SAMPLES_DIR = REPO_ROOT / "samples"
-REAL_CATEGORIES_TOML = REPO_ROOT / "src" / "sonar" / "categories.toml"
+REAL_CATEGORIES_TOML = REPO_ROOT / "data" / "categories.toml"
 
 
 @pytest.fixture
 def conn() -> sqlite3.Connection:
     # The DB's own stored taxonomy (N05), seeded once here from the owner's
-    # real categories.toml, the same path the `import-categories` CLI takes.
+    # local data/categories.toml (N11; untracked, imported with
+    # `uv run sonar import-categories`), the same path the CLI takes.
+    if not REAL_CATEGORIES_TOML.exists():
+        pytest.skip(f"{REAL_CATEGORIES_TOML} not found; run import-categories first")
     conn = sqlite3.connect(":memory:")
     apply_migrations(conn, MIGRATIONS_DIR)
     replace_taxonomy(conn, load_taxonomy(REAL_CATEGORIES_TOML))

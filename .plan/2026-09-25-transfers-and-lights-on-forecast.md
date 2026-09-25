@@ -13,8 +13,8 @@ budgets: 2 tries per brief · 2 replans per node
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | SPEC amendments | exec | - | sonnet/haiku | 1 | 0 | DONE | |
 | N02 | Category groups model | exec | - | sonnet/sonnet | 1 | 1 | DONE | |
-| N03 | Taxonomy store and generic seed | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
-| N04 | Lights-on pure module | exec | N02 | opus/opus | 0 | 0 | TODO | |
+| N03 | Taxonomy store and generic seed | exec | N02 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N04 | Lights-on pure module | exec | N02 | opus/opus | 1 | 0 | DONE | |
 | N05 | App and CLI read the DB taxonomy | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | Monthly: group totals and net transfers | exec | N02,N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | Dashboard forecast in two parts | exec | N04,N05 | opus/opus | 0 | 0 | TODO | |

@@ -54,7 +54,16 @@ from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
 from sonar.spending_groups import LABELS as GROUP_LABELS
 from sonar.spending_groups import TRANSFER
-from sonar.taxonomy_service import reapply_stored_taxonomy
+from sonar.taxonomy_service import (
+    GROUP_ORDER,
+    CategoryNotFound,
+    TaxonomyError,
+    reapply_stored_taxonomy,
+)
+from sonar.taxonomy_service import add_category as add_category_service
+from sonar.taxonomy_service import delete_category as delete_category_service
+from sonar.taxonomy_service import list_categories as list_categories_view
+from sonar.taxonomy_service import update_category as update_category_service
 from sonar.taxonomy_store import load_stored_taxonomy
 from sonar.uncategorized_export import build_categorization_request
 
@@ -201,6 +210,12 @@ def create_app(
             request, "error.html", {"message": f"No such debt: {exc}"}, status_code=404
         )
 
+    @app.exception_handler(CategoryNotFound)
+    async def category_not_found_handler(request: Request, exc: CategoryNotFound) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request, "error.html", {"message": f"No such category: {exc}"}, status_code=404
+        )
+
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> HTMLResponse:
         # Only a 404 gets the styled page; other statuses (e.g. 405) keep
@@ -292,6 +307,42 @@ def create_app(
             request,
             "settings.html",
             {"settings": settings, "balance": balance, "today": today(), "error": error},
+            status_code=status_code,
+        )
+
+    def _render_categories_page(
+        request: Request, status_code: int = 200, errors: dict | None = None
+    ) -> HTMLResponse:
+        # Shared by the GET route and every /categories POST error path, so a
+        # 400 re-render always shows the same page a fresh GET would.
+        errors = errors or {}
+        conn = connect(db_path)
+        try:
+            categories = list_categories_view(conn)
+        finally:
+            conn.close()
+        rows_by_group: dict[str, list[dict]] = {group: [] for group in GROUP_ORDER}
+        for category in categories:
+            rows_by_group[category.group].append(
+                {
+                    "category": category,
+                    "edit_error": _row_error(errors, "edit", category.id),
+                    "delete_error": _row_error(errors, "delete", category.id),
+                }
+            )
+        sections = [
+            {"group": group, "label": GROUP_LABELS[group], "rows": rows_by_group[group]}
+            for group in GROUP_ORDER
+        ]
+        group_options = [(group, GROUP_LABELS[group]) for group in GROUP_ORDER]
+        return templates.TemplateResponse(
+            request,
+            "categories.html",
+            {
+                "sections": sections,
+                "group_options": group_options,
+                "add_error": errors.get("add"),
+            },
             status_code=status_code,
         )
 
@@ -738,6 +789,67 @@ def create_app(
         finally:
             conn.close()
         return RedirectResponse("/settings", status_code=303)
+
+    @app.get("/categories", response_class=HTMLResponse)
+    async def categories_page(request: Request) -> HTMLResponse:
+        return _render_categories_page(request)
+
+    @app.post("/categories")
+    async def add_category_route(
+        request: Request, name: str = Form(...), group: str = Form(...)
+    ) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            add_category_service(conn, today(), name, group)
+        except TaxonomyError as error:
+            return _render_categories_page(
+                request,
+                status_code=400,
+                errors={
+                    "add": {"message": error.message, "fields": {"name": name, "group": group}}
+                },
+            )
+        finally:
+            conn.close()
+        return RedirectResponse("/categories", status_code=303)
+
+    @app.post("/categories/{id}/edit")
+    async def edit_category_route(
+        request: Request, id: int, name: str = Form(...), group: str = Form(...)
+    ) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            update_category_service(conn, today(), id, name, group)
+        except TaxonomyError as error:
+            return _render_categories_page(
+                request,
+                status_code=400,
+                errors={
+                    "edit": {
+                        "id": id,
+                        "message": error.message,
+                        "fields": {"name": name, "group": group},
+                    }
+                },
+            )
+        finally:
+            conn.close()
+        return RedirectResponse("/categories", status_code=303)
+
+    @app.post("/categories/{id}/delete")
+    async def delete_category_route(request: Request, id: int) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            delete_category_service(conn, today(), id)
+        except TaxonomyError as error:
+            return _render_categories_page(
+                request,
+                status_code=400,
+                errors={"delete": {"id": id, "message": error.message, "fields": {}}},
+            )
+        finally:
+            conn.close()
+        return RedirectResponse("/categories", status_code=303)
 
     return app
 

@@ -40,6 +40,10 @@
   </form>
   {% endcall %}
 
+  {% call card(title="Categories and rules", subtitle="Add, edit or delete categories and the rules that assign them.", id="categories-card") %}
+  <a href="/categories" class="text-sm font-medium text-accent hover:underline">Manage categories and rules &rarr;</a>
+  {% endcall %}
+
   {% call card(title="Balance", subtitle="A manual entry wins over an imported balance on the same date", id="balance-card") %}
   <div id="current-balance" class="mb-5">
     {% if balance %}

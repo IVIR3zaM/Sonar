@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
+
+{% set section_title = "text-sm font-semibold text-ink" %}
+{% set form_grid = "mt-3 grid grid-cols-2 gap-3" %}
+
+{% macro form_error(err) %}
+{%- if err %}
+<div id="form-error" role="alert" tabindex="-1" class="col-span-2 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ err.message }}</div>
+{%- endif %}
+{% endmacro %}
+
+{% block content %}
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Categories</h1>
+  <p class="mt-1 text-sm text-ink-muted">Categories group your transactions; rules (below) assign a category automatically.</p>
+</header>
+
+<div class="space-y-6">
+  {% call card(id="categories-card") %}
+  <div class="space-y-6">
+    {% for section in sections %}
+    <section id="group-{{ section.group }}">
+      <h2 class="{{ section_title }}">{{ section.label }}</h2>
+      {% if section.rows %}
+      <ul class="mt-2 divide-y divide-line">
+        {% for row in section.rows %}
+        {% set category = row.category %}
+        {% set has_error = row.edit_error or row.delete_error %}
+        {% set drawer_id = "drawer-category-" ~ category.id %}
+        <li data-category-id="{{ category.id }}" class="py-3">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <span data-field="name" class="font-medium text-ink">{{ category.name }}</span>
+              {{ badge(section.label, attrs={"data-field": "group"}) }}
+              <span data-field="rule_count" class="text-xs text-ink-muted">{{ category.rule_count }} rule{{ "s" if category.rule_count != 1 else "" }}</span>
+            </div>
+            <button type="button" data-drawer-toggle aria-controls="{{ drawer_id }}" aria-expanded="{{ 'true' if has_error else 'false' }}" aria-label="Edit {{ category.name }}"
+                    class="group inline-flex cursor-pointer select-none items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-accent hover:bg-accent-soft">
+              Edit
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </div>
+          <div data-drawer-for="{{ category.id }}" id="{{ drawer_id }}"{% if not has_error %} hidden{% endif %} class="mt-3 rounded-control bg-surface-muted/50 p-4">
+            <form method="post" action="/categories/{{ category.id }}/edit" class="{{ form_grid }}">
+              {{ form_error(row.edit_error) }}
+              <div class="col-span-2">{{ field("name", "Name", value=(row.edit_error.fields.name if row.edit_error else category.name), id="edit-category-name-" ~ category.id, required=true) }}</div>
+              <div class="col-span-2">{{ field("group", "Group", value=(row.edit_error.fields.group if row.edit_error else category.group), id="edit-category-group-" ~ category.id, options=group_options, required=true) }}</div>
+              <div class="col-span-2">{{ button("Save", size="sm") }}</div>
+            </form>
+            <form method="post" action="/categories/{{ category.id }}/delete" class="mt-4"
+                  hx-post="/categories/{{ category.id }}/delete" hx-confirm="Delete &quot;{{ category.name }}&quot;? This cannot be undone."
+                  hx-target="#main" hx-select="#main" hx-swap="outerHTML">
+              {{ form_error(row.delete_error) }}
+              {{ button("Delete", variant="danger", size="sm") }}
+            </form>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="mt-2 text-sm text-ink-muted">No categories yet.</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% endcall %}
+
+  {% call card(title="Add a category", id="add-category-card") %}
+  <form id="add-category-form" method="post" action="/categories" class="space-y-4">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {{ form_error(add_error) }}
+      {{ field("name", "Name", value=(add_error.fields.name if add_error else ""), required=true, attrs={"placeholder": "e.g. Pets"}) }}
+      {{ field(
+        "group",
+        "Group",
+        value=(add_error.fields.group if add_error else ""),
+        options=group_options,
+        required=true,
+        help="Fixed payments are forecast as they fall due. Keep the lights on is forecast from the 3-month daily average. Occasional payments are shown on Monthly but not forecast. Income and transfers are not spending."
+      ) }}
+    </div>
+    <div>{{ button("Add category") }}</div>
+  </form>
+  {% endcall %}
+
+  {#- N09 adds the Rules card (#rules) here. -#}
+</div>
+<script>
+  (function () {
+    /* eslint-disable no-var */
+    // Same drawer toggle as the Fixed payments page: a drawer starts hidden
+    // unless its own form has a server-rendered error to show.
+    document.querySelectorAll("[data-drawer-toggle]").forEach(function (toggle) {
+      toggle.addEventListener("click", function () {
+        var drawerId = toggle.getAttribute("aria-controls");
+        var drawer = document.getElementById(drawerId);
+        if (!drawer) return;
+        var expanded = toggle.getAttribute("aria-expanded") === "true";
+        var next = String(!expanded);
+        toggle.setAttribute("aria-expanded", next);
+        drawer.hidden = expanded;
+      });
+    });
+  })();
+</script>
+{% endblock %}

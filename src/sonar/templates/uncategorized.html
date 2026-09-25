@@ -28,7 +28,8 @@
     {% endcall %}
   </header>
 
-  {% call card(title="Transactions", subtitle="Waiting for a matching rule in categories.toml.") %}
+  {% call card(title="Transactions") %}
+    <p class="mb-4 -mt-1 text-xs text-ink-muted">Waiting for a matching rule. <a href="/categories" class="font-medium text-accent hover:underline">Add a rule on the Categories page</a>.</p>
     {% if transactions %}
     <div class="overflow-x-auto">
       <table id="transactions" class="w-full min-w-[36rem] border-collapse text-sm">

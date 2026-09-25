@@ -14,7 +14,12 @@ from sonar.variable_forecast import (
     variable_forecast,
 )
 
-TYPES = {"groceries": "variable", "dining": "variable", "gifts": "variable", "rent": "fixed"}
+TYPES = {
+    "groceries": "lights_on",
+    "dining": "lights_on",
+    "gifts": "occasional",
+    "rent": "fixed",
+}
 
 # Four contiguous 30-day cycles, oldest first, so scaling to 15 days halves each total.
 C1 = Cycle(date(2026, 5, 1), date(2026, 5, 30))

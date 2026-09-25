@@ -8,7 +8,12 @@ from sonar.transactions import ParsedTransaction
 
 TODAY = date(2026, 9, 23)
 CREDITOR = "DE98ZZZ09999999999"
-TYPES = {"Utilities": "fixed", "Groceries": "variable", "Own transfers": "transfer"}
+TYPES = {
+    "Utilities": "fixed",
+    "Groceries": "lights_on",
+    "Dining": "occasional",
+    "Own transfers": "transfer",
+}
 
 
 def _tx(
@@ -132,8 +137,8 @@ def test_two_annual_payments_are_enough_evidence():
 MONTHLY = (date(2026, 7, 1), date(2026, 8, 1), date(2026, 9, 1))
 
 
-@pytest.mark.parametrize("category", ["Groceries", "Own transfers"])
-def test_variable_and_transfer_categories_are_excluded(category):
+@pytest.mark.parametrize("category", ["Groceries", "Dining", "Own transfers"])
+def test_lights_on_occasional_and_transfer_categories_are_excluded(category):
     assert _detect(_rows(*MONTHLY, category=category)) == []
 
 

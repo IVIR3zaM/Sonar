@@ -6,7 +6,14 @@ from datetime import date
 
 import pytest
 
-from sonar.categorize import categorize, load_taxonomy, match_rule, parse_taxonomy
+from sonar.categorize import (
+    Rule,
+    categorize,
+    load_taxonomy,
+    match_rule,
+    parse_taxonomy,
+    validate_rule,
+)
 from sonar.transactions import ParsedTransaction
 
 
@@ -36,11 +43,11 @@ def test_first_match_wins() -> None:
         """
         [[category]]
         name = "Groceries"
-        type = "variable"
+        type = "lights_on"
 
         [[category]]
         name = "Shopping"
-        type = "variable"
+        type = "lights_on"
 
         [[rule]]
         category = "Groceries"
@@ -60,7 +67,7 @@ def test_substring_match_is_case_insensitive() -> None:
         """
         [[category]]
         name = "Groceries"
-        type = "variable"
+        type = "lights_on"
 
         [[rule]]
         category = "Groceries"
@@ -146,7 +153,7 @@ def test_no_match_returns_none() -> None:
         """
         [[category]]
         name = "Groceries"
-        type = "variable"
+        type = "lights_on"
 
         [[rule]]
         category = "Groceries"
@@ -185,7 +192,7 @@ def test_rule_without_text_condition_raises() -> None:
             """
             [[category]]
             name = "Groceries"
-            type = "variable"
+            type = "lights_on"
 
             [[rule]]
             category = "Groceries"
@@ -200,7 +207,7 @@ def test_bad_regex_raises() -> None:
             """
             [[category]]
             name = "Groceries"
-            type = "variable"
+            type = "lights_on"
 
             [[rule]]
             category = "Groceries"
@@ -263,7 +270,7 @@ def test_bad_amount_range_raises(bounds: str, message: str) -> None:
             f"""
 [[category]]
 name = "Groceries"
-type = "variable"
+type = "lights_on"
 
 [[rule]]
 category = "Groceries"
@@ -279,7 +286,7 @@ def test_bad_sign_raises() -> None:
             """
             [[category]]
             name = "Groceries"
-            type = "variable"
+            type = "lights_on"
 
             [[rule]]
             category = "Groceries"
@@ -295,7 +302,7 @@ def test_load_taxonomy_reads_a_file(tmp_path) -> None:
         """
         [[category]]
         name = "Groceries"
-        type = "variable"
+        type = "lights_on"
 
         [[rule]]
         category = "Groceries"
@@ -304,5 +311,46 @@ def test_load_taxonomy_reads_a_file(tmp_path) -> None:
         encoding="utf-8",
     )
     taxonomy = load_taxonomy(toml_path)
-    assert taxonomy.categories == {"Groceries": "variable"}
+    assert taxonomy.categories == {"Groceries": "lights_on"}
     assert categorize(_tx(counterparty="Local Market"), taxonomy.rules) == "Groceries"
+
+
+def test_parse_taxonomy_accepts_lights_on_and_occasional_types() -> None:
+    taxonomy = parse_taxonomy(
+        """
+        [[category]]
+        name = "Transport"
+        type = "lights_on"
+
+        [[category]]
+        name = "Dining"
+        type = "occasional"
+        """
+    )
+    assert taxonomy.categories == {"Transport": "lights_on", "Dining": "occasional"}
+
+
+def test_legacy_variable_type_maps_by_category_name() -> None:
+    taxonomy = parse_taxonomy(
+        """
+        [[category]]
+        name = "Groceries"
+        type = "variable"
+
+        [[category]]
+        name = "Dining"
+        type = "variable"
+        """
+    )
+    assert taxonomy.categories == {"Groceries": "lights_on", "Dining": "occasional"}
+
+
+def test_validate_rule_matches_the_toml_path() -> None:
+    categories = {"Groceries": "lights_on"}
+    raw = {"category": "Groceries", "counterparty": "market"}
+    assert validate_rule(raw, categories) == Rule(category="Groceries", counterparty="market")
+
+
+def test_validate_rule_bad_purpose_regex_names_the_field() -> None:
+    with pytest.raises(ValueError, match="bad regex in purpose_regex"):
+        validate_rule({"category": "Groceries", "purpose_regex": "("}, {"Groceries": "lights_on"})

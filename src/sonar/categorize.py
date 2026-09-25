@@ -1,9 +1,11 @@
 """Pure rule engine for categorization (SPEC §5).
 
-Categories and rules live in `categories.toml`. Rules are ordered and the
-first whose conditions all match (AND) wins. Rules are re-applied to every
-stored transaction on each import and at startup, so regexes are compiled
-once here, at parse time, rather than on every match.
+Categories and rules live in the SQLite DB (see taxonomy_store.py); TOML
+parsing here is kept for the one-off `import-categories` CLI command and for
+tests. Rules are ordered and the first whose conditions all match (AND)
+wins. Rules are re-applied to every stored transaction on each import and at
+startup, so regexes are compiled once here, at parse time, rather than on
+every match.
 """
 
 from __future__ import annotations
@@ -13,10 +15,17 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from sonar import spending_groups
 from sonar.transactions import ParsedTransaction
 
-CATEGORY_TYPES = {"income", "fixed", "variable", "transfer"}
+CATEGORY_TYPES = spending_groups.TYPES
 SIGNS = {"debit", "credit"}
+
+# The legacy import path: the owner's categories.toml predates the N02 split
+# and tags every non-income/fixed/transfer category "variable". These three
+# names were "Keep the lights on" spending; everything else was occasional.
+_LEGACY_VARIABLE_TYPE = "variable"
+_LEGACY_LIGHTS_ON_NAMES = frozenset({"Groceries", "Transport", "Shopping"})
 
 
 @dataclass(frozen=True)
@@ -46,7 +55,7 @@ def parse_taxonomy(toml_text: str) -> Taxonomy:
     """Parse `categories.toml` content into a Taxonomy, raising ValueError on a bad schema."""
     data = tomllib.loads(toml_text)
     categories = _parse_categories(data.get("category", []))
-    rules = tuple(_parse_rule(raw, categories) for raw in data.get("rule", []))
+    rules = tuple(validate_rule(raw, categories) for raw in data.get("rule", []))
     return Taxonomy(categories=categories, rules=rules)
 
 
@@ -72,13 +81,24 @@ def _parse_categories(raw_categories: list[dict]) -> dict[str, str]:
     for raw in raw_categories:
         name = raw["name"]
         category_type = raw["type"]
-        if category_type not in CATEGORY_TYPES:
+        if category_type == _LEGACY_VARIABLE_TYPE:
+            category_type = (
+                spending_groups.LIGHTS_ON
+                if name in _LEGACY_LIGHTS_ON_NAMES
+                else spending_groups.OCCASIONAL
+            )
+        elif category_type not in CATEGORY_TYPES:
             raise ValueError(f"category {name!r} has unknown type {category_type!r}")
         categories[name] = category_type
     return categories
 
 
-def _parse_rule(raw: dict, categories: dict[str, str]) -> Rule:
+def validate_rule(raw: dict, categories: dict[str, str]) -> Rule:
+    """Build a `Rule` from a plain mapping of fields.
+
+    Shared by the TOML parser, the DB store and the Categories page/API, so
+    they validate rule input identically.
+    """
     category = raw["category"]
     if category not in categories:
         raise ValueError(f"rule names undefined category {category!r}")
@@ -94,15 +114,8 @@ def _parse_rule(raw: dict, categories: dict[str, str]) -> Rule:
     if sign is not None and sign not in SIGNS:
         raise ValueError(f"rule for {category!r} has unknown sign {sign!r}")
 
-    try:
-        counterparty_regex = (
-            re.compile(counterparty_regex_text, re.IGNORECASE) if counterparty_regex_text else None
-        )
-        purpose_regex = (
-            re.compile(purpose_regex_text, re.IGNORECASE) if purpose_regex_text else None
-        )
-    except re.error as exc:
-        raise ValueError(f"rule for {category!r} has a bad regex: {exc}") from exc
+    counterparty_regex = _compile_regex(counterparty_regex_text, "counterparty_regex", category)
+    purpose_regex = _compile_regex(purpose_regex_text, "purpose_regex", category)
 
     min_amount_cents = _parse_amount_bound(raw, "min_amount_cents", category)
     max_amount_cents = _parse_amount_bound(raw, "max_amount_cents", category)
@@ -126,6 +139,15 @@ def _parse_rule(raw: dict, categories: dict[str, str]) -> Rule:
         min_amount_cents=min_amount_cents,
         max_amount_cents=max_amount_cents,
     )
+
+
+def _compile_regex(text: str | None, field: str, category: str) -> re.Pattern[str] | None:
+    if not text:
+        return None
+    try:
+        return re.compile(text, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError(f"rule for {category!r} has a bad regex in {field}: {exc}") from exc
 
 
 def _parse_amount_bound(raw: dict, key: str, category: str) -> int | None:

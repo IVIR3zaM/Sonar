@@ -13,14 +13,14 @@ from dataclasses import dataclass
 from datetime import date
 from statistics import median_low
 
-from sonar import schedule
+from sonar import schedule, spending_groups
 from sonar.dedup import normalize_text
 from sonar.schedule import TOLERANCE, SchedulePeriod, add_months
 from sonar.transactions import ParsedTransaction
 
 # Shorter intervals need more evidence: two payments a month apart are often chance.
 MIN_PAYMENTS = {1: 3, 2: 3, 3: 3, 6: 2, 12: 2}
-EXCLUDED_TYPES = frozenset({"variable", "transfer"})
+EXCLUDED_TYPES = spending_groups.EXCLUDED_FROM_RECURRENCE
 NAME_LENGTH = 40
 
 Row = tuple[ParsedTransaction, str | None]

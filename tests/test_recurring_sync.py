@@ -13,7 +13,7 @@ from sonar.schedule import SchedulePeriod
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 FITNESS_TYPES = {"Fitness": "fixed"}
-VARIABLE_TYPES = {"Fitness": "variable"}
+LIGHTS_ON_TYPES = {"Fitness": "lights_on"}
 
 
 @pytest.fixture
@@ -96,12 +96,12 @@ def test_edited_payment_keeps_edits_but_last_paid_updates(conn: sqlite3.Connecti
     assert updated.last_paid_date == date(2026, 10, 1)
 
 
-def test_unlocked_series_recategorized_as_variable_is_deleted(conn: sqlite3.Connection) -> None:
+def test_unlocked_series_recategorized_as_lights_on_is_deleted(conn: sqlite3.Connection) -> None:
     _seed_monthly_series(conn)
     sync_detected(conn, FITNESS_TYPES, date(2026, 9, 23))
     assert list_payments(conn) != []
 
-    changed = sync_detected(conn, VARIABLE_TYPES, date(2026, 9, 23))
+    changed = sync_detected(conn, LIGHTS_ON_TYPES, date(2026, 9, 23))
 
     assert changed == 1
     assert list_payments(conn) == []
@@ -148,8 +148,8 @@ def test_dismissed_and_edited_rows_survive_recategorization(conn: sqlite3.Connec
     dismiss(conn, by_name["Gym Inc"].id)
     edit_payment(conn, by_name["Yoga Studio"].id, "Yoga Plus", 3000, 1, 5)
 
-    # Recategorize both series as `variable` -> detection no longer sees either key.
-    sync_detected(conn, {"Fitness": "variable"}, date(2026, 9, 23))
+    # Recategorize both series as `lights_on` -> detection no longer sees either key.
+    sync_detected(conn, {"Fitness": "lights_on"}, date(2026, 9, 23))
     by_name = {p.name: p for p in list_payments(conn, include_dismissed=True)}
     assert by_name["Gym Inc"].status == "dismissed"
     assert by_name["Yoga Plus"].name == "Yoga Plus"

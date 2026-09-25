@@ -16,12 +16,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 
+from sonar import spending_groups
 from sonar.payday import Cycle
 from sonar.transactions import ParsedTransaction
 
 HISTORY_CYCLES = 6
 MIN_CYCLES = 3
-VARIABLE = "variable"
+# Until N07 removes this module: the two groups that replaced the old single type.
+VARIABLE = frozenset({spending_groups.LIGHTS_ON, spending_groups.OCCASIONAL})
 LOW = Fraction(1, 4)
 HIGH = Fraction(3, 4)
 MEDIAN = Fraction(1, 2)
@@ -110,7 +112,7 @@ def _variable_spending(
     for tx, category in rows:
         # Refunds are left out: SPEC §9 forecasts spending, and a refund in
         # one cycle would hide real spending instead of predicting future refunds.
-        if tx.amount_cents >= 0 or category_types.get(category or "") != VARIABLE:
+        if tx.amount_cents >= 0 or category_types.get(category or "") not in VARIABLE:
             continue
         for index, cycle in enumerate(cycles):
             if cycle.start <= tx.booking_date <= cycle.end:

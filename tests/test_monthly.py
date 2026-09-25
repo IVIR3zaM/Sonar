@@ -20,7 +20,7 @@ from sonar.monthly import (
 from sonar.transactions import ParsedTransaction
 
 CATEGORY_TYPES = {
-    "Groceries": "variable",
+    "Groceries": "lights_on",
     "Housing": "fixed",
     "Own transfers": "transfer",
     "Salary": "income",
@@ -72,7 +72,7 @@ def test_totals_per_category_largest_first_with_uncategorized_as_none():
 
     assert result.by_category == (
         CategoryTotal("Housing", "fixed", -100_000, 1),
-        CategoryTotal("Groceries", "variable", -7_500, 2),
+        CategoryTotal("Groceries", "lights_on", -7_500, 2),
         CategoryTotal(None, None, -2_000, 1),
     )
     assert result.spent_cents == -109_500
@@ -216,7 +216,7 @@ def test_parse_month_rejects_anything_else(text):
 
 
 def test_a_category_total_has_a_filter_key_even_when_uncategorized():
-    assert CategoryTotal("Groceries", "variable", -1_000, 1).key == "Groceries"
+    assert CategoryTotal("Groceries", "lights_on", -1_000, 1).key == "Groceries"
     assert CategoryTotal(None, None, -1_000, 1).key == UNCATEGORIZED
 
 

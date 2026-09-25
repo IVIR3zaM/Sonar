@@ -24,7 +24,7 @@ from sonar.variable_forecast import CategorySpend, VariableForecast
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 10)
 PAYDAY = date(2026, 9, 25)
-CATEGORY_TYPES = {"Groceries": "variable", "Rent": "fixed"}
+CATEGORY_TYPES = {"Groceries": "lights_on", "Rent": "fixed"}
 
 
 @pytest.fixture

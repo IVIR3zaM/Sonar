@@ -10,12 +10,13 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sonar import charts
+from sonar.api import build_api_router
 from sonar.categorize import Rule
 from sonar.categorizing import (
     transactions_with_category,
@@ -203,6 +204,7 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.include_router(build_api_router(db_path, today))
 
     @app.exception_handler(PaymentNotFound)
     async def payment_not_found_handler(request: Request, exc: PaymentNotFound) -> HTMLResponse:
@@ -229,11 +231,15 @@ def create_app(
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> HTMLResponse:
+    async def http_exception_handler(
+        request: Request, exc: StarletteHTTPException
+    ) -> HTMLResponse | JSONResponse:
         # Only a 404 gets the styled page; other statuses (e.g. 405) keep
         # FastAPI's own response instead of hiding them behind "Page not found".
         if exc.status_code == 404:
             message = "That page or item does not exist."
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"error": message}, status_code=404)
             return templates.TemplateResponse(
                 request, "error.html", {"message": message}, status_code=404
             )

@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import date
 
 from sonar.transactions import ParsedTransaction
-from sonar.uncategorized_export import HEADER, build_categorization_request
+from sonar.uncategorized_export import HEADER, build_categorization_request, group_uncategorized
 
 
 def _tx(**overrides: object) -> ParsedTransaction:
@@ -107,3 +107,32 @@ def test_groups_sorted_by_count_desc_then_key() -> None:
     lines = request.splitlines()[1:]
     assert lines[0].startswith("2x apple store |")
     assert lines[1].startswith("1x zebra shop |")
+
+
+def test_group_uncategorized_same_order_and_counts_as_the_text_export() -> None:
+    txs = [
+        _tx(counterparty="Zebra Shop"),
+        _tx(counterparty="Apple Store"),
+        _tx(counterparty="Apple Store"),
+    ]
+
+    groups = group_uncategorized(txs)
+
+    assert [(g.key, g.count) for g in groups] == [("apple store", 2), ("zebra shop", 1)]
+
+
+def test_group_uncategorized_fields() -> None:
+    txs = [
+        _tx(amount_cents=-1234, booking_date=date(2024, 3, 1), purpose="First purpose"),
+        _tx(amount_cents=4500, booking_date=date(2024, 5, 10), purpose="Second purpose"),
+    ]
+
+    (group,) = group_uncategorized(txs)
+
+    assert group.key == "example bakery"
+    assert group.count == 2
+    assert group.min_amount == "-12.34"
+    assert group.max_amount == "45.00"
+    assert group.first_date == date(2024, 3, 1)
+    assert group.last_date == date(2024, 5, 10)
+    assert group.sample_purposes == ["First purpose", "Second purpose"]

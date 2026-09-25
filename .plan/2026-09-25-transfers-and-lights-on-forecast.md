@@ -20,7 +20,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N07 | Dashboard forecast in two parts | exec | N04,N05 | opus/opus | 1 | 1 | DONE | |
 | N08 | Categories page: categories | exec | N03,N05,N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | Categories page: rules | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
-| N17 | Categorization JSON API | exec | N09 | sonnet/sonnet | 0 | 0 | TODO | |
+| N17 | Categorization JSON API | exec | N09 | sonnet/sonnet | 2 | 0 | DONE | |
 | N10 | Keep the lights on page | exec | N04,N07,N09,N17 | sonnet/sonnet | 0 | 0 | TODO | |
 | N11 | Retire categories.toml | exec | N05,N09,N17 | sonnet/sonnet | 0 | 0 | TODO | |
 | N12 | Rebuild CSS | exec | N06,N07,N08,N09,N10 | haiku/haiku | 0 | 0 | TODO | |
@@ -192,7 +192,7 @@ Done when:
 - C5 no test contains a real name, IBAN or creditor ID; `__main__.py` still binds 127.0.0.1 and no auth was added
 - C6 the verify command exits 0
 Findings:
-- none
+- try 1: C2 src/sonar/api.py:92,101 - `grep -nE "taxonomy_store|parse_cents|re\.compile|validate|reapply_rules|sync_demand" src/sonar/api.py` is not empty: it matches the docstring word "validated" (line 92) and `model_cls.model_validate(payload)` (line 101) - expected the command to find nothing
 
 ### N10 Keep the lights on page
 Do: Add GET `/lights-on` rendering `lights_on.html`: header with the Keep-the-lights-on categories (link to /categories to change them), a stat `#daily-average` for the current 3-month daily average, a server-rendered SVG line chart `#lights-on-chart` of the daily average per month (up to the latest 24 complete months, oldest left) with one line for the Keep-the-lights-on total, one per its category and one muted line "Occasional payments (not forecast)", plus a legend, and a table `#lights-on-table` month × (Keep-the-lights-on total, each of its categories, Occasional) of daily averages. Months are complete months up to the latest booking date, from N04; the route loads the DB taxonomy like `/monthly`. Add a `line_chart` macro in components/charts.html backed by a small pure helper in charts.py (points for several series on one shared scale, reusing `_scale` at charts.py:59 if it fits), with `<title>` and accessible labels (SPEC §12). Add the nav item ("/lights-on", "Keep the lights on") after Monthly spending with a new icon in base.html:1-23. Empty states: no `lights_on` category shows `#lights-on-no-categories` linking to /categories while the chart and table still show Occasional; no complete month shows `#lights-on-empty`. Reuse existing classes where possible; do not rebuild CSS.

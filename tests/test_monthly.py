@@ -76,7 +76,10 @@ def test_totals_per_category_largest_first_with_uncategorized_as_none():
         CategoryTotal(None, None, -2_000, 1),
     )
     assert result.spent_cents == -109_500
-    assert result.transfers_cents == 0
+    assert result.transfers_net_cents == 0
+    assert result.groups.fixed_cents == -100_000
+    assert result.groups.lights_on_cents == -7_500
+    assert result.groups.uncategorized_cents == -2_000
 
 
 def test_transfers_are_listed_but_kept_out_of_the_spent_total():
@@ -89,7 +92,26 @@ def test_transfers_are_listed_but_kept_out_of_the_spent_total():
 
     assert [c.category for c in result.by_category] == ["Own transfers", "Groceries"]
     assert result.spent_cents == -3_000
-    assert result.transfers_cents == -50_000
+    assert result.transfers_net_cents == -50_000
+
+
+def test_transfers_net_cents_nets_a_transfer_credit_against_a_transfer_debit():
+    rows = [
+        (_tx(date(2026, 9, 1), -100_000, "Own account"), "Own transfers"),
+        (_tx(date(2026, 9, 10), 90_000, "Own account"), "Own transfers"),
+        (_tx(date(2026, 9, 5), -1_000), "Groceries"),
+        (_tx(date(2026, 8, 20), 90_000, "Own account"), "Own transfers"),  # outside the period
+        (_tx(date(2026, 9, 25), 300_000), "Salary"),  # income, not a transfer
+    ]
+
+    result = monthly_spending(rows, CATEGORY_TYPES, SEPTEMBER)
+
+    assert result.transfers_net_cents == -10_000
+    assert result.spent_cents == -1_000
+    assert result.groups.lights_on_cents == -1_000
+    assert result.groups.fixed_cents == 0
+    assert result.groups.occasional_cents == 0
+    assert result.groups.uncategorized_cents == 0
 
 
 def test_a_month_without_payments_is_empty():

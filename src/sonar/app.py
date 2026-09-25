@@ -52,6 +52,8 @@ from sonar.recurring import (
 )
 from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
+from sonar.spending_groups import LABELS as GROUP_LABELS
+from sonar.spending_groups import TRANSFER
 from sonar.taxonomy_service import reapply_stored_taxonomy
 from sonar.taxonomy_store import load_stored_taxonomy
 from sonar.uncategorized_export import build_categorization_request
@@ -141,12 +143,22 @@ def _friendly(error: ValueError) -> str:
     return text
 
 
+def _group_label(category_type: str | None) -> str | None:
+    """The N02 spending-group label for a category row's badge; none for
+    transfer and uncategorized rows, which the Monthly page badges skip.
+    """
+    if category_type is None or category_type == TRANSFER:
+        return None
+    return GROUP_LABELS.get(category_type)
+
+
 templates.env.filters["money"] = _format_cents
 templates.env.filters["percent"] = _format_percent
 templates.env.filters["eur"] = eur
 templates.env.filters["date"] = display_date
 templates.env.filters["cadence"] = cadence
 templates.env.filters["days_until"] = days_until
+templates.env.filters["group_label"] = _group_label
 # Chart macros call the pure geometry in sonar.charts rather than doing math in Jinja.
 templates.env.globals["charts"] = charts
 

@@ -7,9 +7,12 @@ pays for, so a salary paid on 26 Aug starts "September". Without a salary day,
 a month is the calendar month.
 
 A payment is any debit. Transfer categories (money moved to our own or the
-family's accounts) are listed like any other, but kept out of the spent total,
-since that money is moved rather than spent. Credits (salary, refunds) are not
-payments and are left out. Pure functions only.
+family's accounts) are listed like any other debit category, but kept out of
+the spent total, since that money is moved rather than spent.
+`transfers_net_cents` nets those debits against transfer credits (money moved
+back) for the whole period, even though only debits are ever listed as
+payments. Other credits (salary, refunds) are not payments and are left out.
+Pure functions only.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sonar.payday import payday_in
+from sonar.spending_groups import GroupTotals, group_totals
 from sonar.transactions import ParsedTransaction
 
 TRANSFER = "transfer"
@@ -31,7 +35,7 @@ PAYDAY_TOLERANCE = timedelta(days=10)
 # A salary promised after this day of the month is for the next month's budget.
 LAST_SAME_MONTH_SALARY_DAY = 15
 # The page's filter value for payments without a category; category names
-# come from categories.toml, which never uses this spelling.
+# come from the DB (taxonomy_store.py), which never uses this spelling.
 UNCATEGORIZED = "__uncategorized__"
 
 Row = tuple[ParsedTransaction, str | None]
@@ -65,30 +69,37 @@ class MonthlySpending:
     payments: tuple[Row, ...]
     by_category: tuple[CategoryTotal, ...]
     spent_cents: int
-    transfers_cents: int
+    transfers_net_cents: int
+    groups: GroupTotals
 
 
 def monthly_spending(
     rows: Iterable[Row], category_types: dict[str, str], period: Period
 ) -> MonthlySpending:
     """The debits booked in `period`, newest first, with totals per category."""
+    in_period = [row for row in rows if period.start <= row[0].booking_date <= period.end]
     payments = sorted(
-        (
-            row
-            for row in rows
-            if _is_payment(row[0]) and period.start <= row[0].booking_date <= period.end
-        ),
+        (row for row in in_period if _is_payment(row[0])),
         key=lambda row: row[0].booking_date,
         reverse=True,
     )
     by_category = _totals(payments, category_types)
-    transfers = sum(c.total_cents for c in by_category if c.category_type == TRANSFER)
+    transfers_debit = sum(c.total_cents for c in by_category if c.category_type == TRANSFER)
+    # Nets debits and credits, unlike by_category and spent_cents, which stay
+    # debits-only: a transfer out and its matching money coming back both
+    # count, even though only the debit is ever listed as a payment.
+    transfers_net = sum(
+        tx.amount_cents
+        for tx, category in in_period
+        if category_types.get(category or "") == TRANSFER
+    )
     return MonthlySpending(
         period=period,
         payments=tuple(payments),
         by_category=by_category,
-        spent_cents=sum(c.total_cents for c in by_category) - transfers,
-        transfers_cents=transfers,
+        spent_cents=sum(c.total_cents for c in by_category) - transfers_debit,
+        transfers_net_cents=transfers_net,
+        groups=group_totals(by_category),
     )
 
 

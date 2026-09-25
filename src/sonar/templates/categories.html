@@ -3,9 +3,18 @@
 {% from "components/badge.html" import badge %}
 {% from "components/button.html" import button %}
 {% from "components/field.html" import field %}
+{% from "components/empty.html" import empty %}
 
 {% set section_title = "text-sm font-semibold text-ink" %}
 {% set form_grid = "mt-3 grid grid-cols-2 gap-3" %}
+{#- Same table styling as the Fixed payments page (recurring.html), reused
+    as-is so this page needs no CSS rebuild. -#}
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set table = "w-full text-left text-sm" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set tr = "border-t border-line align-top" %}
+{% set td = "py-3 pr-4 text-ink last:pr-0" %}
+{% set icon_button = "group inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-accent hover:bg-accent-soft" %}
 
 {% macro form_error(err) %}
 {%- if err %}
@@ -87,7 +96,121 @@
   </form>
   {% endcall %}
 
-  {#- N09 adds the Rules card (#rules) here. -#}
+  {% call card(title="Rules", subtitle="First match wins.", id="rules") %}
+  {% if rule_rows %}
+  <div class="{{ table_wrap }}">
+    <table id="rules-table" class="{{ table }}">
+      <thead>
+        <tr>
+          <th class="{{ th }}">#</th>
+          <th class="{{ th }}">Category</th>
+          <th class="{{ th }}">Conditions</th>
+          <th class="{{ th }}"><span class="sr-only">Manage</span></th>
+        </tr>
+      </thead>
+      {% for row in rule_rows %}
+      {% set rule = row.rule %}
+      {% set has_error = row.edit_error or row.delete_error or row.move_error %}
+      {% set drawer_id = "drawer-rule-" ~ rule.id %}
+      {#- One <tbody> per rule keeps its data row and drawer row together,
+          the same pattern the Fixed payments table uses. -#}
+      <tbody data-rule-id="{{ rule.id }}" data-position="{{ rule.position }}">
+        <tr data-row class="{{ tr }}">
+          <td class="{{ td }}">
+            <div class="flex items-center gap-1">
+              {% if rule.position > 1 %}
+              <form method="post" action="/categories/rules/{{ rule.id }}/move">
+                <input type="hidden" name="position" value="{{ rule.position - 1 }}">
+                <button type="submit" aria-label="Move up" class="{{ icon_button }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+                </button>
+              </form>
+              {% endif %}
+              <span data-field="position">{{ rule.position }}</span>
+              {% if rule.position < rule_count %}
+              <form method="post" action="/categories/rules/{{ rule.id }}/move">
+                <input type="hidden" name="position" value="{{ rule.position + 1 }}">
+                <button type="submit" aria-label="Move down" class="{{ icon_button }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+            {{ form_error(row.move_error) }}
+          </td>
+          <td class="{{ td }}">{{ badge(rule.category, attrs={"data-field": "category"}) }}</td>
+          <td class="{{ td }}">
+            <div class="flex flex-wrap gap-1">
+              {% if rule.counterparty %}{{ badge('counterparty contains "' ~ rule.counterparty ~ '"', attrs={"data-field": "counterparty"}) }}{% endif %}
+              {% if rule.counterparty_regex %}{{ badge("counterparty matches /" ~ rule.counterparty_regex ~ "/", attrs={"data-field": "counterparty_regex"}) }}{% endif %}
+              {% if rule.purpose %}{{ badge('purpose contains "' ~ rule.purpose ~ '"', attrs={"data-field": "purpose"}) }}{% endif %}
+              {% if rule.purpose_regex %}{{ badge("purpose matches /" ~ rule.purpose_regex ~ "/", attrs={"data-field": "purpose_regex"}) }}{% endif %}
+              {% if rule.sign != "any" %}{{ badge(rule.sign, attrs={"data-field": "sign"}) }}{% endif %}
+              {% if rule.iban %}{{ badge("IBAN " ~ rule.iban, attrs={"data-field": "iban"}) }}{% endif %}
+              {% if rule.creditor_id %}{{ badge("creditor ID " ~ rule.creditor_id, attrs={"data-field": "creditor_id"}) }}{% endif %}
+              {% if rule.min_amount or rule.max_amount %}{{ badge((rule.min_amount or "0") ~ "–" ~ (rule.max_amount or "∞") ~ " €", attrs={"data-field": "amount_range"}) }}{% endif %}
+            </div>
+          </td>
+          <td class="{{ td }}">
+            <button type="button" data-drawer-toggle aria-controls="{{ drawer_id }}" aria-expanded="{{ 'true' if has_error else 'false' }}" aria-label="Edit rule {{ rule.position }}"
+                    class="group inline-flex cursor-pointer select-none items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-accent hover:bg-accent-soft">
+              Edit
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </td>
+        </tr>
+        <tr data-drawer-for="{{ rule.id }}" id="{{ drawer_id }}"{% if not has_error %} hidden{% endif %}>
+          <td colspan="4" class="bg-surface-muted/50 px-4 py-4">
+            <form method="post" action="/categories/rules/{{ rule.id }}/edit" class="{{ form_grid }}">
+              {{ form_error(row.edit_error) }}
+              {{ field("category", "Category", value=(row.edit_error.fields.category if row.edit_error else rule.category), id="edit-rule-category-" ~ rule.id, options=category_options, required=true) }}
+              {{ field("counterparty", "Counterparty contains", value=(row.edit_error.fields.counterparty if row.edit_error else rule.counterparty), id="edit-rule-counterparty-" ~ rule.id) }}
+              {{ field("counterparty_regex", "Counterparty matches (regex)", value=(row.edit_error.fields.counterparty_regex if row.edit_error else rule.counterparty_regex), id="edit-rule-counterparty-regex-" ~ rule.id) }}
+              {{ field("purpose", "Purpose contains", value=(row.edit_error.fields.purpose if row.edit_error else rule.purpose), id="edit-rule-purpose-" ~ rule.id) }}
+              {{ field("purpose_regex", "Purpose matches (regex)", value=(row.edit_error.fields.purpose_regex if row.edit_error else rule.purpose_regex), id="edit-rule-purpose-regex-" ~ rule.id) }}
+              {{ field("sign", "Sign", value=(row.edit_error.fields.sign if row.edit_error else rule.sign), id="edit-rule-sign-" ~ rule.id, options=sign_options) }}
+              {{ field("iban", "IBAN", value=(row.edit_error.fields.iban if row.edit_error else rule.iban), id="edit-rule-iban-" ~ rule.id) }}
+              {{ field("creditor_id", "Creditor ID", value=(row.edit_error.fields.creditor_id if row.edit_error else rule.creditor_id), id="edit-rule-creditor-id-" ~ rule.id) }}
+              {{ field("min_amount", "Min amount (€)", value=(row.edit_error.fields.min_amount if row.edit_error else rule.min_amount), id="edit-rule-min-amount-" ~ rule.id) }}
+              {{ field("max_amount", "Max amount (€)", value=(row.edit_error.fields.max_amount if row.edit_error else rule.max_amount), id="edit-rule-max-amount-" ~ rule.id) }}
+              <div class="col-span-2">{{ button("Save", size="sm") }}</div>
+            </form>
+            <form method="post" action="/categories/rules/{{ rule.id }}/delete" class="mt-4"
+                  hx-post="/categories/rules/{{ rule.id }}/delete" hx-confirm="Delete this rule? This cannot be undone."
+                  hx-target="#main" hx-select="#main" hx-swap="outerHTML">
+              {{ form_error(row.delete_error) }}
+              {{ button("Delete", variant="danger", size="sm") }}
+            </form>
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+  {{ empty("No rules yet", message="Rules match transactions to a category automatically. Add one below.") }}
+  {% endif %}
+  {% endcall %}
+
+  {% call card(title="Add a rule", id="add-rule-card") %}
+  <form id="add-rule-form" method="post" action="/categories/rules" class="space-y-4">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {{ form_error(add_rule_error) }}
+      {{ field("category", "Category", value=(add_rule_error.fields.category if add_rule_error else ""), options=category_options, required=true) }}
+      {{ field("counterparty", "Counterparty contains", value=(add_rule_error.fields.counterparty if add_rule_error else ""), attrs={"placeholder": "e.g. Supermarket"}) }}
+      {{ field("counterparty_regex", "Counterparty matches (regex)", value=(add_rule_error.fields.counterparty_regex if add_rule_error else "")) }}
+      {{ field("purpose", "Purpose contains", value=(add_rule_error.fields.purpose if add_rule_error else "")) }}
+      {{ field("purpose_regex", "Purpose matches (regex)", value=(add_rule_error.fields.purpose_regex if add_rule_error else "")) }}
+      {{ field("sign", "Sign", value=(add_rule_error.fields.sign if add_rule_error else "any"), options=sign_options) }}
+      {{ field("iban", "IBAN", value=(add_rule_error.fields.iban if add_rule_error else "")) }}
+      {{ field("creditor_id", "Creditor ID", value=(add_rule_error.fields.creditor_id if add_rule_error else "")) }}
+      {{ field("min_amount", "Min amount (€)", value=(add_rule_error.fields.min_amount if add_rule_error else ""), attrs={"placeholder": "10.00"}) }}
+      {{ field("max_amount", "Max amount (€)", value=(add_rule_error.fields.max_amount if add_rule_error else ""), attrs={"placeholder": "50.00"}) }}
+      {{ field("position", "Position", value=(add_rule_error.fields.position if add_rule_error else ""), help="Blank = last, 1 = top") }}
+    </div>
+    <div>{{ button("Add rule") }}</div>
+  </form>
+  {% endcall %}
 </div>
 <script>
   (function () {

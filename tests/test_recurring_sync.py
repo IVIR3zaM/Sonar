@@ -1,4 +1,4 @@
-"""Tests for sync_detected (SPEC §2, §6): my edits and dismissals always win."""
+"""Tests for sync_detected (SPEC §6): my edits and dismissals always win."""
 
 import sqlite3
 from datetime import date

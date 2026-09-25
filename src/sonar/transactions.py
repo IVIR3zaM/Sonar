@@ -1,7 +1,7 @@
 """Plain data shapes produced by importers, before any storage decisions.
 
 Importers turn raw bank export bytes into these frozen dataclasses. Money is
-integer cents, never float, and dates are `datetime.date` per SPEC §2.
+integer cents, never float, and dates are `datetime.date` per the engineering rules in CLAUDE.md.
 """
 
 from __future__ import annotations

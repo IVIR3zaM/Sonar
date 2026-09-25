@@ -147,7 +147,7 @@ def resume_payment(
 def sync_detected(conn: sqlite3.Connection, category_types: dict[str, str], today: date) -> int:
     """Refresh detected payments from the stored transactions; return rows changed.
 
-    My edits always win (SPEC §2): a dismissed row is left untouched so dismissals
+    My edits always win (SPEC §6): a dismissed row is left untouched so dismissals
     survive re-detection, and a locked name or schedule is kept as the user set it.
     A detected row that no longer matches anything is deleted, but only if it is
     still exactly as detection left it (active, unlocked) - an edited or dismissed

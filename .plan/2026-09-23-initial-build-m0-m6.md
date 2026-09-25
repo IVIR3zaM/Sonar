@@ -1,8 +1,12 @@
-# Sonar plan
-
-Full task graphs from the Planner. `.plan/state.md` tracks status; this file holds the task text
-the orchestrator dispatches. On a replan, replace only the failing task lines and note the replan
-number under the milestone heading.
+# Initial build M0–M6
+status: DONE
+created: 2026-09-23 · updated: 2026-09-24
+goal: build Sonar per SPEC §0–§12 as milestones M0–M6
+spec: SPEC §0–§12
+verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
+note: legacy format (one task graph per milestone, verified per milestone), kept as history. Do not resume.
+commits: M0 13603a5 · M1 95a052d · M2 a0d0170 · M3 a16f99f · M4 28eb946 · M5 45f4011 · M6 a3080eb
+replans: M1 1 · M2 0 · M3 2 · M4 2 · M5 2 · M6 2
 
 ## Milestones
 

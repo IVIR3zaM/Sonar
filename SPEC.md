@@ -1,10 +1,6 @@
-# Household Finance Dashboard: Build Brief
+# Sonar: Product Spec
 
-You are starting in a folder that contains only a real Deutsche Bank CSV export (and possibly this brief). Do these three things before anything else:
-
-1. Save this brief unchanged as `SPEC.md`. It is the source of truth for every agent.
-2. Move the CSV into `samples/` and add `samples/` to `.gitignore` before the first commit. Real bank data must never be committed.
-3. Set up the agent workflow (section 1) and run it.
+What the app does. It is the source of truth for behavior. How we work (the graph workflow, engineering rules, conventions, token discipline) lives in `CLAUDE.md`. Section numbers are stable, because code, migrations and plans cite them (`SPEC §6`).
 
 ## 0. What we're building
 
@@ -13,69 +9,13 @@ A local web app for our household. It imports bank exports, categorizes transact
 - Runs locally only (bind 127.0.0.1). No auth for now.
 - Data comes in by file upload for now. A live bank connection (Enable Banking or FinTS) may come later. Don't build it, but don't design anything that blocks it.
 
-## 1. How you work: orchestrated agent graph
+## 1. How we work
 
-### Roles
+Moved to `CLAUDE.md` (Graph workflow). Plans live in `.plan/`.
 
-- **Orchestrator**: this main session. It never writes product code. It reads state, picks models, dispatches work, commits, and talks to me.
-- **Planner**, **Executor**, **Verifier**: subagents defined in `.claude/agents/planner.md`, `executor.md` and `verifier.md`. Subagents can't spawn subagents, which is why the orchestrator must be the main session.
-  - Each agent file is at most 25 lines. It states the role, its exact output format (below), and which SPEC.md sections to read.
-  - Planner: read-only tools (Read, Grep, Glob). Default model: opus.
-  - Executor: edit tools and Bash. Default model: sonnet.
-  - Verifier: Read, Grep, Glob and Bash. It runs tests and lint but never edits. Default model: sonnet.
+## 2. Engineering rules
 
-### Loop per milestone
-
-1. The orchestrator reads `.plan/state.md`, `git log --oneline -5` and the test status. If `.plan/state.md` is missing, it creates it.
-2. The Planner receives the milestone goal, the relevant SPEC section numbers and the current state. It returns a task graph.
-3. The orchestrator dispatches tasks in dependency order. Independent tasks that touch disjoint files may run in parallel. Everything else runs sequentially.
-4. The Verifier checks the milestone against SPEC and section 2.
-   - **PASS**: the orchestrator commits, updates the state file and moves to the next milestone.
-   - **FAIL**: the orchestrator sends the Verifier's findings to the Planner, which replans only the failing parts. Then execution and verification run again.
-5. The maximum is **2 replans per milestone**. If verification fails after the 2nd replan, stop, report the findings to me in at most 10 lines, and wait.
-
-### Model selection
-
-The orchestrator decides the model for every Agent call, using the Agent tool's `model` parameter. The Planner suggests a model per task, and the orchestrator makes the final call. Always pick the cheapest model that will do the task well.
-
-- **haiku**: mechanical work, such as fixtures, config, renames and simple templates.
-- **sonnet**: the default for well-specified implementation tasks and routine verification.
-- **opus**: planning and replanning; tricky logic (dedup, recurrence detection, schedule periods, forecasting); verifying the milestones that contain that logic.
-
-### Token discipline (applies to all agents)
-
-- No prose, no restating the task, no narration, no summaries of intent.
-- Between agents, pass file paths and line references, never file contents.
-- Each agent reads only the files its task needs.
-- Output formats are hard limits:
-  - **Planner**:
-    ```
-    M<n> <goal>
-    T1 [sonnet] <imperative task> | files: a.py,test_a.py | test first: <behavior> | deps: -
-    T2 [opus] ... | deps: T1
-    ```
-  - **Executor**: `DONE|BLOCKED T<n> | files: ... | tests: <n> passed`, plus one line of reason if blocked.
-  - **Verifier**: `PASS`, or `FAIL` followed by at most 8 bullets of the form `path:line - problem - expected`.
-- `.plan/state.md` is at most 40 lines: current milestone, task statuses, replan count and open questions. A fresh session must be able to resume from it alone.
-
-### Human checkpoints
-
-Stop and wait for me only in these cases:
-
-- After the first plan: show the milestone list and the M1 tasks in at most 25 lines.
-- If no sample export is in `samples/`, ask me for it before planning M1.
-- After 2 failed replans.
-- When the spec is ambiguous in a way that changes behavior. Ask one question and include your recommended answer.
-
-## 2. Engineering rules (the Verifier enforces these)
-
-- **Strict TDD.** Every task starts with a failing test, then the minimal code to pass it, then a refactor. The Verifier rejects any behavior that has no test.
-- **KISS and YAGNI.** Add an abstraction only when it has at least 2 real uses or a concrete need in this spec. A design pattern must pay for the complexity it adds. The importer registry (section 4) is the one known case that does.
-- **Readable by a human.** Code reads top-down like prose. Use small functions, domain names (`booking_date`, `next_due_date`) and type hints. Comments explain *why*, never *what*.
-- **Functional core, thin shell.** Parsing, dedup, categorization, recurrence detection and forecasting are pure functions over plain dataclasses. The database and web layers call them. `today` is always a parameter; domain code never calls `date.today()`.
-- **Money and dates.** Money is integer cents, never float. Dates are `datetime.date`.
-- **Tests.** Use pytest. Tests are fast and never touch the network. Fixtures are anonymized; real data never goes in tests.
-- **Lint and commits.** ruff lint and format must be clean. The orchestrator commits after each verified milestone.
+Moved to `CLAUDE.md` (Engineering rules). The Verifier enforces them.
 
 ## 3. Stack (already decided)
 
@@ -90,7 +30,7 @@ Why this stack: Python has the best tooling for CSV and PDF parsing (pdfplumber 
 Additional setup:
 
 - Schema changes go in numbered SQL migration files, applied at startup and tracked in a table. Hand-entered data (payment schedules, debts, settings) must survive upgrades.
-- Run `git init` at the start. `data/` (the database) and `samples/` (real exports) are gitignored.
+- `data/` (the database) and `samples/` (real exports) are gitignored. Real bank data is never committed.
 - The app starts with one command.
 
 ## 4. Import
@@ -99,7 +39,7 @@ Additional setup:
 - **Format detection.** Each source format is one importer module implementing `detect(file) -> bool` and `parse(file) -> list[ParsedTransaction]`, registered in a single list. The app picks the importer whose `detect` matches. If none matches, show a clear error listing the supported formats. Adding a source must mean one new module plus its fixture tests, and no other changes.
 - **Build now: the Deutsche Bank current account (Girokonto) CSV.**
   - Do not rely on memory for its layout. Derive the parser from the real export in `samples/`, and create an anonymized fixture from it for the tests.
-  - To save tokens, agents read only the preamble, the header, a few rows and the last lines of the sample, never the whole file. Record the confirmed layout (columns, encoding, separators, preamble and footer) in a short comment at the top of the importer module.
+  - Record the confirmed layout (columns, encoding, separators, preamble and footer) in a short comment at the top of the importer module.
   - Expect a German locale: `;` separator, decimal comma, `dd.mm.yyyy` dates, preamble lines before the header, a balance line after the rows, and possibly Windows-1252 encoding. Confirm each of these against the sample.
 - **Later, not now:** Consorsbank credit card statements as PDF, and other banks. The design must keep this easy to add. Once a second source exists, the credit card settlement debit on the Girokonto and transfers between our own accounts must not be counted as spending twice. The `transfer` category type (section 5) exists for this.
 - **Stored per transaction:** source/account, booking date, value date, amount, currency, counterparty, purpose text, and a copy of the raw row. When present, also store IBAN, mandate reference and creditor ID, which are strong signals for recurrence.
@@ -209,9 +149,9 @@ One page that answers "are we going to be OK?" at a glance.
 
 ## 10. Milestones
 
-The Planner refines these into tasks. Each milestone must end in a usable state: I can start the app and click through everything built so far.
+M0–M6 are done. Their task graphs, replans and commits are in `.plan/2026-09-23-initial-build-m0-m6.md`. New work gets a new plan (`CLAUDE.md`).
 
-- **M0 Skeleton:** uv project, ruff, pytest, FastAPI hello page, migration runner, `CLAUDE.md`, `.claude/agents/`, `.gitignore`, `.plan/state.md`.
+- **M0 Skeleton:** uv project, ruff, pytest, FastAPI hello page, migration runner, `CLAUDE.md`, `.claude/agents/`, `.gitignore`.
 - **M1 Import:** importer registry, Deutsche Bank CSV importer built from the sample in `samples/`, idempotent storage, upload page with results. Importing the real sample must succeed.
 - **M2 Categorization:** `categories.toml` with the initial taxonomy, rule engine, re-apply, Uncategorized export, the Categorization workflow in `CLAUDE.md`.
 - **M3 Recurring payments:** detection, schedule periods, and the UI to edit, pause, resume, dismiss and add payments.
@@ -241,7 +181,7 @@ Presentation only. Domain modules (`forecast.py`, `dashboard.py`, `debts.py`, `r
 
 **Tooling**
 
-- Tailwind source is `src/sonar/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command goes in `CLAUDE.md` Setup. Never hand-edit `sonar.css`; rebuild it after any template or CSS change.
+- Tailwind source is `src/sonar/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command is in `CLAUDE.md` Setup.
 - Mount `StaticFiles` at `/static` in `create_app`. Vendor htmx under `static/vendor/`.
 - No JS framework. Use native `<details>`/`<dialog>`, `hx-confirm` and small inline progressive-enhancement scripts only.
 
@@ -271,16 +211,9 @@ Presentation only. Domain modules (`forecast.py`, `dashboard.py`, `debts.py`, `r
 - Every POST that returns a plain-text 400 today re-renders its page with status 400, an inline `#form-error` alert, and the entered values kept. GET and error paths share one render helper per page.
 - A 404 renders a styled `error.html`.
 
-**Tests**
+**Tests:** page tests assert on stable hooks (ids, `data-*` attributes) through `tests/html.py`; see `CLAUDE.md` UI conventions.
 
-- The first M6 task pins stable hooks while the markup is still raw: ids on key tables and totals, `#traffic-light[data-light]`, `data-worst`/`data-best` on the projection, `data-cents` on amounts. Page tests are rewritten against these hooks with a small `beautifulsoup4` helper module (`tests/html.py`), so restyling never breaks them.
-- Every behavior needs a test: filters, routes, error re-render, badge fragment, nav active state, chart macro geometry and hooks. Pure CSS classes need no test.
-
-**Models:** opus for the design-system foundation (tokens, components, shell) and the dashboard; sonnet for the other pages and error handling; haiku for vendoring and config only.
-
-**Visual check (orchestrator, before the M6 commit):** start the app on a temp DB (never `data/sonar.db`), import the real sample, set salary day and balance. In the built-in browser pane, screenshot every page at desktop and 375px, in light and dark; exercise drawers, confirms, invalid forms, the dropzone and Copy. Defects go to the Planner as Verifier-style findings and count toward the 2 replans.
-
-**M6 acceptance (the Verifier checks this)**
+**UI acceptance (the Verifier checks this on any UI change)**
 
 - [ ] pytest green, ruff clean; the section 11 checklist still holds.
 - [ ] Rebuilding the CSS leaves `src/sonar/static/sonar.css` unchanged (`git diff --exit-code`).
@@ -289,4 +222,10 @@ Presentation only. Domain modules (`forecast.py`, `dashboard.py`, `debts.py`, `r
 - [ ] Invalid form input shows an inline error with status 400 and keeps the entered values.
 - [ ] Displayed amounts use `eur`; form prefills use `money`.
 
-**Start now:** set up M0, have the Planner produce the milestone plan, then stop at the first checkpoint.
+## 13. Amendments (user decisions, override earlier sections)
+
+- Detection (§6): a detected series that has stopped (judged against the latest booking date) is dropped. Edited and dismissed payments are kept.
+- Loans (§7): a loan pays monthly on its as-of day, starting the month after. An installment's last payment is `total − (n−1) × rate` when that is above 0, else `rate`.
+- Forecast (§9): the window is [balance date + 1, payday − 1]. Balance dates in the future are rejected.
+- Traffic light (§9): an overdraft limit (default −500,00 €, editable in Settings) replaces 0. Green: worst ≥ limit. Yellow: best ≥ limit. Red: otherwise.
+- Categorization (§5): `categories.toml` may use real counterparty names and IBANs. Tests use fake strings only.

@@ -13,7 +13,7 @@ budgets: 2 tries per brief · 2 replans per node
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | SPEC amendments | exec | - | sonnet/haiku | 1 | 0 | DONE | |
 | N02 | Category groups model | exec | - | sonnet/sonnet | 1 | 1 | DONE | |
-| N03 | Taxonomy store and generic seed | exec | N02 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N03 | Taxonomy store and generic seed | exec | N02 | sonnet/sonnet | 2 | 0 | DONE | |
 | N04 | Lights-on pure module | exec | N02 | opus/opus | 1 | 0 | DONE | |
 | N05 | App and CLI read the DB taxonomy | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | Monthly: group totals and net transfers | exec | N02,N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -89,7 +89,7 @@ Done when:
 - C3 every failing write leaves both tables unchanged (tests prove it for rule add and category delete)
 - C4 the verify command exits 0
 Findings:
-- none
+- try 1: C3 tests/test_taxonomy_store.py:175-180 - `test_delete_category_with_rules_raises` only asserts the ValueError; it never compares `categories`/`category_rules` rows before and after, so "failing write leaves both tables unchanged" is not evidenced for category delete - expected a before/after table-state assertion like the add_rule failure tests (lines 118-144)
 
 ### N04 Lights-on pure module
 Do: Create `src/sonar/lights_on.py` (pure functions, module docstring stating the method). It provides: (1) the complete months to learn from: the months of `rows` (via `monthly.salary_paydays`, `monthly.month_of`, `monthly.period_for`, monthly.py:110-137) whose period starts on or after the first booking date and ends on or before `until`, oldest first; (2) per month: the debit spend (as positive cents) per `lights_on` category and in total, the `occasional` total, the period's days, and the daily averages (total ÷ days) for the lights-on total, each lights-on category and Occasional; (3) the forecast from the latest `LOOKBACK_MONTHS = 3` of those months for `days` days, from the lights-on figures only: expected = sum of their totals ÷ sum of their days × days, low/high = lowest/highest monthly daily average × days, per-category expected the same way, plus the months used; None when no complete month exists. A booking's group is its category's type in `category_types`, compared only against the spending_groups.py constants (N02); credits, transfers, income, fixed and uncategorized bookings never count. Use `Fraction` and round half up at the end, like variable_forecast.py:126-129. `days < 0` raises ValueError. Name the types and functions yourself; keep each function small.

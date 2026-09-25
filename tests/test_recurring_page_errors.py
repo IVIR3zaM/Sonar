@@ -17,18 +17,13 @@ from fastapi.testclient import TestClient
 from sonar.app import create_app
 from sonar.recurring import list_payments
 from tests.html import soup, text
+from tests.seed import seed
 
 TODAY = date(2026, 9, 23)
 
 
 def _today() -> date:
     return TODAY
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _payment_id(db_path: Path) -> int:
@@ -97,9 +92,9 @@ def _assert_only_drawer_open(page, open_id: int, other_id: int):
 
 def test_invalid_input_returns_400_and_leaves_payment_unchanged(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={
@@ -241,9 +236,9 @@ def test_invalid_input_returns_400_and_leaves_payment_unchanged(tmp_path):
 
 def test_add_payment_invalid_input_returns_400_with_form_error_and_kept_values(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         response = client.post(
             "/recurring",
             data={
@@ -266,9 +261,9 @@ def test_add_payment_invalid_input_returns_400_with_form_error_and_kept_values(t
 
 def test_unknown_id_returns_404_on_edit_dismiss_pause_resume(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         edited = client.post(
             "/recurring/999/edit",
             data={"name": "Ghost", "amount": "10.00", "interval_months": "1", "day": "1"},
@@ -335,9 +330,9 @@ ROW_FRIENDLY_CASES = [
 @pytest.mark.parametrize("action,data,expected", ROW_FRIENDLY_CASES)
 def test_row_error_message_is_friendly(tmp_path, action, data, expected):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={
@@ -364,9 +359,9 @@ def test_row_error_message_is_friendly(tmp_path, action, data, expected):
 
 def test_add_payment_error_message_is_friendly(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         response = client.post(
             "/recurring",
             data={

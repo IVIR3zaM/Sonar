@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sonar.app import create_app
 from sonar.db import apply_migrations
 from tests.html import cents, fields, records, soup, text
+from tests.seed import seed
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 10)
@@ -37,18 +38,6 @@ counterparty = "Fake Market"
 
 def _today() -> date:
     return TODAY
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
-
-
-def _groceries_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text(GROCERIES_TOML, encoding="utf-8")
-    return path
 
 
 def _insert_debit(db_path: Path, *, fingerprint: str, booking_date: str, amount_cents: int) -> None:
@@ -111,9 +100,9 @@ def _runway(page) -> tuple[int, int]:
 
 def test_nothing_set_links_to_settings_and_has_no_traffic_light(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         response = client.get("/")
 
     assert response.status_code == 200
@@ -125,9 +114,9 @@ def test_nothing_set_links_to_settings_and_has_no_traffic_light(tmp_path):
 
 def test_overdrawn_balance_is_green_at_default_limit_and_red_at_zero(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert (
             client.post(
                 "/settings",
@@ -165,9 +154,9 @@ def test_overdrawn_balance_is_green_at_default_limit_and_red_at_zero(tmp_path):
 
 def test_not_enough_history_shows_not_enough_data(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
         client.post("/settings/balance", data={"amount": "100.00", "as_of": "2026-09-10"})
 
@@ -180,7 +169,7 @@ def test_not_enough_history_shows_not_enough_data(tmp_path):
 
 def test_full_dashboard_row_scoped(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _groceries_categories(tmp_path)
+    seed(db_path, GROCERIES_TOML)
 
     # Three complete salary cycles of Groceries spending, each entirely
     # within one cycle boundary for salary day 26 (payday moves off a
@@ -189,7 +178,7 @@ def test_full_dashboard_row_scoped(tmp_path):
     _insert_debit(db_path, fingerprint="g2", booking_date="2026-07-01", amount_cents=-56_000)
     _insert_debit(db_path, fingerprint="g3", booking_date="2026-08-25", amount_cents=-33_000)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert (
             client.post(
                 "/settings",
@@ -346,10 +335,10 @@ def test_full_dashboard_row_scoped(tmp_path):
 def test_uncategorized_callout_links_to_the_page_when_count_is_above_zero(tmp_path):
     db_path = tmp_path / "t.db"
     # An empty taxonomy leaves the seeded debit uncategorized.
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     _insert_debit(db_path, fingerprint="u1", booking_date="2026-09-01", amount_cents=-1_000)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         page = soup(client.get("/"))
 
     callout_link = page.select_one('#uncategorized-callout a[href="/uncategorized"]')
@@ -358,9 +347,9 @@ def test_uncategorized_callout_links_to_the_page_when_count_is_above_zero(tmp_pa
 
 def test_due_list_shows_first_eight_and_rest_in_a_details(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
         client.post("/settings/balance", data={"amount": "1000.00", "as_of": "2026-09-10"})
         # 10 monthly bills, one per day 11..20, all land inside the payday window
@@ -385,9 +374,9 @@ def test_due_list_shows_first_eight_and_rest_in_a_details(tmp_path):
 
 def test_due_list_has_no_details_at_eight_rows_or_fewer(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
         client.post("/settings/balance", data={"amount": "1000.00", "as_of": "2026-09-10"})
         for day in range(11, 14):
@@ -415,11 +404,9 @@ def test_due_list_has_no_details_at_eight_rows_or_fewer(tmp_path):
 )
 def test_hero_shows_days_until_text(tmp_path, hero_today, salary_day, expected_days, expected_text):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(
-        create_app(db_path, categories_path=categories_path, today=lambda: hero_today)
-    ) as client:
+    with TestClient(create_app(db_path, today=lambda: hero_today)) as client:
         client.post("/settings", data={"salary_day": str(salary_day), "overdraft_limit": "-500.00"})
         client.post("/settings/balance", data={"amount": "100.00", "as_of": hero_today.isoformat()})
 

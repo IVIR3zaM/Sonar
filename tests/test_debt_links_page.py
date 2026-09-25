@@ -13,18 +13,13 @@ from sonar.app import MIGRATIONS_DIR, create_app
 from sonar.db import apply_migrations
 from sonar.recurring import dismiss, list_payments
 from tests.html import fields, soup
+from tests.seed import seed
 
 TODAY = date(2026, 9, 23)
 
 
 def _today() -> date:
     return TODAY
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _insert_debit(
@@ -78,7 +73,7 @@ def _car_loan(client: TestClient) -> dict[str, int | str]:
 
 def test_debt_link_shown_on_recurring_page_and_removed_from_debts_on_dismiss(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
     # Loan payment series: mandate M-1, creditor CRED -> detection key "mandate:CRED/M-1".
     for i, booking_date in enumerate(["2026-07-05", "2026-08-05", "2026-09-05"]):
@@ -100,7 +95,7 @@ def test_debt_link_shown_on_recurring_page_and_removed_from_debts_on_dismiss(tmp
             amount_cents=-5_000,
         )
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         # Startup already ran reapply_rules + sync_detected, so both series are stored.
         add_response = client.post(
             "/debts/loans",

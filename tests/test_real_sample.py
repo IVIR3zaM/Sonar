@@ -18,17 +18,21 @@ from sonar.db import apply_migrations
 from sonar.importing import import_file
 from sonar.recurring import sync_detected
 from sonar.settings_store import DEFAULT_OVERDRAFT_LIMIT_CENTS, save_settings
+from sonar.taxonomy_store import load_stored_taxonomy, replace_taxonomy
 
 REPO_ROOT = Path(__file__).parent.parent
 MIGRATIONS_DIR = REPO_ROOT / "src" / "sonar" / "migrations"
 SAMPLES_DIR = REPO_ROOT / "samples"
-CATEGORIES_PATH = REPO_ROOT / "src" / "sonar" / "categories.toml"
+REAL_CATEGORIES_TOML = REPO_ROOT / "src" / "sonar" / "categories.toml"
 
 
 @pytest.fixture
 def conn() -> sqlite3.Connection:
+    # The DB's own stored taxonomy (N05), seeded once here from the owner's
+    # real categories.toml, the same path the `import-categories` CLI takes.
     conn = sqlite3.connect(":memory:")
     apply_migrations(conn, MIGRATIONS_DIR)
+    replace_taxonomy(conn, load_taxonomy(REAL_CATEGORIES_TOML))
     return conn
 
 
@@ -84,7 +88,7 @@ def test_real_sample_import_is_idempotent(conn: sqlite3.Connection, sample_path:
 def test_real_sample_categorization(conn: sqlite3.Connection, sample_path: Path) -> None:
     """Import with rules; assert some rows are categorized; reapply is idempotent."""
     content = sample_path.read_bytes()
-    taxonomy = load_taxonomy(CATEGORIES_PATH)
+    taxonomy = load_stored_taxonomy(conn)
 
     result = import_file(conn, content, sample_path.name, rules=taxonomy.rules)
 
@@ -101,7 +105,7 @@ def test_real_sample_categorization(conn: sqlite3.Connection, sample_path: Path)
 def test_real_sample_recurring_detection(conn: sqlite3.Connection, sample_path: Path) -> None:
     """sync_detected detects >= 1 payment after import; second sync is idempotent."""
     content = sample_path.read_bytes()
-    taxonomy = load_taxonomy(CATEGORIES_PATH)
+    taxonomy = load_stored_taxonomy(conn)
 
     import_file(conn, content, sample_path.name, rules=taxonomy.rules)
 
@@ -117,7 +121,7 @@ def test_real_sample_recurring_detection(conn: sqlite3.Connection, sample_path: 
 def test_real_sample_dashboard_load(conn: sqlite3.Connection, sample_path: Path) -> None:
     """Load dashboard after importing sample with taxonomy and saved settings."""
     content = sample_path.read_bytes()
-    taxonomy = load_taxonomy(CATEGORIES_PATH)
+    taxonomy = load_stored_taxonomy(conn)
 
     import_file(conn, content, sample_path.name, rules=taxonomy.rules)
 

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app, templates
 from tests.html import soup, text
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
@@ -42,11 +43,11 @@ counterparty = "Restaurant XYZ"
 
 @pytest.fixture
 def client(tmp_path):
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(NO_RULES_TOML, encoding="utf-8")
-    app = create_app(tmp_path / "t.db", categories_path=categories_path)
+    db_path = tmp_path / "t.db"
+    seed(db_path, NO_RULES_TOML)
+    app = create_app(db_path)
     with TestClient(app) as client:
-        client.categories_path = categories_path
+        client.db_path = db_path
         yield client
 
 
@@ -122,7 +123,7 @@ def test_nav_badge_is_hidden_at_zero(client):
 
 def test_reapply_updates_the_count_and_the_nav_badge_out_of_band(client):
     _import_fixture(client)
-    client.categories_path.write_text(RESTAURANT_RULE_TOML, encoding="utf-8")
+    seed(client.db_path, RESTAURANT_RULE_TOML)
 
     page = soup(client.post("/reapply"))
 

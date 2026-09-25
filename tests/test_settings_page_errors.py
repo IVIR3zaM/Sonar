@@ -14,22 +14,17 @@ from sonar.app import create_app
 from sonar.db import apply_migrations
 from sonar.settings_store import current_balance, load_settings
 from tests.html import soup, text
+from tests.seed import seed
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
 TOMORROW = date(2026, 9, 24)
 
 
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
-
-
 def _app(tmp_path: Path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
-    return create_app(db_path, categories_path=categories_path, today=lambda: TODAY), db_path
+    seed(db_path)
+    return create_app(db_path, today=lambda: TODAY), db_path
 
 
 def _settings(db_path: Path):

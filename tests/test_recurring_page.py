@@ -11,18 +11,13 @@ from sonar.db import apply_migrations
 from sonar.recurring import list_payments
 from sonar.schedule import occurrences
 from tests.html import cents, fields, soup
+from tests.seed import seed
 
 TODAY = date(2026, 9, 23)
 
 
 def _today() -> date:
     return TODAY
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _payment_id(db_path: Path):
@@ -48,9 +43,9 @@ def _periods(row) -> list[tuple[list[str], int]]:
 
 def test_water_example_end_to_end_via_forms(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         add = client.post(
             "/recurring",
             follow_redirects=False,
@@ -120,9 +115,9 @@ def test_water_example_end_to_end_via_forms(tmp_path):
 
 def test_edit_survives_restart(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={
@@ -143,7 +138,7 @@ def test_edit_survives_restart(tmp_path):
         assert edited.status_code == 303
 
     # A fresh app instance simulates a restart against the same database.
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         conn = sqlite3.connect(db_path)
         try:
             [payment] = list_payments(conn)
@@ -159,9 +154,9 @@ def test_edit_survives_restart(tmp_path):
 
 def test_dismiss_removes_from_page_and_stays_dismissed_after_restart(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={
@@ -180,15 +175,15 @@ def test_dismiss_removes_from_page_and_stays_dismissed_after_restart(tmp_path):
 
         assert _payment_rows(client.get("/recurring")) == []
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert _payment_rows(client.get("/recurring")) == []
 
 
 def test_bad_amount_returns_400_and_stores_nothing(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         response = client.post(
             "/recurring",
             data={
@@ -211,7 +206,7 @@ def test_bad_amount_returns_400_and_stores_nothing(tmp_path):
 def test_detected_payment_shows_last_paid_date(tmp_path):
     """Insert a detected row by SQL and verify GET /recurring shows last_paid_date."""
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
     # Apply migrations and insert a detected payment row directly into the database.
     # Use a NULL detection_key (manual-style) to avoid sync_detected deleting it.
@@ -238,7 +233,7 @@ def test_detected_payment_shows_last_paid_date(tmp_path):
         conn.close()
 
     # Verify the page shows the last_paid_date.
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         page = client.get("/recurring")
         assert page.status_code == 200
         [row] = _payment_rows(page)
@@ -249,9 +244,9 @@ def test_detected_payment_shows_last_paid_date(tmp_path):
 def test_resume_with_empty_day_defaults_to_starts_on_day(tmp_path):
     """Resume posted with day="" defaults day to starts_on day."""
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         # Add a payment first.
         client.post(
             "/recurring",
@@ -301,9 +296,9 @@ def test_row_shows_cadence_confirm_and_prefilled_edit_amount(tmp_path):
     amount input prefilled with `money`, and the displayed amount carrying
     data-cents."""
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={
@@ -343,9 +338,9 @@ def test_row_shows_cadence_confirm_and_prefilled_edit_amount(tmp_path):
 
 def test_drawer_colspan_matches_header_count(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={
@@ -364,9 +359,9 @@ def test_drawer_colspan_matches_header_count(tmp_path):
 
 def test_get_shows_all_drawers_hidden_and_toggle_script(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         for name in ("Gym", "Rent"):
             client.post(
                 "/recurring",
@@ -398,9 +393,9 @@ def test_mobile_row_fits(tmp_path):
     stay visible; Category/Cadence/Last paid/Next due/Manage collapse, and the
     Amount cell repeats the next due date plus an icon-only drawer toggle."""
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/recurring",
             data={

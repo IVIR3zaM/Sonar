@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sonar.app import MIGRATIONS_DIR, create_app
 from sonar.db import apply_migrations
 from sonar.recurring import dismiss, list_payments
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 FIXTURE_LINES = FIXTURE.read_text(encoding="utf-8-sig").splitlines()
@@ -103,11 +104,10 @@ def _payment_count(db_path: Path) -> int:
 
 def test_lifespan_syncs_detected_payments_from_existing_rows(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(GYM_TOML, encoding="utf-8")
+    seed(db_path, GYM_TOML)
     _seed_gym_transactions(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)):
+    with TestClient(create_app(db_path, today=_today)):
         pass  # startup alone (lifespan) must reapply rules and sync detection
 
     assert _payment_count(db_path) == 1
@@ -115,12 +115,11 @@ def test_lifespan_syncs_detected_payments_from_existing_rows(tmp_path):
 
 def test_import_stores_detected_payment_and_reupload_keeps_one_row(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text("", encoding="utf-8")  # no rules needed: uncategorized counts too
+    seed(db_path)  # no rules needed: uncategorized counts too
     rows = [_monthly_debit_row(d) for d in ("7/23/2026", "8/23/2026", "9/23/2026")]
     content = "\n".join([*PREAMBLE_AND_HEADER, *rows, FOOTER]).encode("utf-8")
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
         assert _payment_count(db_path) == 1
 
@@ -131,11 +130,10 @@ def test_import_stores_detected_payment_and_reupload_keeps_one_row(tmp_path):
 
 def test_dismissed_payment_stays_dismissed_after_restart(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(GYM_TOML, encoding="utf-8")
+    seed(db_path, GYM_TOML)
     _seed_gym_transactions(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)):
+    with TestClient(create_app(db_path, today=_today)):
         conn = sqlite3.connect(db_path)
         try:
             [payment] = list_payments(conn)
@@ -144,7 +142,7 @@ def test_dismissed_payment_stays_dismissed_after_restart(tmp_path):
             conn.close()
 
     # A fresh app instance simulates a restart against the same database.
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)):
+    with TestClient(create_app(db_path, today=_today)):
         conn = sqlite3.connect(db_path)
         try:
             [still_dismissed] = list_payments(conn, include_dismissed=True)
@@ -157,17 +155,16 @@ def test_dismissed_payment_stays_dismissed_after_restart(tmp_path):
 def test_reapply_reruns_detection_and_respects_category_type(tmp_path):
     """Test POST /reapply re-runs detection when category type changes."""
     db_path = tmp_path / "t.db"
-    categories_path = tmp_path / "categories.toml"
     # The rule categorizes the gym debits as "Fitness", typed variable, so detection skips them.
-    categories_path.write_text(GYM_TOML_VARIABLE, encoding="utf-8")
+    seed(db_path, GYM_TOML_VARIABLE)
     _seed_gym_transactions(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         # With gym as variable, detection should not store any payment
         assert _payment_count(db_path) == 0
 
-        # Change the toml to have gym as fixed
-        categories_path.write_text(GYM_TOML, encoding="utf-8")
+        # Change the taxonomy to have gym as fixed, through the store (same as the Categories page).
+        seed(db_path, GYM_TOML)
 
         # POST /reapply to trigger re-detection
         response = client.post("/reapply")
@@ -176,8 +173,8 @@ def test_reapply_reruns_detection_and_respects_category_type(tmp_path):
         # Now the gym payment should be detected and stored
         assert _payment_count(db_path) == 1
 
-        # Change the toml back to variable
-        categories_path.write_text(GYM_TOML_VARIABLE, encoding="utf-8")
+        # Change the taxonomy back to variable
+        seed(db_path, GYM_TOML_VARIABLE)
 
         # POST /reapply again
         response = client.post("/reapply")

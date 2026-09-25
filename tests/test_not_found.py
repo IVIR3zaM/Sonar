@@ -6,18 +6,13 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from tests.html import soup
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
+from tests.seed import seed
 
 
 def _app(tmp_path: Path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
-    return create_app(db_path, categories_path=categories_path)
+    seed(db_path)
+    return create_app(db_path)
 
 
 def test_unknown_route_returns_404_with_friendly_message(tmp_path):

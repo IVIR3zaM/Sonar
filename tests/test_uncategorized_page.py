@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sonar.app import create_app
 from sonar.uncategorized_export import HEADER
 from tests.html import records, soup, text
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
@@ -48,10 +49,10 @@ def _count(response) -> int:
 
 def test_uncategorized_page_lists_header_groups_and_reapply_narrows_them(tmp_path):
     content = FIXTURE.read_bytes()
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(EMPTY_TOML, encoding="utf-8")
+    db_path = tmp_path / "t.db"
+    seed(db_path, EMPTY_TOML)
 
-    with TestClient(create_app(tmp_path / "t.db", categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         upload = client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
         # All 7 rows added, none matched by the empty taxonomy.
         [giro] = soup(upload).select('[data-filename="giro.csv"]')
@@ -80,7 +81,7 @@ def test_uncategorized_page_lists_header_groups_and_reapply_narrows_them(tmp_pat
         # Add a rule for "Restaurant XYZ" and re-upload the same file: no
         # duplicates are added, but the previously stored matching rows are
         # now categorized and disappear from the page.
-        categories_path.write_text(RESTAURANT_RULE_TOML, encoding="utf-8")
+        seed(db_path, RESTAURANT_RULE_TOML)
         reupload = client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
         [giro] = soup(reupload).select('[data-filename="giro.csv"]')
         assert int(text(giro.select_one('[data-field="added"]'))) == 0  # all duplicates
@@ -90,7 +91,7 @@ def test_uncategorized_page_lists_header_groups_and_reapply_narrows_them(tmp_pat
         assert "restaurant xyz" not in text(soup(page_after)).casefold()
 
         # A further rule change without re-uploading takes effect via /reapply.
-        categories_path.write_text(RESTAURANT_AND_ACME_TOML, encoding="utf-8")
+        seed(db_path, RESTAURANT_AND_ACME_TOML)
         reapply = client.post("/reapply")
         assert reapply.status_code == 200
         assert _count(reapply) == 4
@@ -142,10 +143,10 @@ def test_copy_button_falls_back_when_clipboard_is_unavailable_or_rejects(tmp_pat
 
 def test_row_amounts_carry_data_cents(tmp_path):
     content = FIXTURE.read_bytes()
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(EMPTY_TOML, encoding="utf-8")
+    db_path = tmp_path / "t.db"
+    seed(db_path, EMPTY_TOML)
 
-    with TestClient(create_app(tmp_path / "t.db", categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
         page = soup(client.get("/uncategorized"))
 

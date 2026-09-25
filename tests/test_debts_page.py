@@ -15,6 +15,7 @@ from sonar.app import create_app
 from sonar.db import apply_migrations
 from sonar.debt_store import list_debts
 from tests.html import cents, fields, soup
+from tests.seed import seed
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
@@ -22,12 +23,6 @@ TODAY = date(2026, 9, 23)
 
 def _today() -> date:
     return TODAY
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _insert_debit(
@@ -92,9 +87,9 @@ def _debt_id(db_path: Path, name: str) -> int:
 
 def test_debts_page_shows_installments_loans_and_total(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         # Sofa installment (T2 worked example): 3 matched debits plus one too
         # early (before first_payment_date - TOLERANCE) that must not count.
         for i, booking_date in enumerate(["2026-01-05", "2026-02-05", "2026-03-05"]):
@@ -394,9 +389,9 @@ def test_debts_page_shows_installments_loans_and_total(tmp_path):
 
 def test_bad_installment_field_returns_400_and_stores_nothing(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         response = client.post(
             "/debts/installments",
             data={
@@ -422,8 +417,8 @@ def test_bad_installment_field_returns_400_and_stores_nothing(tmp_path):
 
 def test_delete_unknown_debt_returns_404(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         response = client.post("/debts/999/delete")
         assert response.status_code == 404

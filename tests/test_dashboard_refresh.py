@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from tests.html import cents, soup
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 TODAY = date(2026, 9, 23)
@@ -22,12 +23,6 @@ TODAY = date(2026, 9, 23)
 
 def _today() -> date:
     return TODAY
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _figures(client: TestClient) -> tuple[int, str, int]:
@@ -42,10 +37,10 @@ def _figures(client: TestClient) -> tuple[int, str, int]:
 
 def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     content = FIXTURE.read_bytes()
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post("/import", files=[("files", ("giro.csv", content, "text/csv"))])
 
         assert (
@@ -102,5 +97,5 @@ def test_dashboard_reflects_import_and_settings_without_restart(tmp_path):
         assert _figures(client) == (-60_000, "green", -100_000)
 
     # A fresh app instance simulates a restart against the same database.
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert _figures(client) == (-60_000, "green", -100_000)

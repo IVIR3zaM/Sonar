@@ -16,9 +16,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sonar import charts
-from sonar.categorize import Rule, load_taxonomy
+from sonar.categorize import Rule
 from sonar.categorizing import (
-    reapply_rules,
     transactions_with_category,
     uncategorized_count,
     uncategorized_transactions,
@@ -53,13 +52,14 @@ from sonar.recurring import (
 )
 from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
+from sonar.taxonomy_service import reapply_stored_taxonomy
+from sonar.taxonomy_store import load_stored_taxonomy
 from sonar.uncategorized_export import build_categorization_request
 
 # Resolved relative to this module, not the process CWD, so migrations are
 # found regardless of where the app is launched from.
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-CATEGORIES_PATH = Path(__file__).parent / "categories.toml"
 STATIC_DIR = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -153,15 +153,15 @@ templates.env.globals["charts"] = charts
 
 def create_app(
     db_path: Path = Path("data/sonar.db"),
-    categories_path: Path = CATEGORIES_PATH,
     today: Callable[[], date] = date.today,
 ) -> FastAPI:
     """Build the Sonar FastAPI app, migrating `db_path` on startup.
 
-    `categories_path` is read fresh on every import and again at startup, so
-    editing `categories.toml` by hand (the Categorization workflow) takes
-    effect without restarting the app. `today` defaults to the real clock;
-    tests pin it so recurring-payment detection is deterministic.
+    The taxonomy (categories and rules) lives in the DB, not a file: the
+    lifespan re-applies whatever is currently stored, so an edit made through
+    the Categories page or the API takes effect without restarting the app.
+    `today` defaults to the real clock; tests pin it so recurring-payment
+    detection is deterministic.
     """
 
     @asynccontextmanager
@@ -169,9 +169,7 @@ def create_app(
         conn = connect(db_path)
         try:
             apply_migrations(conn, MIGRATIONS_DIR)
-            taxonomy = load_taxonomy(categories_path)
-            reapply_rules(conn, taxonomy.rules)
-            sync_detected(conn, taxonomy.categories, today())
+            reapply_stored_taxonomy(conn, today())
         finally:
             conn.close()
         yield
@@ -287,9 +285,9 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
-        taxonomy = load_taxonomy(categories_path)
         conn = connect(db_path)
         try:
+            taxonomy = load_stored_taxonomy(conn)
             board = load_dashboard(conn, taxonomy.categories, today())
         finally:
             conn.close()
@@ -299,9 +297,9 @@ def create_app(
     async def monthly_page(
         request: Request, month: str | None = None, category: str | None = None
     ) -> HTMLResponse:
-        taxonomy = load_taxonomy(categories_path)
         conn = connect(db_path)
         try:
+            taxonomy = load_stored_taxonomy(conn)
             rows = transactions_with_category(conn)
             salary_day = load_settings(conn).salary_day
         finally:
@@ -360,14 +358,11 @@ def create_app(
 
     @app.post("/reapply", response_class=HTMLResponse)
     async def reapply(request: Request) -> HTMLResponse:
-        # Reloads the taxonomy from disk so a hand edit to categories.toml
-        # takes effect without restarting the app (same as a fresh import).
-        taxonomy = load_taxonomy(categories_path)
+        # Reloads the taxonomy stored in the DB so an edit made through the
+        # Categories page or the API takes effect without restarting the app.
         conn = connect(db_path)
         try:
-            reapply_rules(conn, taxonomy.rules)
-            sync_detected(conn, taxonomy.categories, today())
-            count = uncategorized_count(conn)
+            count = reapply_stored_taxonomy(conn, today())
         finally:
             conn.close()
         # The nav badge rides along out of band so it agrees with the page count.
@@ -393,14 +388,13 @@ def create_app(
         request: Request,
         files: list[UploadFile] = File(...),  # noqa: B008 - FastAPI's required pattern
     ) -> HTMLResponse:
-        # Loaded once per request, not once per file: all files in one upload
-        # see the same rule set, and an edit to categories.toml between
-        # requests applies without restarting the app.
-        taxonomy = load_taxonomy(categories_path)
         # One connection for the whole upload; one file's failure (unknown
-        # format) must not stop the others in the same request.
+        # format) must not stop the others in the same request. The taxonomy
+        # is loaded once per request, not once per file, so all files in one
+        # upload see the same rule set.
         conn = connect(db_path)
         try:
+            taxonomy = load_stored_taxonomy(conn)
             results = [
                 _import_one(conn, await f.read(), f.filename or "", taxonomy.rules) for f in files
             ]

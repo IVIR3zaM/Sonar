@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sonar.app import create_app
 from sonar.monthly import UNCATEGORIZED
 from tests.html import cents, records, soup, text
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
@@ -45,12 +46,10 @@ counterparty = "John Doe"
 
 @pytest.fixture
 def client(tmp_path):
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(TOML, encoding="utf-8")
+    db_path = tmp_path / "t.db"
+    seed(db_path, TOML)
     # Pinned well after the fixture, so the default month cannot come from the clock.
-    app = create_app(
-        tmp_path / "t.db", categories_path=categories_path, today=lambda: date(2026, 11, 5)
-    )
+    app = create_app(db_path, today=lambda: date(2026, 11, 5))
     with TestClient(app) as client:
         client.post("/import", files=[("files", ("giro.csv", FIXTURE.read_bytes(), "text/csv"))])
         yield client

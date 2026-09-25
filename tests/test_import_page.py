@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from tests.html import fields, soup
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
@@ -102,11 +103,12 @@ def test_nav_links_to_import_page(tmp_path) -> None:
 
 def test_upload_reports_per_file_uncategorized_from_tmp_toml(tmp_path) -> None:
     content = FIXTURE.read_bytes()
+    db_path = tmp_path / "t.db"
     # Never the shipped src/sonar/categories.toml: a fake rule matching one
     # of the fixture's counterparties, so exactly one row of the fixture's
     # 7 gets categorized and the rest stay uncategorized.
-    categories_path = tmp_path / "categories.toml"
-    categories_path.write_text(
+    seed(
+        db_path,
         """
         [[category]]
         name = "Groceries"
@@ -116,10 +118,9 @@ def test_upload_reports_per_file_uncategorized_from_tmp_toml(tmp_path) -> None:
         category = "Groceries"
         counterparty = "ACME GmbH"
         """,
-        encoding="utf-8",
     )
 
-    with TestClient(create_app(tmp_path / "t.db", categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post(
             "/import",
             files=[("files", ("giro.csv", content, "text/csv"))],

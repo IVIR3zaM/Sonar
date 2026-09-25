@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from tests.html import fields, soup
+from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 FIXTURE_LINES = FIXTURE.read_text(encoding="utf-8-sig").splitlines()
@@ -31,12 +32,6 @@ counterparty = "Fake Gym"
 
 def _today() -> date:
     return date(2026, 9, 23)
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _debts(client: TestClient) -> dict[str, dict[str, int | str]]:
@@ -77,9 +72,9 @@ def _csv_bytes(rows: list[str]) -> bytes:
 
 def test_debts_survive_restart_against_same_db(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert (
             client.post(
                 "/debts/installments",
@@ -115,16 +110,16 @@ def test_debts_survive_restart_against_same_db(tmp_path):
         )
 
     # A fresh app instance simulates a restart against the same database.
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert client.get("/debts").status_code == 200
         assert sorted(_debts(client)) == ["Car loan", "Sofa"]
 
 
 def test_paid_so_far_tracks_reupload_and_new_debits(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert (
             client.post(
                 "/debts/installments",
@@ -164,9 +159,9 @@ def test_paid_so_far_tracks_reupload_and_new_debits(tmp_path):
 
 def test_upload_links_detected_series_without_extra_action(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)  # uncategorized rows are detected too
+    seed(db_path)  # uncategorized rows are detected too
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         assert (
             client.post(
                 "/debts/installments",
@@ -202,9 +197,9 @@ def test_upload_links_detected_series_without_extra_action(tmp_path):
 
 def test_reapply_making_series_variable_removes_the_link(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path, today=_today)) as client:
+    with TestClient(create_app(db_path, today=_today)) as client:
         client.post(
             "/debts/installments",
             data={
@@ -225,7 +220,7 @@ def test_reapply_making_series_variable_removes_the_link(tmp_path):
         # Marking the matching counterparty's category "variable" makes
         # detection drop the series; /reapply must re-run detection and the
         # debt page's link must disappear with it.
-        categories_path.write_text(FITNESS_VARIABLE_TOML, encoding="utf-8")
+        seed(db_path, FITNESS_VARIABLE_TOML)
         response = client.post("/reapply")
         assert response.status_code == 200
 

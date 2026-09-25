@@ -11,21 +11,16 @@ from sonar.db import apply_migrations
 from sonar.display import eur
 from sonar.settings_store import load_settings
 from tests.html import cents, fields, soup, text
+from tests.seed import seed
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
 
 
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
-
-
 def _app(tmp_path: Path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
-    return create_app(db_path, categories_path=categories_path, today=lambda: TODAY), db_path
+    seed(db_path)
+    return create_app(db_path, today=lambda: TODAY), db_path
 
 
 def _input_value(page, form_id: str, name: str) -> str:
@@ -82,7 +77,7 @@ def test_post_settings_saves_and_overwrites(tmp_path):
 
 def test_balance_display_manual_then_later_import_wins_and_survives_restart(tmp_path):
     app, db_path = _app(tmp_path)
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
     with TestClient(app) as client:
         response = client.post(
@@ -110,7 +105,7 @@ def test_balance_display_manual_then_later_import_wins_and_survives_restart(tmp_
         conn.close()
 
     # A fresh app/client on the same db is a restart; both rows must survive.
-    app2 = create_app(db_path, categories_path=categories_path, today=lambda: TODAY)
+    app2 = create_app(db_path, today=lambda: TODAY)
     with TestClient(app2) as client:
         current = soup(client.get("/settings")).select_one("#current-balance")
         assert fields(current) == {"amount": -30_000, "as_of": "2026-09-21", "source": "import"}

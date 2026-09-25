@@ -14,14 +14,9 @@ from sonar.app import create_app
 from sonar.db import apply_migrations
 from sonar.debt_store import list_debts
 from tests.html import soup, text
+from tests.seed import seed
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
-
-
-def _empty_categories(tmp_path: Path) -> Path:
-    path = tmp_path / "categories.toml"
-    path.write_text("", encoding="utf-8")
-    return path
 
 
 def _assert_debts_table_empty(db_path: Path) -> None:
@@ -93,10 +88,10 @@ LOAN_CASES = [
 @pytest.mark.parametrize("field,value", INSTALLMENT_CASES)
 def test_bad_installment_field_returns_400(tmp_path, field, value):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     data = {**VALID_INSTALLMENT, field: value}
 
-    with TestClient(create_app(db_path, categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post("/debts/installments", data=data)
         assert response.status_code == 400
 
@@ -105,10 +100,10 @@ def test_bad_installment_field_returns_400(tmp_path, field, value):
 
 def test_bad_installment_field_shows_form_error_and_keeps_values(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     data = {**VALID_INSTALLMENT, "interval_months": "0"}
 
-    with TestClient(create_app(db_path, categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post("/debts/installments", data=data)
 
     assert response.status_code == 400
@@ -126,10 +121,10 @@ def test_bad_installment_field_shows_form_error_and_keeps_values(tmp_path):
 @pytest.mark.parametrize("field,value", LOAN_CASES)
 def test_bad_loan_field_returns_400(tmp_path, field, value):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     data = {**VALID_LOAN, field: value}
 
-    with TestClient(create_app(db_path, categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post("/debts/loans", data=data)
         assert response.status_code == 400
 
@@ -138,10 +133,10 @@ def test_bad_loan_field_returns_400(tmp_path, field, value):
 
 def test_bad_loan_field_shows_form_error_and_keeps_values(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     data = {**VALID_LOAN, "balance": "abc"}
 
-    with TestClient(create_app(db_path, categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post("/debts/loans", data=data)
 
     assert response.status_code == 400
@@ -175,11 +170,11 @@ FRIENDLY_CASES = [
 @pytest.mark.parametrize("kind,override,expected", FRIENDLY_CASES)
 def test_add_debt_error_message_is_friendly(tmp_path, kind, override, expected):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
     base = VALID_INSTALLMENT if kind == "installments" else VALID_LOAN
     data = {**base, **override}
 
-    with TestClient(create_app(db_path, categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post(f"/debts/{kind}", data=data)
 
     assert response.status_code == 400
@@ -192,9 +187,9 @@ def test_add_debt_error_message_is_friendly(tmp_path, kind, override, expected):
 
 def test_delete_unknown_debt_returns_404(tmp_path):
     db_path = tmp_path / "t.db"
-    categories_path = _empty_categories(tmp_path)
+    seed(db_path)
 
-    with TestClient(create_app(db_path, categories_path=categories_path)) as client:
+    with TestClient(create_app(db_path)) as client:
         response = client.post("/debts/999/delete")
         assert response.status_code == 404
         assert soup(response).select_one("#error-page") is not None

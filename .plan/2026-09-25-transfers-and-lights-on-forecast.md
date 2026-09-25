@@ -1,5 +1,5 @@
 # Categories in the DB, three spending groups and keep-the-lights-on forecast
-status: READY
+status: RUNNING
 created: 2026-09-25 · updated: 2026-09-25
 goal: Categories (each with one group: income, transfer, Fixed payments, Keep the lights on, Occasional payments) and ordered rules live in the local SQLite DB and are edited on a Categories page and through a local JSON API that Claude Code uses (owner-confirmed writes); the repo ships only a generic seed and no personal data (history rewritten behind an owner gate); Monthly shows the three group totals and net transfers; the payday forecast is fixed payments due plus a keep-the-lights-on daily-average estimate, with its own trend page; Occasional payments are shown but not forecast
 request: owner request of 2026-09-25 (net "Transfers out"; forecast = fixed due + lights-on daily average × days to payday; trend page; configurable categories; only the imported main account counts), owner answers of 2026-09-25 (Q1 DB, Q2 expected + range, Q3 three spending groups) and owner feedback of 2026-09-25 (all categorization config in the DB with a UI; group as a category field; local one-off import; generic public seed; DB/fixture tests; history rewrite gate; no personal data in tracked files), owner answer Q1 of 2026-09-25 (Claude Code categorizes through a JSON API on the running app, sharing one service layer with the Categories page, writes only after owner confirmation)
@@ -11,8 +11,8 @@ budgets: 2 tries per brief · 2 replans per node
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | SPEC amendments | exec | - | sonnet/haiku | 0 | 0 | TODO | |
-| N02 | Category groups model | exec | - | sonnet/sonnet | 0 | 0 | TODO | |
+| N01 | SPEC amendments | exec | - | sonnet/haiku | 1 | 0 | DONE | |
+| N02 | Category groups model | exec | - | sonnet/sonnet | 1 | 0 | VERIFYING | |
 | N03 | Taxonomy store and generic seed | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | Lights-on pure module | exec | N02 | opus/opus | 0 | 0 | TODO | |
 | N05 | App and CLI read the DB taxonomy | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |

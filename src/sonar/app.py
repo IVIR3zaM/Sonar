@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import date
+from fractions import Fraction
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -15,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from sonar import charts
+from sonar import charts, lights_on
 from sonar.api import build_api_router
 from sonar.categorize import Rule
 from sonar.categorizing import (
@@ -54,7 +56,7 @@ from sonar.recurring import (
 from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
 from sonar.spending_groups import LABELS as GROUP_LABELS
-from sonar.spending_groups import TRANSFER
+from sonar.spending_groups import LIGHTS_ON, TRANSFER
 from sonar.taxonomy_service import (
     GROUP_ORDER,
     CategoryNotFound,
@@ -166,6 +168,51 @@ def _group_label(category_type: str | None) -> str | None:
     if category_type is None or category_type == TRANSFER:
         return None
     return GROUP_LABELS.get(category_type)
+
+
+def _cents(amount: Fraction) -> int:
+    # Half a cent rounds up, like lights_on.py's own rounding; these Fraction
+    # amounts are never negative.
+    return math.floor(amount + Fraction(1, 2))
+
+
+def _lights_on_table_rows(months: list[lights_on.MonthSpend], categories: list[str]) -> list[dict]:
+    """One row per month, in cents, for the Keep-the-lights-on table."""
+    return [
+        {
+            "month": m.period.month,
+            "total_cents": _cents(m.daily_lights_on),
+            "by_category": {c: _cents(m.daily_by_category.get(c, Fraction(0))) for c in categories},
+            "occasional_cents": _cents(m.daily_occasional),
+        }
+        for m in months
+    ]
+
+
+def _lights_on_chart_series(
+    months: list[lights_on.MonthSpend], categories: list[str]
+) -> list[dict]:
+    """Total (if any category is set up) + one line per category + Occasional."""
+    series = []
+    if categories:
+        series.append(
+            {"name": "Keep the lights on", "values": [_cents(m.daily_lights_on) for m in months]}
+        )
+    series.extend(
+        {
+            "name": category,
+            "values": [_cents(m.daily_by_category.get(category, Fraction(0))) for m in months],
+        }
+        for category in categories
+    )
+    series.append(
+        {
+            "name": "Occasional payments (not forecast)",
+            "values": [_cents(m.daily_occasional) for m in months],
+            "muted": True,
+        }
+    )
+    return series
 
 
 templates.env.filters["money"] = _format_cents
@@ -432,6 +479,35 @@ def create_app(
                 "months": months,
                 "older": older,
                 "newer": newer,
+            },
+        )
+
+    @app.get("/lights-on", response_class=HTMLResponse)
+    async def lights_on_page(request: Request) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            taxonomy = load_stored_taxonomy(conn)
+            rows = transactions_with_category(conn)
+            salary_day = load_settings(conn).salary_day
+        finally:
+            conn.close()
+        categories = sorted(
+            name for name, group in taxonomy.categories.items() if group == LIGHTS_ON
+        )
+        until = max((tx.booking_date for tx, _ in rows), default=today())
+        months = lights_on.month_spends(rows, taxonomy.categories, salary_day, until)
+        shown = months[-24:]
+        recent = lights_on.lights_on_forecast(months, 1)
+        return templates.TemplateResponse(
+            request,
+            "lights_on.html",
+            {
+                "categories": categories,
+                "months": shown,
+                "chart_labels": [charts.month_label(m.period.month) for m in shown],
+                "daily_average_cents": recent.expected_cents if recent else None,
+                "table_rows": _lights_on_table_rows(shown, categories),
+                "chart_series": _lights_on_chart_series(shown, categories),
             },
         )
 

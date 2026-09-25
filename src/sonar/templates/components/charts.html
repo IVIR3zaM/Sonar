@@ -80,3 +80,35 @@
   {%- endfor %}
 </svg>
 {%- endmacro %}
+
+{#- series: list of {name, values, muted=false}, every values list the same
+    length as `labels`, oldest first. #}
+{% macro line_chart(id, aria_label, labels, series, height=90) %}
+{%- set slot = 32 -%}
+{%- set width = ([labels|length - 1, 1]|max) * slot -%}
+{%- set palette = ["stroke-sky-500 dark:stroke-sky-400", "stroke-amber-500 dark:stroke-amber-400", "stroke-violet-500 dark:stroke-violet-400", "stroke-rose-500 dark:stroke-rose-400", "stroke-emerald-500 dark:stroke-emerald-400"] -%}
+{%- set dots = ["bg-sky-500 dark:bg-sky-400", "bg-amber-500 dark:bg-amber-400", "bg-violet-500 dark:bg-violet-400", "bg-rose-500 dark:bg-rose-400", "bg-emerald-500 dark:bg-emerald-400"] -%}
+{%- set point_lists = charts.line_points(series|map(attribute="values")|list, width, height) -%}
+<svg id="{{ id }}" role="img" aria-label="{{ aria_label }}" viewBox="0 0 {{ width }} {{ height + 14 }}" class="block w-full">
+  <title>{{ aria_label }}</title>
+  {%- for s in series %}
+  {%- set points = point_lists[loop.index0] %}
+  <polyline data-series="{{ s.name }}" points="{{ points|map('join', ',')|join(' ') }}" fill="none" stroke-width="2"
+            class="{{ 'stroke-ink-muted/40' if s.muted else palette[loop.index0 % palette|length] }}">
+    <title>{{ s.name }}</title>
+  </polyline>
+  {%- endfor %}
+  {%- for label in labels %}
+  <text x="{{ loop.index0 * slot }}" y="{{ height + 12 }}" text-anchor="middle" font-size="8"
+        class="fill-gray-500 dark:fill-gray-400">{{ label[:3] }}</text>
+  {%- endfor %}
+</svg>
+<ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+  {%- for s in series %}
+  <li class="inline-flex items-center gap-1.5">
+    <span class="size-2 rounded-full {{ 'bg-ink-muted/40' if s.muted else dots[loop.index0 % dots|length] }}" aria-hidden="true"></span>
+    {{ s.name }}
+  </li>
+  {%- endfor %}
+</ul>
+{%- endmacro %}

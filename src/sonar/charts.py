@@ -51,6 +51,28 @@ def bars(values: Sequence[int], width: int) -> list[int]:
     return _scale(values, width)
 
 
+def line_points(
+    series: Sequence[Sequence[int]], width: int, height: int
+) -> list[list[tuple[int, int]]]:
+    """X,Y points for several series, sharing one y-scale so equal values land at the same height.
+
+    Flattening every series before calling `_scale` normalizes them to one
+    shared peak, so a value in one series lands at the same y as the same
+    value in another. A single-point series is placed at x=0 instead of
+    dividing by a zero point count.
+    """
+    flat = [v for s in series for v in s]
+    scaled = _scale(flat, height)
+    points = []
+    offset = 0
+    for s in series:
+        heights = scaled[offset : offset + len(s)]
+        offset += len(s)
+        step = width / (len(s) - 1) if len(s) > 1 else 0
+        points.append([(round(i * step), height - h) for i, h in enumerate(heights)])
+    return points
+
+
 def month_label(month: date) -> str:
     """Axis label "Sep 2026" for a first-of-month date."""
     return display_date(month).split(" ", 1)[1]

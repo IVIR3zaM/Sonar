@@ -7,7 +7,7 @@ import pytest
 from bs4 import BeautifulSoup
 
 from sonar.app import create_app, templates
-from sonar.charts import bars, columns, month_label, runway
+from sonar.charts import bars, columns, line_points, month_label, runway
 
 
 @pytest.fixture
@@ -80,6 +80,21 @@ def test_month_label():
     assert month_label(date(2026, 9, 1)) == "Sep 2026"
 
 
+def test_line_points_puts_the_larger_value_higher_on_a_shared_scale():
+    points = line_points([[0, 10], [0, 5]], width=100, height=50)
+    # Same value (0) at index 0 lands at the same y in both series.
+    assert points[0][0][1] == points[1][0][1]
+    # 10 is the larger of the two, so its y is smaller (higher on screen).
+    assert points[0][1][1] < points[1][1][1]
+    assert [x for x, _ in points[0]] == [0, 100]
+
+
+def test_line_points_single_point_and_all_zero_do_not_divide_by_zero():
+    assert line_points([[5]], width=100, height=50) == [[(0, 0)]]
+    zeros = line_points([[0, 0, 0]], width=100, height=50)
+    assert zeros == [[(0, 50), (50, 50), (100, 50)]]
+
+
 def test_runway_bar_macro_is_an_accessible_svg(render):
     soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000)")
     svg = soup.find("svg")
@@ -148,3 +163,26 @@ def test_category_bars_macro_has_one_rect_per_category(render):
     assert [r["data-cents"] for r in rects] == ["20000", "5000"]
     assert "groceries" in rects[0].find("title").get_text()
     assert int(rects[0]["width"]) > int(rects[1]["width"])
+
+
+def test_line_chart_macro_has_one_polyline_per_series(render):
+    series = [
+        {"name": "Keep the lights on", "values": [10000, 12000, 14000]},
+        {"name": "Groceries", "values": [8000, 9000, 10000]},
+        {"name": "Occasional payments (not forecast)", "values": [1000, 2000, 1500], "muted": True},
+    ]
+    labels = ["Feb 2026", "Mar 2026", "Apr 2026"]
+    soup = render(
+        "line_chart",
+        "line_chart('lights-on-chart', 'Daily average per month', labels, series)",
+        labels=labels,
+        series=series,
+    )
+    svg = soup.find("svg", id="lights-on-chart")
+    assert svg["role"] == "img"
+    assert svg["aria-label"]
+    polylines = svg.find_all("polyline")
+    assert [p["data-series"] for p in polylines] == [s["name"] for s in series]
+    assert all(len(p["points"].split()) == 3 for p in polylines)
+    legend_items = [li.get_text(strip=True) for li in soup.select("ul li")]
+    assert legend_items == [s["name"] for s in series]

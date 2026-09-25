@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/amount.html" import amount %}
+{% from "components/empty.html" import empty %}
+{% from "components/charts.html" import line_chart %}
+
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set th_num = th ~ " text-right" %}
+{% set tr = "border-t border-line" %}
+{% set td = "py-2 pr-4 text-ink last:pr-0" %}
+{% set td_num = td ~ " text-right" %}
+
+{% block content %}
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Keep the lights on</h1>
+  {% if categories %}
+  <p class="mt-1 text-sm text-ink-muted">
+    Categories: {{ categories|join(", ") }} ·
+    <a href="/categories" class="font-medium text-accent underline-offset-2 hover:underline">Change in Categories</a>
+  </p>
+  {% else %}
+  <p id="lights-on-no-categories" class="mt-1 text-sm text-ink-muted">
+    No category is in Keep the lights on yet, so nothing here is forecast.
+    <a href="/categories" class="font-medium text-accent underline-offset-2 hover:underline">Set up categories</a>.
+  </p>
+  {% endif %}
+</header>
+
+{% if not months %}
+{{ empty("No complete month yet", "Import a bank export that covers at least one full month to see a daily average.", id="lights-on-empty") }}
+{% else %}
+<div class="space-y-4 sm:space-y-6">
+  {% call card(title="Daily average", subtitle="Day-weighted average of Keep-the-lights-on spending over the last complete months (up to 3)", id="daily-average-card") %}
+    {{ stat("3-month daily average", value=amount(daily_average_cents, colored=false), id="daily-average") }}
+  {% endcall %}
+
+  {% call card(title="Daily average per month", subtitle="Up to the latest 24 complete months, oldest first", id="lights-on-chart-card") %}
+    <div id="lights-on-chart-wrap">
+      {{ line_chart("lights-on-chart", "Keep the lights on: daily average spending per month", chart_labels, chart_series) }}
+    </div>
+
+    <div class="{{ table_wrap }} mt-6">
+      <table id="lights-on-table" class="w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th class="{{ th }} pl-2">Month</th>
+            {%- if categories %}
+            <th class="{{ th_num }}">Keep the lights on</th>
+            {%- endif %}
+            {%- for c in categories %}
+            <th class="{{ th_num }}">{{ c }}</th>
+            {%- endfor %}
+            <th class="{{ th_num }}">Occasional</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in table_rows %}
+          <tr data-row class="{{ tr }}">
+            <td class="{{ td }} pl-2" data-field="month">{{ row.month|date }}</td>
+            {%- if categories %}
+            <td class="{{ td_num }}" data-field="total">{{ amount(row.total_cents, colored=false) }}</td>
+            {%- endif %}
+            {%- for c in categories %}
+            <td class="{{ td_num }}" data-field="category-{{ c }}">{{ amount(row.by_category[c], colored=false) }}</td>
+            {%- endfor %}
+            <td class="{{ td_num }}" data-field="occasional">{{ amount(row.occasional_cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

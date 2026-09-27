@@ -29,8 +29,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N19 | Line chart keeps its edge labels | exec | N12 | sonnet/haiku | 1 | 0 | VERIFYING | |
 | N20 | Lights-on page and dashboard share their months | exec | N12 | opus/opus | 1 | 0 | VERIFYING | |
 | N21 | Monthly: transfers apart and net | exec | N12 | sonnet/sonnet | 1 | 0 | VERIFYING | |
-| N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 0 | 0 | TODO | |
-| N14 | visual check | gate | N13,N22 | - | 0 | 1 | TODO | |
+| N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 1 | 0 | DONE | |
+| N14 | visual check | gate | N13,N22 | - | 0 | 1 | WAITING | |
 | N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 0 | 0 | TODO | |
 | N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
 

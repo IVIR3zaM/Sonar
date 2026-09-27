@@ -41,9 +41,9 @@
         {% set has_error = row.edit_error or row.delete_error %}
         {% set drawer_id = "drawer-category-" ~ category.id %}
         <li data-category-id="{{ category.id }}" class="py-3">
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2">
-              <span data-field="name" class="font-medium text-ink">{{ category.name }}</span>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+              <span data-field="name" class="break-words font-medium text-ink [overflow-wrap:anywhere]">{{ category.name }}</span>
               {{ badge(section.label, attrs={"data-field": "group"}) }}
               <span data-field="rule_count" class="text-xs text-ink-muted">{{ category.rule_count }} rule{{ "s" if category.rule_count != 1 else "" }}</span>
             </div>
@@ -138,17 +138,17 @@
             </div>
             {{ form_error(row.move_error) }}
           </td>
-          <td class="{{ td }}">{{ badge(rule.category, attrs={"data-field": "category"}) }}</td>
-          <td class="{{ td }}">
+          <td class="{{ td }}">{{ badge(rule.category, attrs={"data-field": "category"}, wrap=true) }}</td>
+          <td class="{{ td }} min-w-0">
             <div class="flex flex-wrap gap-1">
-              {% if rule.counterparty %}{{ badge('counterparty contains "' ~ rule.counterparty ~ '"', attrs={"data-field": "counterparty"}) }}{% endif %}
-              {% if rule.counterparty_regex %}{{ badge("counterparty matches /" ~ rule.counterparty_regex ~ "/", attrs={"data-field": "counterparty_regex"}) }}{% endif %}
-              {% if rule.purpose %}{{ badge('purpose contains "' ~ rule.purpose ~ '"', attrs={"data-field": "purpose"}) }}{% endif %}
-              {% if rule.purpose_regex %}{{ badge("purpose matches /" ~ rule.purpose_regex ~ "/", attrs={"data-field": "purpose_regex"}) }}{% endif %}
-              {% if rule.sign != "any" %}{{ badge(rule.sign, attrs={"data-field": "sign"}) }}{% endif %}
-              {% if rule.iban %}{{ badge("IBAN " ~ rule.iban, attrs={"data-field": "iban"}) }}{% endif %}
-              {% if rule.creditor_id %}{{ badge("creditor ID " ~ rule.creditor_id, attrs={"data-field": "creditor_id"}) }}{% endif %}
-              {% if rule.min_amount or rule.max_amount %}{{ badge((rule.min_amount or "0") ~ "–" ~ (rule.max_amount or "∞") ~ " €", attrs={"data-field": "amount_range"}) }}{% endif %}
+              {% if rule.counterparty %}{{ badge('counterparty contains "' ~ rule.counterparty ~ '"', attrs={"data-field": "counterparty"}, wrap=true) }}{% endif %}
+              {% if rule.counterparty_regex %}{{ badge("counterparty matches /" ~ rule.counterparty_regex ~ "/", attrs={"data-field": "counterparty_regex"}, wrap=true) }}{% endif %}
+              {% if rule.purpose %}{{ badge('purpose contains "' ~ rule.purpose ~ '"', attrs={"data-field": "purpose"}, wrap=true) }}{% endif %}
+              {% if rule.purpose_regex %}{{ badge("purpose matches /" ~ rule.purpose_regex ~ "/", attrs={"data-field": "purpose_regex"}, wrap=true) }}{% endif %}
+              {% if rule.sign != "any" %}{{ badge(rule.sign, attrs={"data-field": "sign"}, wrap=true) }}{% endif %}
+              {% if rule.iban %}{{ badge("IBAN " ~ rule.iban, attrs={"data-field": "iban"}, wrap=true) }}{% endif %}
+              {% if rule.creditor_id %}{{ badge("creditor ID " ~ rule.creditor_id, attrs={"data-field": "creditor_id"}, wrap=true) }}{% endif %}
+              {% if rule.min_amount or rule.max_amount %}{{ badge((rule.min_amount or "0") ~ "–" ~ (rule.max_amount or "∞") ~ " €", attrs={"data-field": "amount_range"}, wrap=true) }}{% endif %}
             </div>
           </td>
           <td class="{{ td }}">

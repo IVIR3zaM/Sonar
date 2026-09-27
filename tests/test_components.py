@@ -102,6 +102,32 @@ def test_badge_renders_text_tone_and_attrs():
     assert badge["data-count"] == "3"
 
 
+def test_badge_default_markup_is_unchanged():
+    soup = render(
+        '{% from "components/badge.html" import badge %}'
+        '{{ badge("Paid off", tone="positive", id="paid", attrs={"data-count": 3}) }}'
+    )
+    badge = soup.select_one("#paid")
+    assert badge.get_text(strip=True) == "Paid off"
+    assert badge["data-tone"] == "positive"
+    assert badge["data-count"] == "3"
+    assert "whitespace-nowrap" in badge["class"]
+    assert "whitespace-normal" not in badge["class"]
+
+
+def test_badge_wrap_true_keeps_text_tone_and_attrs():
+    soup = render(
+        '{% from "components/badge.html" import badge %}'
+        '{{ badge("Paid off", tone="positive", id="paid", attrs={"data-count": 3}, wrap=true) }}'
+    )
+    badge = soup.select_one("#paid")
+    assert badge.get_text(strip=True) == "Paid off"
+    assert badge["data-tone"] == "positive"
+    assert badge["data-count"] == "3"
+    assert "whitespace-normal" in badge["class"]
+    assert "whitespace-nowrap" not in badge["class"]
+
+
 def test_stat_renders_label_and_value_markup():
     soup = render(
         '{% from "components/stat.html" import stat %}'

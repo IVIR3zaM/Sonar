@@ -1,9 +1,11 @@
 {#-
-  badge(text, tone="neutral", id=None, attrs={})
+  badge(text, tone="neutral", id=None, attrs={}, wrap=false)
     A small pill label. tone: "neutral" | "accent" | "positive" | "negative" | "warn",
     also exposed as data-tone so tests need not depend on color classes.
+    wrap=true lets long text (e.g. a rule condition) break instead of forcing
+    the page wider; the default stays a single-line, non-wrapping chip.
 -#}
-{% macro badge(text, tone="neutral", id=None, attrs={}) -%}
+{% macro badge(text, tone="neutral", id=None, attrs={}, wrap=false) -%}
 {%- set tones = {
   "neutral": "bg-surface-muted text-ink-muted ring-line",
   "accent": "bg-accent-soft text-accent ring-accent/20",
@@ -11,5 +13,6 @@
   "negative": "bg-negative-soft text-negative ring-negative/20",
   "warn": "bg-warn-soft text-warn ring-warn/25",
 } -%}
-<span{% if id %} id="{{ id }}"{% endif %} data-tone="{{ tone }}" class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset {{ tones[tone] }}"{{ attrs|xmlattr }}>{{ text }}</span>
+{%- set wrap_classes = "whitespace-normal [overflow-wrap:anywhere]" if wrap else "whitespace-nowrap" -%}
+<span{% if id %} id="{{ id }}"{% endif %} data-tone="{{ tone }}" class="inline-flex items-center gap-1 {{ wrap_classes }} rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset {{ tones[tone] }}"{{ attrs|xmlattr }}>{{ text }}</span>
 {%- endmacro %}

@@ -25,11 +25,16 @@ budgets: 2 tries per brief · 2 replans per node
 | N11 | Retire categories.toml | exec | N05,N09,N17 | sonnet/sonnet | 1 | 1 | DONE | |
 | N12 | Rebuild CSS | exec | N06,N07,N08,N09,N10 | haiku/haiku | 1 | 0 | DONE | |
 | N13 | Import the owner's categories | gate | N11 | - | 0 | 0 | DONE | |
-| N14 | visual check | gate | N12,N13 | - | 0 | 0 | WAITING | |
-| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17 | -/opus | 0 | 0 | TODO | |
+| N18 | Categories page fits 375px | exec | N12 | sonnet/haiku | 1 | 0 | VERIFYING | |
+| N19 | Line chart keeps its edge labels | exec | N12 | sonnet/haiku | 1 | 0 | VERIFYING | |
+| N20 | Lights-on page and dashboard share their months | exec | N12 | opus/opus | 1 | 0 | VERIFYING | |
+| N21 | Monthly: transfers apart and net | exec | N12 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 0 | 0 | TODO | |
+| N14 | visual check | gate | N13,N22 | - | 0 | 1 | TODO | |
+| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 0 | 0 | TODO | |
 | N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
 
-Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N14 · 11 N15 · 12 N16. (N10 depends on N17 only because both write src/sonar/app.py.)
+Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N15 · 14 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint.)
 
 Design decision (planner, owner feedback item 2): the spending group is the category's one `type` field, with five values: `income`, `transfer`, `fixed` (Fixed payments), `lights_on` (Keep the lights on) and `occasional` (Occasional payments). `variable` is gone: it is split into `lights_on` and `occasional`. This beats the previous `variable` + separate lights-on set, and a `variable` + boolean flag: one field, one select in the UI, no invalid combination (a ticked `fixed` category), no second table that drifts when a category is renamed, and every consumer keeps reading the same `category_types` name → type mapping (recurrence.py:48, recurring.py:147, monthly.py, dashboard.py), so the column keeps the name `type` and only the UI calls it "Group". Recurring detection keeps its meaning: recurrence.py:23 excludes `lights_on`, `occasional` and `transfer`, exactly what `variable` + `transfer` excluded before; `fixed`, `income` and uncategorized rows are still detected. `spending_groups.py` (N02) holds the five values, their labels, the detection exclusion and the per-group sum; nothing else hard-codes a type string. A legacy TOML with `variable` (the owner's file) imports Groceries, Transport and Shopping as `lights_on` and every other `variable` category as `occasional`; the owner adjusts groups on the Categories page.
 
@@ -246,16 +251,89 @@ Done when:
 Findings:
 - none
 
-### N14 visual check
-Do: gate: the user runs `uv run sonar` against their real data and checks the dashboard, /monthly, /lights-on, /categories and /settings in light and dark themes and at 375px width, then pastes the Uncategorized export into Claude Code once and confirms or declines its proposal.
+### N18 Categories page fits 375px
+Do: Fix N14 try 1 finding C3: /categories scrolls sideways at 375px (document scrollWidth 698), while every other page fits. The tables already sit in `overflow-x-auto` wrappers (categories.html:12, :101) and base.html:117-119 keeps the column shrinkable, so the overflow comes from content that cannot wrap. Make every row wrap: (1) category rows (categories.html:44-49): the outer and inner flex containers get `flex-wrap` and `min-w-0`, and the name span breaks long words (`break-words`/`[overflow-wrap:anywhere]`), so a long name, the group badge, the rule count and Edit stack instead of pushing the page wider; (2) the badge macro (components/badge.html:6-14) gains an optional `wrap=false` parameter; `wrap=true` swaps `whitespace-nowrap` for classes that let a long chip break anywhere (`whitespace-normal [overflow-wrap:anywhere]`); the default output stays byte-identical; update the macro's doc comment (badge.html:1-5); (3) every condition chip in the rules table (categories.html:144-151) and the category badge (:141) pass `wrap=true`, and the conditions cell (:142-143) gets `min-w-0`; (4) scan the rest of categories.html (the add forms :82-96 and :196-212, the move column :119-140) for any other element with a fixed or nowrap width and let it wrap. Optional check if Google Chrome is installed: start the app on a temp copy of data/sonar.db (never data/sonar.db itself) and take `--headless=new --window-size=375,4000 --screenshot=<scratchpad>/categories.png` of /categories, then Read the PNG; keep screenshots in the scratchpad only. Do not rebuild CSS (N22 does).
+Spec: SPEC §12 Design system (SPEC.md:192: no horizontal scroll at 375px)
+Read: src/sonar/templates/categories.html, src/sonar/templates/components/badge.html, src/sonar/templates/base.html:110-125, tests/test_components.py:90-105
+Write: src/sonar/templates/categories.html, src/sonar/templates/components/badge.html, tests/test_components.py
+Test first: a macro test in tests/test_components.py: `badge("x")` renders exactly the same markup as before this node (compare to the current output string), and `badge("x", wrap=true)` renders the same text, tone and attrs. The wrapping itself is pure CSS and needs no test (CLAUDE.md Conventions).
 Done when:
-- C1 the dashboard shows the two numbered parts (Fixed payments due, Keep the lights on), a plausible lights-on figure, the short/spare line, and the Occasional note
-- C2 /monthly shows Fixed payments, Keep the lights on and Occasional payments totals that add up to Spent (with Uncategorized when present), group badges on the category rows, and "Net moved to other accounts" with a net figure for a month with money back from the sub-account
-- C3 /lights-on shows a readable trend chart with the Occasional line and table, no horizontal scroll at 375px
-- C4 on /categories, changing a category's group moves it between groups on Monthly, the dashboard and the trend page; adding, editing, moving and deleting a rule works and an invalid regex shows a friendly inline error
-- C5 pasting the Uncategorized export into Claude Code runs the CLAUDE.md workflow: it reads the API, proposes changes, waits for the owner's confirmation, and a confirmed rule then shows on /categories with the Uncategorized count lowered
+- C1 the badge test above passes; every existing `badge(` call outside categories.html renders unchanged (no call site other than categories.html passes `wrap`)
+- C2 in categories.html every badge in the rules table passes `wrap=true`, and no element in categories.html keeps `whitespace-nowrap`, `shrink-0` on text, or a fixed `min-w-[…]` width except the icon buttons
+- C3 the category row containers (categories.html:44-45) carry `flex-wrap` and `min-w-0`, and the name span can break a long word
+- C4 tests/test_templates_hygiene.py passes and the verify command exits 0
 Findings:
 - none
+
+### N19 Line chart keeps its edge labels
+Do: Fix N14 try 1 finding C3: the /lights-on chart clips its first and last x-axis labels ("eb", "Au") because they are centered (`text-anchor="middle"`) on x = 0 and x = width while the viewBox starts at 0 and ends at width (components/charts.html:88, :92, :101-104). Pad the `line_chart` viewBox by half a slot on each side and by the stroke width at the top, so centered labels and line caps at the edges stay inside; keep the point math in charts.py (`line_points`, charts.py:54-73) unchanged and keep `<title>`, aria-label, polylines and legend as they are.
+Spec: SPEC §12 Design system (charts readable, accessible labels)
+Read: src/sonar/templates/components/charts.html:86-114, src/sonar/charts.py:54-73, tests/test_charts.py:160-200
+Write: src/sonar/templates/components/charts.html, tests/test_charts.py
+Test first: render `line_chart` (pattern tests/test_charts.py:168-180) with labels "Feb 2026" to "Aug 2026" (7 labels) and one series; parse the svg's viewBox (min-x, min-y, width, height) and every `<text>` x; assert each label's x − 10 ≥ min-x and x + 10 ≤ min-x + width (a 3-letter label at font-size 8 is under 20 units wide); the same holds for a single label; every polyline point's y − 1 ≥ min-y. The test fails on the current macro (the first label sits at x = 0 with min-x 0).
+Done when:
+- C1 the test above passes and the existing line_chart tests pass unchanged
+- C2 `git diff src/sonar/charts.py` is empty; only the `line_chart` macro changed in charts.html
+- C3 the verify command exits 0
+Findings:
+- none
+
+### N20 Lights-on page and dashboard share their months
+Do: Fix N14 try 1 finding C1/C3: the dashboard's Keep-the-lights-on figures do not reconcile with /lights-on. Cause (by the numbers in the finding): the dashboard learns from complete months ending by `balance.as_of` (dashboard.py:95-98), the page from months ending by the latest booking date (app.py:497). The only differing input is `until`, and the dashboard's low (1.582,91 € ÷ window) lies below every month the page shows, so the dashboard counted a month that ends after the last imported booking but by a later (hand-entered) balance date: a partly known month. Confirm this first with a one-off script in the scratchpad on a temp copy of data/sonar.db (print only dates, day counts and cent totals: latest booking date, balance date, window_days, and both runs' `months_used` period dates; never names or IBANs; nothing committed). Then: (1) lights_on.py: add a pure function returning the last day the months may end on: the latest booking date, but never after the balance date when one is given; None without rows. Its docstring says why: a month is fully known only up to the last imported booking, and bookings after the balance date are already in the balance. Adjust the module docstring (lights_on.py:3-6) to name this rule. (2) dashboard.py uses it for `until` (dashboard.py:95-98) and exposes the same months' per-day figures (`lights_on_forecast(months, 1)`, lights_on.py:123-138) as a new `Dashboard` field. (3) The `/lights-on` route (app.py:485-512) loads `current_balance` and uses the same function (balance date or None), so both learn from identical months; it passes the per-day forecast (expected, low, high, months used), `salary_months` (salary day set) and, per table row (app.py:179-189), the period start and end and whether the month is one of the months used. (4) lights_on.html: the Daily average card shows `#daily-average` (unchanged hook), `#daily-low` and `#daily-high` (lowest and highest daily average of the months used) and `#months-used` (first start to last end, with `date`), and its subtitle says the dashboard multiplies these by the days from the balance date to payday; the table's month cell shows `charts.month_label` plus the period start – end (like monthly.html:37-38) instead of `row.month|date` (lights_on.html:61), rows of the months used carry `data-used="true"`, and under the header a line says "Salary months: from payday to the day before the next" or "Calendar months" with the Settings hint (copy monthly.html:40-44). (5) index.html (:137-142): a visible line `#lights-on-basis` under the range: the per-day expected (`data-field="daily"`, via `amount`) × `window_days` days (`data-field="days"`) from the balance date to payday, and the months used (first start to last end). (6) Append one bullet to SPEC §13: a month counts as complete for Keep the lights on only when it ends on or before both the last imported booking and the balance date; the dashboard and the Keep the lights on page use the same months, and the page shows the per-day figures the dashboard multiplies. Do not edit earlier SPEC text or N01's bullets. Do not rebuild CSS (N22 does).
+Spec: SPEC §9, §12 Pages, §13 (N01 bullets f, g); src/sonar/lights_on.py:80-138; src/sonar/dashboard.py:85-113; src/sonar/app.py:179-212, :485-512
+Read: src/sonar/lights_on.py, src/sonar/dashboard.py, src/sonar/app.py:170-215 and :485-512, src/sonar/templates/lights_on.html, src/sonar/templates/index.html:133-175, src/sonar/templates/monthly.html:33-45, src/sonar/monthly.py:120-148, tests/test_lights_on.py:1-60, tests/test_dashboard.py (Grep `def test_\|balance`), tests/test_lights_on_page.py:1-80, tests/test_dashboard_page.py (Grep `lights-on`), tests/seed.py, tests/html.py
+Write: src/sonar/lights_on.py, src/sonar/dashboard.py, src/sonar/app.py, src/sonar/templates/lights_on.html, src/sonar/templates/index.html, SPEC.md (one new §13 bullet only), tests/test_lights_on.py, tests/test_dashboard.py, tests/test_dashboard_page.py, tests/test_lights_on_page.py
+Test first: unit: the new function gives the latest booking date when the balance is later, the balance date when it is earlier, the latest booking without a balance, and None without rows. Dashboard: salary day 1, Salary credits on the 1st of January to April, Groceries debits every week from 1 January to 10 April, balance dated 30 April: `lights_on.months_used` ends with March's period (fails today: April, ending 30 April, is counted with 10 days of data). Cross-page on one tmp DB (tests/seed.py, fake strings): the dashboard's `#lights-on-basis` `data-field="daily"` data-cents equals /lights-on `#daily-average` data-cents; the dashboard's months used equal the /lights-on rows with `data-used="true"`; `#daily-low`/`#daily-high` × window_days equal the dashboard's low/high within 1 cent per day; with a salary day the table's month cell shows "Mar 2026" and period dates that are not the 1st. Existing tests keep their assertions; if one only passed through a partly known month, extend its fixture bookings to cover the month rather than changing the assertion.
+Done when:
+- C1 the tests above pass
+- C2 `until` for the dashboard and the page comes from the one new lights_on.py function (Grep: no other `max(... booking_date ...)` or `balance.as_of` used as `until` in app.py or dashboard.py)
+- C3 on a temp copy of data/sonar.db, the scratchpad script shows the dashboard's and the page's months used are identical after the change (the verifier re-runs it); no personal value printed into a tracked file
+- C4 lights_on.py stays pure (no DB, clock or I/O) and the SPEC.md diff is one appended §13 bullet
+- C5 tests/test_templates_hygiene.py passes and the verify command exits 0
+Findings:
+- none
+
+### N21 Monthly: transfers apart and net
+Do: Fix N14 try 1 finding C2: the Monthly "By category" table lists transfer categories with gross debits and an empty Group cell next to spending categories, while the page says transfers are shown net. Planner decision: transfer categories leave the spending table and get their own small net table. (1) monthly.py (:66-103): `by_category` holds only non-transfer categories and Uncategorized (debits only, as today); a new `MonthlySpending` field holds one `CategoryTotal` per transfer category with a booking in the period, `total_cents` = the signed net of all its bookings (debits and credits), `count` = its bookings, ordered by net ascending then name; `transfers_net_cents` equals their sum (same value as today); `spent_cents` = the sum of `by_category` (the transfer subtraction at :87 and :100 goes). Update the comments at :88-90 and the module docstring where it describes transfers. (2) monthly.html: drop the transfer tone branch (:97); below `#category-totals`, when there are transfer rows, a table `#transfer-totals` headed "Transfers, net (not spending)" with one `data-row` per transfer category: the name linking to the category filter (`month_url(period.month, c.key)`, same markup as :104-106), a `badge("Transfers", attrs={"data-field": "group"})`, the count and the net via `amount` (data-cents); the `selected` lookup (:32) also searches the transfer rows so the filter banner (:128-136) still works for a transfer category. The payments list is unchanged. Do not rebuild CSS (N22 does).
+Spec: SPEC §12 Pages, §13 (N01 bullet d); src/sonar/monthly.py:66-103; src/sonar/templates/monthly.html:32, :69-125
+Read: src/sonar/monthly.py:1-110 and :180-200, src/sonar/spending_groups.py (Grep `def group_totals`), src/sonar/templates/monthly.html:1-136, tests/test_monthly.py:40-140, tests/test_monthly_page.py:300-410, tests/seed.py, tests/html.py
+Write: src/sonar/monthly.py, src/sonar/templates/monthly.html, tests/test_monthly.py, tests/test_monthly_page.py
+Test first: unit: in one period a fake "Card account" transfer category with −400,00 € out and +340,00 € back, a fake "Family" transfer with −36,00 € out, and a Groceries debit: `by_category` has only Groceries; the transfer rows are Card account −6000 (2 bookings) and Family −3600 (1 booking) in that order; `transfers_net_cents == -9600`; `spent_cents` equals the Groceries debit. Update tests/test_monthly.py:85-96 (transfers are no longer in `by_category`). Page (tests/seed.py): `#category-totals` has no row for a transfer category and every row except Uncategorized has a group badge; `#transfer-totals` rows' data-cents sum to `#transfers-net`; `?category=<transfer key>` still shows the filter banner and only that category's debits.
+Done when:
+- C1 the tests above pass; the N04 comparison test (tests/test_lights_on.py:205-215) still passes unchanged
+- C2 no row in `#category-totals` has a `transfer` category, and the page's Spent still equals the group totals' sum (existing test tests/test_monthly_page.py:332 passes unchanged)
+- C3 tests/test_templates_hygiene.py passes and the verify command exits 0
+Findings:
+- none
+
+### N22 Rebuild CSS after the fixes
+Do: Rebuild the committed stylesheet so classes added by N18 to N21 exist, using the CLAUDE.md Setup command.
+Spec: SPEC §12 Tooling and UI acceptance
+Read: CLAUDE.md (Setup)
+Write: src/sonar/static/sonar.css
+Test first: none (build artifact).
+Done when:
+- C1 running the build command a second time leaves `git diff --exit-code src/sonar/static/sonar.css` clean relative to the first rebuild
+- C2 every new class N18 to N21 introduced (e.g. `flex-wrap` on the category rows, the badge's wrap classes, `[overflow-wrap:anywhere]`) appears in sonar.css (`grep -c` per class)
+- C3 the verify command exits 0
+Findings:
+- none
+
+### N14 visual check
+Do: gate: the orchestrator starts the app on a temp copy of the owner's data (CLAUDE.md Visual check) and checks the dashboard, /monthly, /lights-on, /categories and /settings in light and dark themes, at desktop and 375px width; the owner then pastes the Uncategorized export into Claude Code once and confirms or declines its proposal (skip C5 with a note when the export is empty). When a page scrolls sideways, record the overflowing elements in Findings: run `[...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1).slice(-5).map(e => e.tagName + ' ' + e.className)` in the page.
+Done when:
+- C1 the dashboard shows the two numbered parts (Fixed payments due, Keep the lights on), a plausible lights-on figure, the short/spare line, and the Occasional note; `#lights-on-basis` shows the per-day figure × days and the months, and that per-day figure and those months equal /lights-on's `#daily-average` and its rows marked as used; the dashboard range ÷ days matches /lights-on's daily low and high
+- C2 /monthly shows Fixed payments, Keep the lights on and Occasional payments totals that add up to Spent (with Uncategorized when present); every By-category row except Uncategorized has a group badge and no transfer category is in it; `#transfer-totals` lists each transfer category's net, and those sum to "Net moved to other accounts" (or "received")
+- C3 /lights-on shows a readable trend chart with the Occasional line and the table; the first and last x-axis labels are whole at desktop and 375px; table months read as month names with their period dates (salary months when a salary day is set); no horizontal scroll at 375px
+- C4 /categories has no horizontal scroll at 375px (document scrollWidth equals the viewport) in light and dark, with the owner's long rules; changing a category's group moves it between groups on Monthly, the dashboard and the trend page; adding, editing, moving and deleting a rule works and an invalid regex shows a friendly inline error
+- C5 pasting the Uncategorized export into Claude Code runs the CLAUDE.md workflow: it reads the API, proposes changes, waits for the owner's confirmation, and a confirmed rule then shows on /categories with the Uncategorized count lowered
+Findings:
+- replan 1 (2026-09-27): try 1 found C1 to C3 defects; fix nodes N18 (categories 375px), N19 (chart edge labels), N20 (lights-on months and per-day figures shared with the dashboard), N21 (transfers apart and net on Monthly) and N22 (CSS rebuild) now run before this gate; C1 to C4 name the fixed behavior.
+- try 1: C3 /categories has horizontal scroll at 375px (document scrollWidth 698 vs 375); every other checked page is 375
+- try 1: C3 /lights-on chart at 375px clips the first and last x-axis month labels ("eb", "Au")
+- try 1: C1/C3 /lights-on table labels months as dates ("1 Feb 2026" … "1 Aug 2026"), suggesting calendar months, while the plan says lights_on.py uses the Monthly page's salary months; its 3-month daily average 85,32 € does not reconcile with the dashboard's Keep the lights on 2.162,94 € over 29 days to payday (74,58 €/day), and the dashboard range 1.582,91–2.592,19 € implies ~21.8 and ~23.4 days against the page's lowest (72,49 €) and highest (110,91 €) monthly daily averages; the dashboard and trend page should use the same months and days
+- try 1: C2 /monthly "By category" table lists the transfer categories (Credit card transfers −400,00 €, Family transfers −36,00 €) with gross amounts and an empty Group cell next to the spending categories, while the page says transfers are shown net ("Net moved to other accounts" −60,72 €) and Spent excludes them
+- try 1: C4 passed (group change moves Dining onto /lights-on and the dashboard; invalid purpose regex shows "Purpose regex is not a valid pattern." inline and keeps the input); C5 not yet run: the owner's data has 0 uncategorized, so the export is empty
 
 ### N15 plan acceptance
 Do: check the whole plan against its goal.

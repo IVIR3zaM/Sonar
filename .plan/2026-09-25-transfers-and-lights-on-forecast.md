@@ -32,8 +32,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 1 | 0 | DONE | |
 | N14 | visual check | gate | N13,N22 | - | 0 | 1 | DONE | C5 deferred by owner |
 | N23 | Monthly reads TRANSFER from spending_groups | exec | N21 | haiku/haiku | 1 | 0 | DONE | |
-| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22,N23 | -/opus | 1 | 1 | VERIFYING | |
-| N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
+| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22,N23 | -/opus | 1 | 1 | DONE | |
+| N16 | Rewrite git history | gate | N15 | - | 0 | 0 | WAITING | |
 
 Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N23 · 14 N15 · 15 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint. N23 was added by the N15 replan.)
 

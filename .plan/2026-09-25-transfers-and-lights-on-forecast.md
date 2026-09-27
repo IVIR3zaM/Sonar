@@ -31,7 +31,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N21 | Monthly: transfers apart and net | exec | N12 | sonnet/sonnet | 1 | 0 | VERIFYING | |
 | N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 1 | 0 | DONE | |
 | N14 | visual check | gate | N13,N22 | - | 0 | 1 | DONE | C5 deferred by owner |
-| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 1 | 0 | VERIFYING | |
+| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 1 | 1 | REPLAN | fail C3 |
 | N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
 
 Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N15 · 14 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint.)
@@ -347,7 +347,7 @@ Done when:
 - C6 no personal data added: for every `iban`, `creditor_id`, `counterparty` and `purpose` value in data/categories.toml, `git grep -F` finds nothing in the files changed since 5068a17 (`git diff --name-only 5068a17..HEAD`), and `git log --format=%B 5068a17..HEAD` contains none of them; the only IBAN-shaped string in this plan is the standard example `DE89370400440532013000`
 - C7 categories and rules logic lives once: the Categories page routes and src/sonar/api.py both go through `taxonomy_service` only; every API write re-applies rules and re-runs detection; API errors are 4xx JSON; no auth added and the app still binds 127.0.0.1
 Findings:
-- none
+- try 1: C3 src/sonar/monthly.py:31 - `TRANSFER = "transfer"` hard-codes a group type value outside spending_groups.py; used at monthly.py:89, :190 and :196 - the five type values exist only in spending_groups.py (spending_groups.TRANSFER), and monthly.py reads them from there
 
 ### N16 Rewrite git history
 Do: gate, human only: never run automatically. The orchestrator shows the owner the steps below and runs them only after the owner types an explicit confirmation in the session, because every commit hash changes. (1) Preconditions: `git status --porcelain` is empty and `git remote -v` is empty. (2) Back up: `git bundle create data/pre-rewrite.bundle --all` and `git bundle verify data/pre-rewrite.bundle`; confirm `data/categories.toml` equals the last committed version (`git show <parent of the commit that deleted it>:src/sonar/categories.toml`). (3) Confirm the import: every category name in data/categories.toml exists in data/sonar.db and the DB holds at least as many rules (a local one-off script using `categorize.load_taxonomy` and `taxonomy_store.load_stored_taxonomy`). (4) Build the personal-string list locally, outside the repo (the scratchpad): every `iban` and `creditor_id` value from data/categories.toml, plus the names the owner marks as personal among its counterparty and purpose values (real names, landlord, municipality); never write it into a tracked file. Pre-scan: for each string, `git log --all -S "<s>" --name-only --format=` must list only src/sonar/categories.toml; if any other path shows up, stop and report the paths to the owner. (5) Rewrite: `uvx git-filter-repo --invert-paths --path src/sonar/categories.toml --force`, then `git reflog expire --expire=now --all && git gc --prune=now`. (6) Replace stale commit hashes in .plan/state.md using `.git/filter-repo/commit-map`.

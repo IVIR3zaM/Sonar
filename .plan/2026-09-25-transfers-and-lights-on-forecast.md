@@ -1,5 +1,5 @@
 # Categories in the DB, three spending groups and keep-the-lights-on forecast
-status: RUNNING
+status: DONE
 created: 2026-09-25 · updated: 2026-09-27
 goal: Categories (each with one group: income, transfer, Fixed payments, Keep the lights on, Occasional payments) and ordered rules live in the local SQLite DB and are edited on a Categories page and through a local JSON API that Claude Code uses (owner-confirmed writes); the repo ships only a generic seed and no personal data (history rewritten behind an owner gate); Monthly shows the three group totals and net transfers; the payday forecast is fixed payments due plus a keep-the-lights-on daily-average estimate, with its own trend page; Occasional payments are shown but not forecast
 request: owner request of 2026-09-25 (net "Transfers out"; forecast = fixed due + lights-on daily average × days to payday; trend page; configurable categories; only the imported main account counts), owner answers of 2026-09-25 (Q1 DB, Q2 expected + range, Q3 three spending groups) and owner feedback of 2026-09-25 (all categorization config in the DB with a UI; group as a category field; local one-off import; generic public seed; DB/fixture tests; history rewrite gate; no personal data in tracked files), owner answer Q1 of 2026-09-25 (Claude Code categorizes through a JSON API on the running app, sharing one service layer with the Categories page, writes only after owner confirmation)
@@ -33,7 +33,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N14 | visual check | gate | N13,N22 | - | 0 | 1 | DONE | C5 deferred by owner |
 | N23 | Monthly reads TRANSFER from spending_groups | exec | N21 | haiku/haiku | 1 | 0 | DONE | |
 | N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22,N23 | -/opus | 1 | 1 | DONE | |
-| N16 | Rewrite git history | gate | N15 | - | 0 | 0 | WAITING | |
+| N16 | Rewrite git history | gate | N15 | - | 0 | 0 | DONE | |
 
 Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N23 · 14 N15 · 15 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint. N23 was added by the N15 replan.)
 
@@ -338,7 +338,7 @@ Findings:
 - try 2: C1-C4 pass after N18-N22 (desktop, 375px, light and dark; dashboard and /lights-on reconcile on salary months); C5 deferred by the owner: 0 uncategorized, so the export is empty
 
 ### N23 Monthly reads TRANSFER from spending_groups
-Do: Fix N15 try 1 finding C3: src/sonar/monthly.py must not define its own group type string; it uses `spending_groups.TRANSFER` (src/sonar/spending_groups.py:19) at every use (monthly.py:88, :189, :195 at HEAD 1202f9b) and has no local `TRANSFER = "transfer"` or any other literal equal to a spending-group type value. Add a guard test so this cannot recur: an AST scan of every `src/sonar/**/*.py` except spending_groups.py that fails, naming `file:line`, on any string constant equal to one of the five type values (`spending_groups.TYPES` or its equivalent). If the scan hits a legitimate use elsewhere (e.g. the legacy TOML import mapping), make that module read the constant from spending_groups instead; if that is not possible within the Write paths, reply BLOCKED naming the hits. The working tree may hold an uncommitted attempt at these two files from a lost run: start from it, and keep only what meets the criteria. No behavior change.
+Do: Fix N15 try 1 finding C3: src/sonar/monthly.py must not define its own group type string; it uses `spending_groups.TRANSFER` (src/sonar/spending_groups.py:19) at every use (monthly.py:88, :189, :195 at HEAD 3938c06) and has no local `TRANSFER = "transfer"` or any other literal equal to a spending-group type value. Add a guard test so this cannot recur: an AST scan of every `src/sonar/**/*.py` except spending_groups.py that fails, naming `file:line`, on any string constant equal to one of the five type values (`spending_groups.TYPES` or its equivalent). If the scan hits a legitimate use elsewhere (e.g. the legacy TOML import mapping), make that module read the constant from spending_groups instead; if that is not possible within the Write paths, reply BLOCKED naming the hits. The working tree may hold an uncommitted attempt at these two files from a lost run: start from it, and keep only what meets the criteria. No behavior change.
 Spec: CLAUDE.md Engineering rules (KISS, readable); plan Design decision ("nothing else hard-codes a type string")
 Read: src/sonar/spending_groups.py:1-40, src/sonar/monthly.py:19-35 and Grep `TRANSFER`, tests/test_spending_groups.py:1-30 and its last test
 Write: src/sonar/monthly.py, tests/test_spending_groups.py
@@ -358,7 +358,7 @@ Done when:
 - C3 the five type values and the detection exclusion live only in spending_groups.py; `grep -rn '"variable"' src` finds only the legacy import mapping; recurrence.py excludes exactly lights_on, occasional and transfer
 - C4 the forecast has exactly two parts (fixed due, lights-on); Occasional and uncategorized debits are not forecast; nothing imports the removed variable_forecast module; no code models a sub-account balance or reserve
 - C5 no module in src/sonar reads a TOML outside the import CLI; `git ls-files` has no categories.toml; migration 0006 seeds only the 17 generic categories and no rules
-- C6 no personal data added: for every `iban`, `creditor_id`, `counterparty` and `purpose` value in data/categories.toml, `git grep -F` finds nothing in the files changed since 5068a17 (`git diff --name-only 5068a17..HEAD`), and `git log --format=%B 5068a17..HEAD` contains none of them; the only IBAN-shaped string in this plan is the standard example `DE89370400440532013000`
+- C6 no personal data added: for every `iban`, `creditor_id`, `counterparty` and `purpose` value in data/categories.toml, `git grep -F` finds nothing in the files changed since d82747b (`git diff --name-only d82747b..HEAD`), and `git log --format=%B d82747b..HEAD` contains none of them; the only IBAN-shaped string in this plan is the standard example `DE89370400440532013000`
 - C7 categories and rules logic lives once: the Categories page routes and src/sonar/api.py both go through `taxonomy_service` only; every API write re-applies rules and re-runs detection; API errors are 4xx JSON; no auth added and the app still binds 127.0.0.1
 Findings:
 - replan 1 (2026-09-27): fix node N23 (monthly.py reads spending_groups.TRANSFER, plus a guard test against hard-coded type strings) now runs before this check.
@@ -374,4 +374,4 @@ Done when:
 - C5 the verify command exits 0 on the rewritten HEAD and `uv run sonar` starts
 - C6 .plan/state.md holds no hash that `git cat-file -e` rejects
 Findings:
-- none
+- try 1: owner confirmed in session; pre-scan found one marked string also in old tests/test_rules_table.py, so the owner chose --replace-text with the local list in addition to removing src/sonar/categories.toml; C1-C6 pass (plan hashes remapped via commit-map; this repo has no .plan/state.md)

@@ -5,18 +5,18 @@ goal: build Sonar per SPEC §0–§12 as milestones M0–M6
 spec: SPEC §0–§12
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
 note: legacy format (one task graph per milestone, verified per milestone), kept as history. Do not resume.
-commits: M0 13603a5 · M1 95a052d · M2 a0d0170 · M3 a16f99f · M4 28eb946 · M5 45f4011 · M6 a3080eb
+commits: M0 a587457 · M1 c6e1ed2 · M2 32ad511 · M3 21046e8 · M4 ccc1194 · M5 cc321b9 · M6 43fd475
 replans: M1 1 · M2 0 · M3 2 · M4 2 · M5 2 · M6 2
 
 ## Milestones
 
-- M0 Skeleton | SPEC §10 | DONE 13603a5
-- M1 Import | DONE 95a052d (1 replan)
-- M2 Categorization | DONE a0d0170 (0 replans)
-- M3 Recurring payments | DONE a16f99f (2 replans)
-- M4 Installments and loans | DONE 28eb946 (2 replans)
-- M5 Forecast, dashboard, settings | DONE 45f4011 (2 replans; + user amendment: overdraft limit)
-- M6 UI redesign | DONE a3080eb (2 replans, from the §12 visual check)
+- M0 Skeleton | SPEC §10 | DONE a587457
+- M1 Import | DONE c6e1ed2 (1 replan)
+- M2 Categorization | DONE 32ad511 (0 replans)
+- M3 Recurring payments | DONE 21046e8 (2 replans)
+- M4 Installments and loans | DONE ccc1194 (2 replans)
+- M5 Forecast, dashboard, settings | DONE cc321b9 (2 replans; + user amendment: overdraft limit)
+- M6 UI redesign | DONE 43fd475 (2 replans, from the §12 visual check)
 - M1 Import: importer registry, Deutsche Bank Girokonto CSV importer, idempotent storage, upload page | SPEC §4, §10
 - M2 Categorization: categories.toml taxonomy from sample, rule engine, re-apply on import+startup, Uncategorized page+copy export, CLAUDE.md workflow | SPEC §5 | deps: M1
 - M3 Recurring payments: detection (1/2/3/6/12 mo, ±7d, evidence), schedule periods, Fixed payments page edit/pause/resume/dismiss/add, water test | SPEC §6 | deps: M2 (category types), M1 (mandate/creditor)
@@ -224,7 +224,7 @@ T11 [haiku] Run uv run ruff check ., uv run ruff format --check ., uv run pytest
 
 Answered 2026-09-23: categories.toml may use real private names/IBANs; tests use fake strings only (overrides T4/T6 wording).
 
-## M1 Import (DONE 95a052d) (SPEC §2, §3, §4, §10)
+## M1 Import (DONE c6e1ed2) (SPEC §2, §3, §4, §10)
 
 Order: {T1, T2, T3} in parallel → {T4, T5} → T6 → {T7, T8} → T9
 

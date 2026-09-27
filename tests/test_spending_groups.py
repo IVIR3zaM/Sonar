@@ -1,6 +1,8 @@
 """Tests for spending_groups.py: the five category types and group totals."""
 
+import ast
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +12,7 @@ from sonar.spending_groups import (
     LIGHTS_ON,
     OCCASIONAL,
     TRANSFER,
+    TYPES,
     GroupTotals,
     group_totals,
 )
@@ -43,3 +46,22 @@ def test_group_totals_sums_each_group_and_leaves_out_transfer_and_income():
 def test_group_totals_raises_on_unknown_type():
     with pytest.raises(ValueError, match="unknown category type"):
         group_totals([_FakeTotal("Weird", "bogus", -100)])
+
+
+def test_no_hardcoded_type_strings():
+    """Guard: type values live only in spending_groups.py, never hard-coded elsewhere."""
+    sonar_dir = Path(__file__).parent.parent / "src" / "sonar"
+    for py_file in sorted(sonar_dir.glob("**/*.py")):
+        if py_file.name == "spending_groups.py":
+            continue
+        with open(py_file, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        # Find all string constants
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if node.value in TYPES:
+                    # Report file:line
+                    raise AssertionError(
+                        f"{py_file.relative_to(py_file.parent.parent.parent)}:{node.lineno} "
+                        f"hard-codes type {node.value!r}"
+                    )

@@ -25,10 +25,9 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sonar.payday import payday_in
-from sonar.spending_groups import GroupTotals, group_totals
+from sonar.spending_groups import TRANSFER, GroupTotals, group_totals
 from sonar.transactions import ParsedTransaction
 
-TRANSFER = "transfer"
 SALARY = "Salary"
 # How far a real salary payment may land from the promised payday and still
 # count as that salary; paydays are a month apart, so windows never overlap.

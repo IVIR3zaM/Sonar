@@ -1,6 +1,6 @@
 # Categories in the DB, three spending groups and keep-the-lights-on forecast
 status: RUNNING
-created: 2026-09-25 · updated: 2026-09-25
+created: 2026-09-25 · updated: 2026-09-27
 goal: Categories (each with one group: income, transfer, Fixed payments, Keep the lights on, Occasional payments) and ordered rules live in the local SQLite DB and are edited on a Categories page and through a local JSON API that Claude Code uses (owner-confirmed writes); the repo ships only a generic seed and no personal data (history rewritten behind an owner gate); Monthly shows the three group totals and net transfers; the payday forecast is fixed payments due plus a keep-the-lights-on daily-average estimate, with its own trend page; Occasional payments are shown but not forecast
 request: owner request of 2026-09-25 (net "Transfers out"; forecast = fixed due + lights-on daily average × days to payday; trend page; configurable categories; only the imported main account counts), owner answers of 2026-09-25 (Q1 DB, Q2 expected + range, Q3 three spending groups) and owner feedback of 2026-09-25 (all categorization config in the DB with a UI; group as a category field; local one-off import; generic public seed; DB/fixture tests; history rewrite gate; no personal data in tracked files), owner answer Q1 of 2026-09-25 (Claude Code categorizes through a JSON API on the running app, sharing one service layer with the Categories page, writes only after owner confirmation)
 spec: SPEC §5, §6, §8, §9, §10, §11, §12, §13
@@ -24,8 +24,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N10 | Keep the lights on page | exec | N04,N07,N09,N17 | sonnet/sonnet | 1 | 0 | DONE | |
 | N11 | Retire categories.toml | exec | N05,N09,N17 | sonnet/sonnet | 1 | 1 | DONE | |
 | N12 | Rebuild CSS | exec | N06,N07,N08,N09,N10 | haiku/haiku | 1 | 0 | DONE | |
-| N13 | Import the owner's categories | gate | N11 | - | 0 | 0 | TODO | |
-| N14 | visual check | gate | N12,N13 | - | 0 | 0 | TODO | |
+| N13 | Import the owner's categories | gate | N11 | - | 0 | 0 | DONE | |
+| N14 | visual check | gate | N12,N13 | - | 0 | 0 | WAITING | |
 | N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17 | -/opus | 0 | 0 | TODO | |
 | N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
 

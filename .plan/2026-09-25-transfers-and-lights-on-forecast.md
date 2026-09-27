@@ -31,10 +31,11 @@ budgets: 2 tries per brief · 2 replans per node
 | N21 | Monthly: transfers apart and net | exec | N12 | sonnet/sonnet | 1 | 0 | VERIFYING | |
 | N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 1 | 0 | DONE | |
 | N14 | visual check | gate | N13,N22 | - | 0 | 1 | DONE | C5 deferred by owner |
-| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 1 | 1 | REPLAN | fail C3 |
+| N23 | Monthly reads TRANSFER from spending_groups | exec | N21 | haiku/haiku | 1 | 0 | VERIFYING | |
+| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22,N23 | -/opus | 0 | 1 | TODO | |
 | N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
 
-Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N15 · 14 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint.)
+Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N23 · 14 N15 · 15 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint. N23 was added by the N15 replan.)
 
 Design decision (planner, owner feedback item 2): the spending group is the category's one `type` field, with five values: `income`, `transfer`, `fixed` (Fixed payments), `lights_on` (Keep the lights on) and `occasional` (Occasional payments). `variable` is gone: it is split into `lights_on` and `occasional`. This beats the previous `variable` + separate lights-on set, and a `variable` + boolean flag: one field, one select in the UI, no invalid combination (a ticked `fixed` category), no second table that drifts when a category is renamed, and every consumer keeps reading the same `category_types` name → type mapping (recurrence.py:48, recurring.py:147, monthly.py, dashboard.py), so the column keeps the name `type` and only the UI calls it "Group". Recurring detection keeps its meaning: recurrence.py:23 excludes `lights_on`, `occasional` and `transfer`, exactly what `variable` + `transfer` excluded before; `fixed`, `income` and uncategorized rows are still detected. `spending_groups.py` (N02) holds the five values, their labels, the detection exclusion and the per-group sum; nothing else hard-codes a type string. A legacy TOML with `variable` (the owner's file) imports Groceries, Transport and Shopping as `lights_on` and every other `variable` category as `occasional`; the owner adjusts groups on the Categories page.
 
@@ -336,6 +337,19 @@ Findings:
 - try 1: C4 passed (group change moves Dining onto /lights-on and the dashboard; invalid purpose regex shows "Purpose regex is not a valid pattern." inline and keeps the input); C5 not yet run: the owner's data has 0 uncategorized, so the export is empty
 - try 2: C1-C4 pass after N18-N22 (desktop, 375px, light and dark; dashboard and /lights-on reconcile on salary months); C5 deferred by the owner: 0 uncategorized, so the export is empty
 
+### N23 Monthly reads TRANSFER from spending_groups
+Do: Fix N15 try 1 finding C3: src/sonar/monthly.py must not define its own group type string; it uses `spending_groups.TRANSFER` (src/sonar/spending_groups.py:19) at every use (monthly.py:88, :189, :195 at HEAD 1202f9b) and has no local `TRANSFER = "transfer"` or any other literal equal to a spending-group type value. Add a guard test so this cannot recur: an AST scan of every `src/sonar/**/*.py` except spending_groups.py that fails, naming `file:line`, on any string constant equal to one of the five type values (`spending_groups.TYPES` or its equivalent). If the scan hits a legitimate use elsewhere (e.g. the legacy TOML import mapping), make that module read the constant from spending_groups instead; if that is not possible within the Write paths, reply BLOCKED naming the hits. The working tree may hold an uncommitted attempt at these two files from a lost run: start from it, and keep only what meets the criteria. No behavior change.
+Spec: CLAUDE.md Engineering rules (KISS, readable); plan Design decision ("nothing else hard-codes a type string")
+Read: src/sonar/spending_groups.py:1-40, src/sonar/monthly.py:19-35 and Grep `TRANSFER`, tests/test_spending_groups.py:1-30 and its last test
+Write: src/sonar/monthly.py, tests/test_spending_groups.py
+Test first: the guard test in tests/test_spending_groups.py; it fails on HEAD's monthly.py (the local `TRANSFER = "transfer"`) before the fix.
+Done when:
+- C1 `grep -n '"transfer"\|"income"\|"fixed"\|"lights_on"\|"occasional"' src/sonar/monthly.py` prints nothing, and monthly.py imports `TRANSFER` from sonar.spending_groups
+- C2 the guard test exists, scans src/sonar excluding only spending_groups.py, and passes; it fails if a line `X = "transfer"` is added to monthly.py (check by hand, then revert)
+- C3 tests/test_monthly.py and tests/test_monthly_page.py pass unchanged, and the verify command exits 0
+Findings:
+- none
+
 ### N15 plan acceptance
 Do: check the whole plan against its goal.
 Done when:
@@ -347,6 +361,7 @@ Done when:
 - C6 no personal data added: for every `iban`, `creditor_id`, `counterparty` and `purpose` value in data/categories.toml, `git grep -F` finds nothing in the files changed since 5068a17 (`git diff --name-only 5068a17..HEAD`), and `git log --format=%B 5068a17..HEAD` contains none of them; the only IBAN-shaped string in this plan is the standard example `DE89370400440532013000`
 - C7 categories and rules logic lives once: the Categories page routes and src/sonar/api.py both go through `taxonomy_service` only; every API write re-applies rules and re-runs detection; API errors are 4xx JSON; no auth added and the app still binds 127.0.0.1
 Findings:
+- replan 1 (2026-09-27): fix node N23 (monthly.py reads spending_groups.TRANSFER, plus a guard test against hard-coded type strings) now runs before this check.
 - try 1: C3 src/sonar/monthly.py:31 - `TRANSFER = "transfer"` hard-codes a group type value outside spending_groups.py; used at monthly.py:89, :190 and :196 - the five type values exist only in spending_groups.py (spending_groups.TRANSFER), and monthly.py reads them from there
 
 ### N16 Rewrite git history

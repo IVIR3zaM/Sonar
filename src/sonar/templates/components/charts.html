@@ -86,10 +86,15 @@
 {% macro line_chart(id, aria_label, labels, series, height=90) %}
 {%- set slot = 32 -%}
 {%- set width = ([labels|length - 1, 1]|max) * slot -%}
+{%- set stroke = 2 -%}
+{%- set pad_x = slot // 2 -%}
 {%- set palette = ["stroke-sky-500 dark:stroke-sky-400", "stroke-amber-500 dark:stroke-amber-400", "stroke-violet-500 dark:stroke-violet-400", "stroke-rose-500 dark:stroke-rose-400", "stroke-emerald-500 dark:stroke-emerald-400"] -%}
 {%- set dots = ["bg-sky-500 dark:bg-sky-400", "bg-amber-500 dark:bg-amber-400", "bg-violet-500 dark:bg-violet-400", "bg-rose-500 dark:bg-rose-400", "bg-emerald-500 dark:bg-emerald-400"] -%}
 {%- set point_lists = charts.line_points(series|map(attribute="values")|list, width, height) -%}
-<svg id="{{ id }}" role="img" aria-label="{{ aria_label }}" viewBox="0 0 {{ width }} {{ height + 14 }}" class="block w-full">
+{#- Half a slot of padding on each side keeps the centered edge labels inside
+    the viewBox; padding the top by the stroke width keeps a line's cap from
+    poking above y=0 when a point sits at the chart's peak. #}
+<svg id="{{ id }}" role="img" aria-label="{{ aria_label }}" viewBox="{{ -pad_x }} {{ -stroke }} {{ width + 2 * pad_x }} {{ height + 14 + stroke }}" class="block w-full">
   <title>{{ aria_label }}</title>
   {%- for s in series %}
   {%- set points = point_lists[loop.index0] %}

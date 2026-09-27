@@ -186,3 +186,54 @@ def test_line_chart_macro_has_one_polyline_per_series(render):
     assert all(len(p["points"].split()) == 3 for p in polylines)
     legend_items = [li.get_text(strip=True) for li in soup.select("ul li")]
     assert legend_items == [s["name"] for s in series]
+
+
+def _viewbox(svg):
+    min_x, min_y, width, height = (float(v) for v in svg["viewbox"].split())
+    return min_x, min_y, width, height
+
+
+def test_line_chart_labels_and_line_caps_stay_inside_viewbox(render):
+    series = [{"name": "Keep the lights on", "values": [10000, 12000, 14000]}]
+    labels = [
+        "Feb 2026",
+        "Mar 2026",
+        "Apr 2026",
+        "May 2026",
+        "Jun 2026",
+        "Jul 2026",
+        "Aug 2026",
+    ]
+    soup = render(
+        "line_chart",
+        "line_chart('lights-on-chart', 'Daily average per month', labels, series)",
+        labels=labels,
+        series=series,
+    )
+    svg = soup.find("svg", id="lights-on-chart")
+    min_x, min_y, width, height = _viewbox(svg)
+    for text in svg.find_all("text"):
+        x = float(text["x"])
+        assert x - 10 >= min_x
+        assert x + 10 <= min_x + width
+    for polyline in svg.find_all("polyline"):
+        for point in polyline["points"].split():
+            _, y = (float(v) for v in point.split(","))
+            assert y - 1 >= min_y
+
+
+def test_line_chart_single_label_stays_inside_viewbox(render):
+    series = [{"name": "Keep the lights on", "values": [10000]}]
+    labels = ["Feb 2026"]
+    soup = render(
+        "line_chart",
+        "line_chart('lights-on-chart', 'Daily average per month', labels, series)",
+        labels=labels,
+        series=series,
+    )
+    svg = soup.find("svg", id="lights-on-chart")
+    min_x, min_y, width, height = _viewbox(svg)
+    for text in svg.find_all("text"):
+        x = float(text["x"])
+        assert x - 10 >= min_x
+        assert x + 10 <= min_x + width

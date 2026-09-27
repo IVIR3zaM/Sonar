@@ -2,8 +2,11 @@
 
 A month is a salary month as on the Monthly page, or the calendar month
 without a salary day. Only complete months count: one that starts before the
-first booking or ends after `until` is only partly known. Per month we sum
-the debits in `lights_on` categories and, for the chart, in `occasional` ones.
+first booking or ends after `until` is only partly known. `until` is the
+`last_known_day`: the last imported booking, but never after the balance
+date, so the dashboard and the Keep the lights on page learn from the same
+months. Per month we sum the debits in `lights_on` categories and, for the
+chart, in `occasional` ones.
 
 The forecast for the next `days` days uses the latest 3 complete months and
 the lights-on figures only: expected = their summed spending ÷ their summed
@@ -75,6 +78,19 @@ class LightsOnForecast:
     high_cents: int
     by_category: tuple[CategoryExpected, ...]
     months_used: tuple[Period, ...]
+
+
+def last_known_day(rows: Iterable[Row], balance_date: date | None) -> date | None:
+    """The last day a complete month may end on, or None without bookings.
+
+    A month is fully known only up to the last imported booking: after it the
+    bank export simply stops. Bookings after the balance date are already in
+    the balance, so they must not also shape the forecast of what is to come.
+    """
+    latest_booking = max((tx.booking_date for tx, _ in rows), default=None)
+    if latest_booking is None or balance_date is None:
+        return latest_booking
+    return min(latest_booking, balance_date)
 
 
 def month_spends(

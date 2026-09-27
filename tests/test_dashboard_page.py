@@ -9,7 +9,7 @@ salary month before that window, give daily averages of 30.00, 20.00 and
 """
 
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -452,3 +452,49 @@ def test_hero_shows_days_until_text(tmp_path, hero_today, salary_day, expected_d
     days = page.select_one("#days-to-payday")
     assert days["data-days"] == str(expected_days)
     assert text(days) == expected_text
+
+
+def test_dashboard_and_lights_on_page_learn_from_the_same_months(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, GROCERIES_TOML)
+    # Weekly Groceries debits from March to 08-20, a bit more each month. The
+    # balance is dated 09-10, so the salary month [07-24, 08-25] ends before
+    # the balance date but after the last booking: only partly known.
+    day = date(2026, 3, 1)
+    while day <= date(2026, 8, 20):
+        _insert_debit(
+            db_path,
+            fingerprint=f"w{day.isoformat()}",
+            booking_date=day.isoformat(),
+            amount_cents=-(2_000 + 300 * day.month),
+        )
+        day += timedelta(days=7)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        client.post("/settings/balance", data={"amount": "800.00", "as_of": "2026-09-10"})
+        dashboard = soup(client.get("/"))
+        lights = soup(client.get("/lights-on"))
+
+    basis = dashboard.select_one("#lights-on-card #lights-on-basis")
+    assert basis is not None
+    daily = cents(basis.select_one('[data-field="daily"]'))
+    days = int(basis.select_one('[data-field="days"]')["data-days"])
+    assert days == 14
+    assert daily == cents(lights.select_one("#daily-average"))
+
+    used = lights.select('#lights-on-table [data-row][data-used="true"]')
+    assert len(used) == 3
+    assert (
+        basis.select_one('[data-field="from"] time')["datetime"]
+        == (used[0].select_one("[data-field=start] time")["datetime"])
+    )
+    assert (
+        basis.select_one('[data-field="to"] time')["datetime"]
+        == (used[-1].select_one("[data-field=end] time")["datetime"])
+    )
+    assert used[-1].select_one("[data-field=end] time")["datetime"] == "2026-07-23"
+
+    forecast = fields(dashboard.select_one("#lights-on-forecast"))
+    assert abs(cents(lights.select_one("#daily-low")) * days - forecast["low"]) <= days
+    assert abs(cents(lights.select_one("#daily-high")) * days - forecast["high"]) <= days

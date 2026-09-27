@@ -203,3 +203,48 @@ def test_no_lights_on_category_links_to_categories_and_chart_shows_occasional_on
     polylines = chart.find_all("polyline")
     assert len(polylines) == 1
     assert text(polylines[0].find("title")) or polylines[0]["data-series"]
+
+
+def test_daily_average_card_shows_the_range_and_the_months_used(client):
+    forecast = lights_on.lights_on_forecast(_actual_months(client.db_path), 1)
+
+    page = soup(client.get("/lights-on"))
+
+    assert cents(page.select_one("#daily-low")) == forecast.low_cents
+    assert cents(page.select_one("#daily-high")) == forecast.high_cents
+    used = page.select_one("#months-used")
+    assert [t["datetime"] for t in used.select("time")] == ["2026-02-01", "2026-04-30"]
+
+
+def test_rows_of_the_months_used_are_marked_and_calendar_months_are_named(client):
+    page = soup(client.get("/lights-on"))
+
+    rows = page.select("#lights-on-table [data-row]")
+    assert [row.get("data-used") for row in rows] == [None, "true", "true", "true"]
+    assert rows[0].select_one("[data-field=start] time")["datetime"] == "2026-01-01"
+    assert rows[0].select_one("[data-field=end] time")["datetime"] == "2026-01-31"
+    hint = page.select_one("#salary-day-hint")
+    assert "Calendar months" in text(hint)
+    assert hint.select_one('a[href="/settings"]') is not None
+
+
+def test_salary_months_show_their_label_and_payday_to_payday_dates(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, TOML)
+    for i, day in enumerate(["2026-03-01", "2026-04-15", "2026-05-15", "2026-06-10"]):
+        _insert(
+            db_path, fingerprint=f"s{i}", counterparty="Fake Market", booking_date=day, cents=-900
+        )
+
+    with TestClient(create_app(db_path)) as client:
+        client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        page = soup(client.get("/lights-on"))
+
+    first = page.select_one("#lights-on-table [data-row]")
+    assert "Mar 2026" in text(first.select_one("[data-field=month]"))
+    start = first.select_one("[data-field=start] time")["datetime"]
+    end = first.select_one("[data-field=end] time")["datetime"]
+    assert not start.endswith("-01")
+    assert not end.endswith("-01")
+    assert page.select_one("#salary-day-hint") is None
+    assert "Salary months" in text(page.select_one("#salary-months"))

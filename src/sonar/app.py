@@ -35,6 +35,7 @@ from sonar.importing import import_file
 from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
 from sonar.monthly import (
     UNCATEGORIZED,
+    Period,
     adjacent_months,
     monthly_spending,
     only_category,
@@ -176,11 +177,14 @@ def _cents(amount: Fraction) -> int:
     return math.floor(amount + Fraction(1, 2))
 
 
-def _lights_on_table_rows(months: list[lights_on.MonthSpend], categories: list[str]) -> list[dict]:
+def _lights_on_table_rows(
+    months: list[lights_on.MonthSpend], categories: list[str], used: tuple[Period, ...]
+) -> list[dict]:
     """One row per month, in cents, for the Keep-the-lights-on table."""
     return [
         {
-            "month": m.period.month,
+            "period": m.period,
+            "used": m.period in used,
             "total_cents": _cents(m.daily_lights_on),
             "by_category": {c: _cents(m.daily_by_category.get(c, Fraction(0))) for c in categories},
             "occasional_cents": _cents(m.daily_occasional),
@@ -489,13 +493,18 @@ def create_app(
             taxonomy = load_stored_taxonomy(conn)
             rows = transactions_with_category(conn)
             salary_day = load_settings(conn).salary_day
+            balance = current_balance(conn)
         finally:
             conn.close()
         categories = sorted(
             name for name, group in taxonomy.categories.items() if group == LIGHTS_ON
         )
-        until = max((tx.booking_date for tx, _ in rows), default=today())
-        months = lights_on.month_spends(rows, taxonomy.categories, salary_day, until)
+        until = lights_on.last_known_day(rows, balance.as_of if balance else None)
+        months = (
+            []
+            if until is None
+            else lights_on.month_spends(rows, taxonomy.categories, salary_day, until)
+        )
         shown = months[-24:]
         recent = lights_on.lights_on_forecast(months, 1)
         return templates.TemplateResponse(
@@ -505,8 +514,11 @@ def create_app(
                 "categories": categories,
                 "months": shown,
                 "chart_labels": [charts.month_label(m.period.month) for m in shown],
-                "daily_average_cents": recent.expected_cents if recent else None,
-                "table_rows": _lights_on_table_rows(shown, categories),
+                "daily": recent,
+                "salary_months": salary_day is not None,
+                "table_rows": _lights_on_table_rows(
+                    shown, categories, recent.months_used if recent else ()
+                ),
                 "chart_series": _lights_on_chart_series(shown, categories),
             },
         )

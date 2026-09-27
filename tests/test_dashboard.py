@@ -6,7 +6,7 @@ today forecasts the window [2026-09-11, 2026-09-24].
 """
 
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -300,6 +300,8 @@ def _three_months_of_spending(conn: sqlite3.Connection) -> None:
     _insert_tx(conn, "2026-08-01", -6_600, category="Groceries")
     _insert_tx(conn, "2026-06-10", -50_000, category="Dining")
     _insert_tx(conn, "2026-08-10", -40_000, category="Dining")
+    # A booking after the last month keeps that month fully known (SPEC §13).
+    _insert_tx(conn, "2026-09-01", -1_000, category="Dining")
 
 
 def test_lights_on_forecast_is_scaled_to_the_window_days(conn: sqlite3.Connection) -> None:
@@ -349,3 +351,24 @@ def test_no_complete_month_gives_no_lights_on_forecast(conn: sqlite3.Connection)
     assert board.lights_on is None
     assert board.projection == Projection(97_000, 97_000)
     assert board.expected_cents == 97_000
+
+
+def test_lights_on_learns_only_from_months_the_bookings_fully_cover(
+    conn: sqlite3.Connection,
+) -> None:
+    save_settings(conn, 1, -50_000)
+    set_manual_balance(conn, date(2026, 4, 30), 100_000, date(2026, 4, 30))
+    for month in range(1, 5):
+        _insert_tx(conn, f"2026-{month:02}-01", 300_000, category="Salary")
+    day = date(2026, 1, 1)
+    while day <= date(2026, 4, 10):
+        _insert_tx(conn, day.isoformat(), -2_000, category="Groceries")
+        day += timedelta(days=7)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, date(2026, 4, 30))
+
+    # April ends on the balance date but was only booked up to 04-10.
+    assert board.lights_on is not None
+    assert board.lights_on.months_used[-1].end == date(2026, 3, 31)
+    assert board.lights_on_daily is not None
+    assert board.lights_on_daily.months_used == board.lights_on.months_used

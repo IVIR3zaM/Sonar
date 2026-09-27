@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/card.html" import card %}
 {% from "components/stat.html" import stat %}
-{% from "components/amount.html" import amount %}
+{% from "components/amount.html" import amount, date %}
 {% from "components/empty.html" import empty %}
 {% from "components/charts.html" import line_chart %}
 
@@ -26,14 +26,24 @@
     <a href="/categories" class="font-medium text-accent underline-offset-2 hover:underline">Set up categories</a>.
   </p>
   {% endif %}
+  {%- if salary_months %}
+  <p id="salary-months" class="mt-0.5 text-xs text-ink-muted">Salary months: from payday to the day before the next.</p>
+  {%- else %}
+  <p id="salary-day-hint" class="mt-0.5 text-xs text-ink-muted">Calendar months. Set your salary day in <a href="/settings" class="underline underline-offset-2 hover:text-ink">Settings</a> to count from payday to payday.</p>
+  {%- endif %}
 </header>
 
 {% if not months %}
 {{ empty("No complete month yet", "Import a bank export that covers at least one full month to see a daily average.", id="lights-on-empty") }}
 {% else %}
 <div class="space-y-4 sm:space-y-6">
-  {% call card(title="Daily average", subtitle="Day-weighted average of Keep-the-lights-on spending over the last complete months (up to 3)", id="daily-average-card") %}
-    {{ stat("3-month daily average", value=amount(daily_average_cents, colored=false), id="daily-average") }}
+  {% call card(title="Daily average", subtitle="Day-weighted average of Keep-the-lights-on spending over the last complete months (up to 3). The dashboard multiplies these by the days from the balance date to payday.", id="daily-average-card") %}
+    <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {{ stat("3-month daily average", value=amount(daily.expected_cents, colored=false, id="daily-average")) }}
+      {{ stat("Lowest month", value=amount(daily.low_cents, colored=false, id="daily-low")) }}
+      {{ stat("Highest month", value=amount(daily.high_cents, colored=false, id="daily-high")) }}
+      {% call stat("Months used", id="months-used") %}<span class="text-base">{{ date(daily.months_used[0].start) }} – {{ date(daily.months_used[-1].end) }}</span>{% endcall %}
+    </div>
   {% endcall %}
 
   {% call card(title="Daily average per month", subtitle="Up to the latest 24 complete months, oldest first", id="lights-on-chart-card") %}
@@ -57,8 +67,11 @@
         </thead>
         <tbody>
         {% for row in table_rows %}
-          <tr data-row class="{{ tr }}">
-            <td class="{{ td }} pl-2" data-field="month">{{ row.month|date }}</td>
+          <tr data-row{% if row.used %} data-used="true"{% endif %} class="{{ tr }}">
+            <td class="{{ td }} pl-2" data-field="month">
+              <span class="font-medium">{{ charts.month_label(row.period.month) }}</span>
+              <span class="block text-xs text-ink-muted"><span data-field="start">{{ date(row.period.start) }}</span> – <span data-field="end">{{ date(row.period.end) }}</span></span>
+            </td>
             {%- if categories %}
             <td class="{{ td_num }}" data-field="total">{{ amount(row.total_cents, colored=false) }}</td>
             {%- endif %}

@@ -9,6 +9,7 @@ from sonar import monthly, spending_groups
 from sonar.lights_on import (
     CategoryExpected,
     complete_months,
+    last_known_day,
     lights_on_forecast,
     month_spends,
 )
@@ -212,3 +213,25 @@ def test_group_totals_match_the_monthly_page():
         groups = spending_groups.group_totals(page.by_category)
         assert month.lights_on_cents == -groups.lights_on_cents
         assert month.occasional_cents == -groups.occasional_cents
+
+
+def test_last_known_day_is_the_latest_booking_when_the_balance_is_later():
+    rows = [_debit(date(2026, 4, 10), "groceries", 100), _debit(date(2026, 3, 1), "rent", 100)]
+
+    assert last_known_day(rows, date(2026, 4, 30)) == date(2026, 4, 10)
+
+
+def test_last_known_day_is_the_balance_date_when_it_is_earlier():
+    rows = [_debit(date(2026, 4, 10), "groceries", 100)]
+
+    assert last_known_day(rows, date(2026, 4, 5)) == date(2026, 4, 5)
+
+
+def test_last_known_day_without_a_balance_is_the_latest_booking():
+    rows = [_debit(date(2026, 3, 1), "groceries", 100), _debit(date(2026, 4, 10), "rent", 100)]
+
+    assert last_known_day(rows, None) == date(2026, 4, 10)
+
+
+def test_last_known_day_without_rows_is_none():
+    assert last_known_day([], date(2026, 4, 30)) is None

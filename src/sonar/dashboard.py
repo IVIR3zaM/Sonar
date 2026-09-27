@@ -36,6 +36,9 @@ class Dashboard:
     lights_on_categories: tuple[str, ...]
     occasional_categories: tuple[str, ...]
     lights_on: LightsOnForecast | None
+    # The same months' figures for a single day: what `lights_on` multiplies
+    # by `window_days`, and what the Keep the lights on page shows.
+    lights_on_daily: LightsOnForecast | None
     # Balance - due - expected lights-on spending: the margin (or, negative,
     # the shortfall) against 0 at payday.
     expected_cents: int | None
@@ -69,6 +72,7 @@ def load_dashboard(
         lights_on_categories=_names_of_type(category_types, spending_groups.LIGHTS_ON),
         occasional_categories=_names_of_type(category_types, spending_groups.OCCASIONAL),
         lights_on=None,
+        lights_on_daily=None,
         expected_cents=None,
         projection=None,
         light=None,
@@ -92,9 +96,12 @@ def load_dashboard(
     window_days = max((end - start).days + 1, 0)
     due = forecast.fixed_due(sources, start, end)
     due_total = sum(item.amount_cents for item in due)
-    # Learning stops at the balance date: later bookings are already in the
-    # balance and must not also shape the forecast of what is still to come.
-    months = lights_on.month_spends(rows, category_types, settings.salary_day, balance.as_of)
+    until = lights_on.last_known_day(rows, balance.as_of)
+    months = (
+        []
+        if until is None
+        else lights_on.month_spends(rows, category_types, settings.salary_day, until)
+    )
     lights = lights_on.lights_on_forecast(months, window_days)
     lights_range = None if lights is None else (lights.low_cents, lights.high_cents)
     projection = forecast.project(balance.amount_cents, due_total, lights_range)
@@ -107,6 +114,7 @@ def load_dashboard(
         due_total_cents=due_total,
         window_days=window_days,
         lights_on=lights,
+        lights_on_daily=lights_on.lights_on_forecast(months, 1),
         expected_cents=balance.amount_cents - due_total - lights_expected,
         projection=projection,
         light=forecast.traffic_light(projection, settings.overdraft_limit_cents),

@@ -141,6 +141,7 @@
       <p id="lights-on-expected" class="mt-1 inline-flex cursor-help flex-wrap items-baseline gap-x-1 text-2xl font-semibold tracking-tight text-ink underline decoration-line decoration-dotted underline-offset-4" title="Day-weighted daily average of debit spending in {{ dashboard.lights_on_categories|join(', ') }} over the last {{ lights.months_used|length }} complete months ({{ first.start|date }} to {{ last.end|date }}), times the {{ dashboard.window_days }} days from the balance date to payday. The range uses the lowest and highest monthly daily average.">{{ amount(lights.expected_cents, colored=false, attrs={"data-field": "expected"}) }}<span class="text-sm font-normal text-ink-muted">more</span></p>
       <p class="mt-1 text-sm text-ink-muted">Range {{ amount(lights.low_cents, colored=false, attrs={"data-field": "low"}) }}<span aria-hidden="true">–</span><span class="sr-only">to</span>{{ amount(lights.high_cents, colored=false, attrs={"data-field": "high"}) }}</p>
     </div>
+    <p id="lights-on-basis" class="mt-1 text-xs text-ink-muted">{{ amount(dashboard.lights_on_daily.expected_cents, colored=false, attrs={"data-field": "daily"}) }} a day × <span data-field="days" data-days="{{ dashboard.window_days }}">{{ dashboard.window_days }} days</span> from the balance date to payday, learned from <span data-field="from">{{ date(first.start) }}</span> – <span data-field="to">{{ date(last.end) }}</span></p>
     {% if lights.by_category %}
     <div id="category-bars" class="mt-4">
       {{ category_bars(lights.by_category) }}

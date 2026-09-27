@@ -7,11 +7,12 @@ pays for, so a salary paid on 26 Aug starts "September". Without a salary day,
 a month is the calendar month.
 
 A payment is any debit. Transfer categories (money moved to our own or the
-family's accounts) are listed like any other debit category, but kept out of
-the spent total, since that money is moved rather than spent.
-`transfers_net_cents` nets those debits against transfer credits (money moved
-back) for the whole period, even though only debits are ever listed as
-payments. Other credits (salary, refunds) are not payments and are left out.
+family's accounts) are not spending, so they leave `by_category` and get
+their own `transfer_totals`, one row per transfer category, netting its
+debits against its transfer credits (money moved back) for the whole period,
+even though only debits are ever listed as payments in the Payments table.
+`transfers_net_cents` is their sum. Other credits (salary, refunds) are not
+payments and are left out.
 Pure functions only.
 """
 
@@ -68,6 +69,7 @@ class MonthlySpending:
     period: Period
     payments: tuple[Row, ...]
     by_category: tuple[CategoryTotal, ...]
+    transfer_totals: tuple[CategoryTotal, ...]
     spent_cents: int
     transfers_net_cents: int
     groups: GroupTotals
@@ -83,22 +85,21 @@ def monthly_spending(
         key=lambda row: row[0].booking_date,
         reverse=True,
     )
-    by_category = _totals(payments, category_types)
-    transfers_debit = sum(c.total_cents for c in by_category if c.category_type == TRANSFER)
+    non_transfer_payments = [
+        row for row in payments if category_types.get(row[1] or "") != TRANSFER
+    ]
+    by_category = _totals(non_transfer_payments, category_types)
     # Nets debits and credits, unlike by_category and spent_cents, which stay
     # debits-only: a transfer out and its matching money coming back both
     # count, even though only the debit is ever listed as a payment.
-    transfers_net = sum(
-        tx.amount_cents
-        for tx, category in in_period
-        if category_types.get(category or "") == TRANSFER
-    )
+    transfer_totals = _transfer_totals(in_period, category_types)
     return MonthlySpending(
         period=period,
         payments=tuple(payments),
         by_category=by_category,
-        spent_cents=sum(c.total_cents for c in by_category) - transfers_debit,
-        transfers_net_cents=transfers_net,
+        transfer_totals=transfer_totals,
+        spent_cents=sum(c.total_cents for c in by_category),
+        transfers_net_cents=sum(c.total_cents for c in transfer_totals),
         groups=group_totals(by_category),
     )
 
@@ -175,6 +176,24 @@ def _totals(payments: list[Row], category_types: dict[str, str]) -> tuple[Catego
         CategoryTotal(
             category, category_types.get(category or ""), totals[category], counts[category]
         )
+        for category in ordered
+    )
+
+
+def _transfer_totals(
+    in_period: list[Row], category_types: dict[str, str]
+) -> tuple[CategoryTotal, ...]:
+    """One row per transfer category with a booking in the period, net ascending then name."""
+    totals: dict[str, int] = defaultdict(int)
+    counts: dict[str, int] = defaultdict(int)
+    for tx, category in in_period:
+        if category_types.get(category or "") != TRANSFER:
+            continue
+        totals[category] += tx.amount_cents
+        counts[category] += 1
+    ordered = sorted(totals, key=lambda category: (totals[category], category))
+    return tuple(
+        CategoryTotal(category, TRANSFER, totals[category], counts[category])
         for category in ordered
     )
 

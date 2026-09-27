@@ -82,7 +82,7 @@ def test_totals_per_category_largest_first_with_uncategorized_as_none():
     assert result.groups.uncategorized_cents == -2_000
 
 
-def test_transfers_are_listed_but_kept_out_of_the_spent_total():
+def test_transfers_leave_by_category_for_their_own_net_table():
     rows = [
         (_tx(date(2026, 9, 1), -50_000), "Own transfers"),
         (_tx(date(2026, 9, 2), -3_000), "Groceries"),
@@ -90,9 +90,30 @@ def test_transfers_are_listed_but_kept_out_of_the_spent_total():
 
     result = monthly_spending(rows, CATEGORY_TYPES, SEPTEMBER)
 
-    assert [c.category for c in result.by_category] == ["Own transfers", "Groceries"]
+    assert [c.category for c in result.by_category] == ["Groceries"]
+    assert [c.category for c in result.transfer_totals] == ["Own transfers"]
     assert result.spent_cents == -3_000
     assert result.transfers_net_cents == -50_000
+
+
+def test_transfer_totals_net_debits_and_credits_ordered_ascending():
+    category_types = {**CATEGORY_TYPES, "Family transfer": "transfer"}
+    rows = [
+        (_tx(date(2026, 9, 1), -40_000, "Fake Bank"), "Own transfers"),
+        (_tx(date(2026, 9, 10), 34_000, "Fake Bank"), "Own transfers"),
+        (_tx(date(2026, 9, 3), -3_600, "Fake Family"), "Family transfer"),
+        (_tx(date(2026, 9, 4), -1_000), "Groceries"),
+    ]
+
+    result = monthly_spending(rows, category_types, SEPTEMBER)
+
+    assert [(c.category, c.total_cents, c.count) for c in result.transfer_totals] == [
+        ("Own transfers", -6_000, 2),
+        ("Family transfer", -3_600, 1),
+    ]
+    assert result.by_category == (CategoryTotal("Groceries", "lights_on", -1_000, 1),)
+    assert result.spent_cents == -1_000
+    assert result.transfers_net_cents == -9_600
 
 
 def test_transfers_net_cents_nets_a_transfer_credit_against_a_transfer_debit():

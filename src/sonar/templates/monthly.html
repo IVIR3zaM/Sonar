@@ -29,7 +29,7 @@
 
 {% block content %}
 {%- set period = spending.period %}
-{%- set selected = spending.by_category|selectattr("key", "equalto", category)|first if category else none %}
+{%- set selected = (spending.by_category + spending.transfer_totals)|selectattr("key", "equalto", category)|first if category else none %}
 <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
   <div>
     <h1 class="text-2xl font-semibold tracking-tight text-ink">Monthly spending</h1>
@@ -94,7 +94,7 @@
         </thead>
         <tbody>
         {% for c in spending.by_category %}
-          {%- set tone = "fill-ink-muted/40" if c.category_type == "transfer" else ("fill-warn" if c.category is none else "fill-accent") %}
+          {%- set tone = "fill-warn" if c.category is none else "fill-accent" %}
           {%- set is_selected = c.key == category %}
           {%- set group = c.category_type|group_label %}
           {#- The link stretches over the whole row, so any cell is a click target. #}
@@ -115,6 +115,39 @@
                 <rect width="{{ widths[loop.index0] }}" height="6" rx="3" class="{{ tone }}" data-cents="{{ c.total_cents }}"/>
               </svg>
             </td>
+            <td class="{{ td_num }} font-medium" data-field="total">{{ amount(c.total_cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if spending.transfer_totals %}
+    <div class="{{ table_wrap }} mt-6"{{ boost|xmlattr }}>
+      <p class="pl-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Transfers, net (not spending)</p>
+      <table id="transfer-totals" class="mt-2 w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th class="{{ th }} pl-2">Category</th>
+            <th class="{{ th }}">Group</th>
+            <th class="{{ th_num }}">Count</th>
+            <th class="{{ th_num }}">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in spending.transfer_totals %}
+          {%- set is_selected = c.key == category %}
+          {#- The link stretches over the whole row, so any cell is a click target. #}
+          <tr data-row{% if is_selected %} aria-current="true"{% endif %}
+              class="{{ tr }} relative transition-colors hover:bg-surface-muted aria-[current=true]:bg-accent-soft{% if category and not is_selected %} text-ink-muted opacity-60 hover:opacity-100{% endif %}">
+            <td class="{{ td }} pl-2" data-field="category">
+              <a href="{{ month_url(period.month) if is_selected else month_url(period.month, c.key) }}"
+                 {%- if is_selected %} title="Show all categories"{% endif %}
+                 class="rounded-control after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-accent {{ 'font-semibold text-accent' if is_selected else '' }}">{{ c.category }}</a>
+            </td>
+            <td class="{{ td }}">{{ badge("Transfers", attrs={"data-field": "group"}) }}</td>
+            <td class="{{ td_num }} tabular-nums text-ink-muted" data-field="count">{{ c.count }}</td>
             <td class="{{ td_num }} font-medium" data-field="total">{{ amount(c.total_cents, colored=false) }}</td>
           </tr>
         {% endfor %}

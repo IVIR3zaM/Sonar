@@ -104,12 +104,17 @@ def test_shows_totals_per_category_and_for_the_month(client):
     page = soup(client.get("/monthly?month=2026-09"))
 
     assert records(page.select_one("#category-totals")) == [
-        {"category": "Own transfers", "group": "", "count": "1", "total": -216_712},
         {"category": "Uncategorized", "group": "", "count": "2", "total": -13_549},
         {"category": "Dining", "group": "Occasional payments", "count": "2", "total": -5_750},
     ]
+    assert records(page.select_one("#transfer-totals")) == [
+        {"category": "Own transfers", "group": "Transfers", "count": "1", "total": -216_712},
+    ]
     assert cents(page.select_one("#month-total")) == -19_299
     assert cents(page.select_one("#transfers-net")) == -216_712
+    assert sum(row["total"] for row in records(page.select_one("#transfer-totals"))) == cents(
+        page.select_one("#transfers-net")
+    )
 
 
 def test_lists_the_months_payments_newest_first(client):
@@ -166,10 +171,11 @@ def test_each_category_links_to_the_list_filtered_to_it(client):
 
     links = [a["href"] for a in page.select('#category-totals [data-field="category"] a')]
     assert links == [
-        "/monthly?month=2026-09&category=Own+transfers",
         f"/monthly?month=2026-09&category={UNCATEGORIZED}",
         "/monthly?month=2026-09&category=Dining",
     ]
+    transfer_links = [a["href"] for a in page.select('#transfer-totals [data-field="category"] a')]
+    assert transfer_links == ["/monthly?month=2026-09&category=Own+transfers"]
     assert _selected(page) == []
     assert page.select_one("#reset-category") is None
 
@@ -181,7 +187,8 @@ def test_a_category_filter_narrows_the_payments_but_keeps_every_category(client)
         "Restaurant XYZ",
         "Restaurant XYZ",
     ]
-    assert len(records(page.select_one("#category-totals"))) == 3
+    assert len(records(page.select_one("#category-totals"))) == 2
+    assert len(records(page.select_one("#transfer-totals"))) == 1
     assert _selected(page) == ["Dining"]
     # The month's totals stay those of the whole month.
     assert cents(page.select_one("#month-total")) == -19_299
@@ -196,6 +203,18 @@ def test_the_uncategorized_group_can_be_filtered_too(client):
         "Utility Co",
     ]
     assert _selected(page) == ["Uncategorized"]
+
+
+def test_a_transfer_category_can_still_be_filtered(client):
+    page = soup(client.get("/monthly?month=2026-09&category=Own+transfers"))
+
+    assert [row["counterparty"] for row in records(page.select_one("#payments"))] == [
+        "Max Mustermann",
+    ]
+    row = page.select_one('#transfer-totals [data-row][aria-current="true"]')
+    assert text(row.select_one('[data-field="category"]')) == "Own transfers"
+    assert page.select_one("#category-filter") is not None
+    assert page.select_one("#reset-category")["href"] == "/monthly?month=2026-09"
 
 
 def test_switching_months_keeps_the_category_filter(client):
@@ -385,7 +404,12 @@ def test_category_rows_carry_a_group_badge(groups_client):
     assert rows["Groceries"] == "Keep the lights on"
     assert rows["Dining"] == "Occasional payments"
     assert rows["Housing"] == "Fixed payments"
-    assert rows["Own transfers"] == ""
+    assert "Own transfers" not in rows
+
+    transfer_rows = {
+        row["category"]: row["group"] for row in records(page.select_one("#transfer-totals"))
+    }
+    assert transfer_rows["Own transfers"] == "Transfers"
 
 
 def test_changing_a_categorys_group_through_the_store_moves_its_total(groups_client):

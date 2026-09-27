@@ -30,8 +30,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N20 | Lights-on page and dashboard share their months | exec | N12 | opus/opus | 1 | 0 | VERIFYING | |
 | N21 | Monthly: transfers apart and net | exec | N12 | sonnet/sonnet | 1 | 0 | VERIFYING | |
 | N22 | Rebuild CSS after the fixes | exec | N18,N19,N20,N21 | haiku/haiku | 1 | 0 | DONE | |
-| N14 | visual check | gate | N13,N22 | - | 0 | 1 | WAITING | |
-| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 0 | 0 | TODO | |
+| N14 | visual check | gate | N13,N22 | - | 0 | 1 | DONE | C5 deferred by owner |
+| N15 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N17,N18,N19,N20,N21,N22 | -/opus | 1 | 0 | VERIFYING | |
 | N16 | Rewrite git history | gate | N15 | - | 0 | 0 | TODO | |
 
 Waves: 1 N01,N02 · 2 N03,N04 · 3 N05 · 4 N06,N07 · 5 N08 · 6 N09 · 7 N17 · 8 N10,N11 · 9 N12,N13 · 10 N18,N19,N20,N21 · 11 N22 · 12 N14 · 13 N15 · 14 N16. (N10 depends on N17 only because both write src/sonar/app.py. N18 to N21 were added by the N14 replan; their Write paths are disjoint.)
@@ -334,6 +334,7 @@ Findings:
 - try 1: C1/C3 /lights-on table labels months as dates ("1 Feb 2026" … "1 Aug 2026"), suggesting calendar months, while the plan says lights_on.py uses the Monthly page's salary months; its 3-month daily average 85,32 € does not reconcile with the dashboard's Keep the lights on 2.162,94 € over 29 days to payday (74,58 €/day), and the dashboard range 1.582,91–2.592,19 € implies ~21.8 and ~23.4 days against the page's lowest (72,49 €) and highest (110,91 €) monthly daily averages; the dashboard and trend page should use the same months and days
 - try 1: C2 /monthly "By category" table lists the transfer categories (Credit card transfers −400,00 €, Family transfers −36,00 €) with gross amounts and an empty Group cell next to the spending categories, while the page says transfers are shown net ("Net moved to other accounts" −60,72 €) and Spent excludes them
 - try 1: C4 passed (group change moves Dining onto /lights-on and the dashboard; invalid purpose regex shows "Purpose regex is not a valid pattern." inline and keeps the input); C5 not yet run: the owner's data has 0 uncategorized, so the export is empty
+- try 2: C1-C4 pass after N18-N22 (desktop, 375px, light and dark; dashboard and /lights-on reconcile on salary months); C5 deferred by the owner: 0 uncategorized, so the export is empty
 
 ### N15 plan acceptance
 Do: check the whole plan against its goal.

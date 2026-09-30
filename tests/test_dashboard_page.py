@@ -157,6 +157,29 @@ def test_overdrawn_balance_is_green_at_default_limit_and_red_at_zero(tmp_path):
         assert cents(page.select_one("#overdraft-limit")) == 0
 
 
+def test_runway_legend_shows_the_values(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        client.post("/settings/balance", data={"amount": "-400.00", "as_of": "2026-09-10"})
+        page = soup(client.get("/"))
+
+    worst, best = _projection(page)
+    overdraft = page.select_one("#runway [data-legend=overdraft]")
+    projected = page.select_one("#runway [data-legend=projected]")
+    balance = page.select_one("#runway [data-legend=balance]")
+    assert text(overdraft).startswith("Overdraft zone down to")
+    assert cents(overdraft) == -50_000
+    assert text(projected).startswith("Projected at payday")
+    assert [int(a["data-cents"]) for a in projected.select("[data-cents]")] == [worst, best]
+    assert text(balance).startswith("Balance today")
+    assert cents(balance) == -40_000
+    ids = [el["id"] for el in page.select("[id]")]
+    assert len(ids) == len(set(ids))
+
+
 def test_not_enough_history_shows_not_enough_data(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path, GROCERIES_TOML)

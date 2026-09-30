@@ -37,6 +37,18 @@
     <title>Balance {{ balance|eur }}</title>
   </rect>
 </svg>
+{%- set marks = charts.runway_scale(limit, balance, worst, best) -%}
+{%- set rows = (marks|map(attribute="row")|max) + 1 -%}
+{%- set translate = {"start": "", "center": "-translate-x-1/2", "end": "-translate-x-full"} %}
+<div data-scale aria-hidden="true" class="relative mt-1 text-xs text-ink-muted {{ ['h-4', 'h-8', 'h-12'][rows - 1] }}">
+  {%- for mark in marks %}
+  <span data-part="{{ mark.part }}" data-cents="{{ mark.cents }}" data-row="{{ mark.row }}"
+        style="left: {{ mark.percent }}%"
+        class="absolute whitespace-nowrap tabular-nums {{ ['top-0', 'top-4', 'top-8'][mark.row] }} {{ translate[mark.align] }}">
+    {{- "0" if mark.part == "zero" else mark.cents|eur -}}
+  </span>
+  {%- endfor %}
+</div>
 {%- endmacro %}
 
 {% macro month_columns(months) %}

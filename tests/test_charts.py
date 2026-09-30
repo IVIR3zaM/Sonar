@@ -197,6 +197,27 @@ def test_runway_bar_macro_draws_one_continuous_track(render):
     assert limit.find("title").get_text(strip=True)
 
 
+def test_runway_bar_macro_renders_a_scale_under_the_bar(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000)")
+    scale = soup.select_one("[data-scale]")
+    assert scale["aria-hidden"] == "true"
+    marks = scale.select("span[data-part]")
+    assert [m["data-part"] for m in marks] == ["limit", "zero", "balance"]
+    assert [m["data-cents"] for m in marks] == ["-50000", "0", "100000"]
+    assert "−500,00\u00a0€" in marks[0].get_text()
+    assert marks[1].get_text(strip=True) == "0"
+    assert "1.000,00\u00a0€" in marks[2].get_text()
+    expected = runway_scale(-50000, 100000, -20000, 30000)
+    for mark, scale_mark in zip(marks, expected, strict=True):
+        assert f"left: {scale_mark.percent}%" in mark["style"]
+
+
+def test_runway_bar_macro_puts_close_scale_marks_on_distinct_rows(render):
+    soup = render("runway_bar", "runway_bar(-5000, 3000, -400000, -300000)")
+    marks = soup.select("[data-scale] span[data-part]")
+    assert [m["data-row"] for m in marks] == ["0", "1", "2"]
+
+
 def test_month_columns_macro_has_one_rect_per_month(render):
     months = [
         SimpleNamespace(month=date(2026, 10, 1), total_cents=0),

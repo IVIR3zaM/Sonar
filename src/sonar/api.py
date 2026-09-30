@@ -1,6 +1,6 @@
 """JSON API for categories and rules (N17: SPEC §5, §13).
 
-Thin HTTP translation over `taxonomy_service`: every endpoint reads or
+Thin HTTP translation over `categorization.service`: every endpoint reads or
 writes through its functions and nothing else, so validation, regex and
 amount parsing exist in exactly one place (shared with the Categories page).
 Also used by the CLAUDE.md Categorization workflow, which reads and writes
@@ -18,9 +18,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
-from sonar.categorizing import uncategorized_count, uncategorized_transactions
-from sonar.db import connect
-from sonar.taxonomy_service import (
+from sonar.categorization.export import group_uncategorized
+from sonar.categorization.service import (
     CategoryNotFound,
     RuleNotFound,
     TaxonomyError,
@@ -34,7 +33,8 @@ from sonar.taxonomy_service import (
     update_category,
     update_rule,
 )
-from sonar.uncategorized_export import group_uncategorized
+from sonar.categorization.store import uncategorized_count, uncategorized_transactions
+from sonar.db import connect
 
 _JSON_CONTENT_TYPE = "application/json"
 
@@ -47,7 +47,7 @@ class _StrictModel(BaseModel):
 
 def _numeric_as_text(value: object) -> object:
     # JSON senders may write position/amount as a number; pass it on as the
-    # text `taxonomy_service` already parses, so both shapes work the same.
+    # text `categorization.service` already parses, so both shapes work the same.
     if value is None or isinstance(value, bool | str):
         return value
     if isinstance(value, int | float):

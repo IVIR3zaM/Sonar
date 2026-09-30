@@ -12,7 +12,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
-from sonar.categorizing import transactions_with_category
+from sonar.categorization.store import transactions_with_category
 from sonar.recurrence import DetectedPayment, detect_recurring
 from sonar.schedule import SchedulePeriod, pause_after, resume_on
 

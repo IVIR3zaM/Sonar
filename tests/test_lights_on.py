@@ -5,7 +5,8 @@ from fractions import Fraction
 
 import pytest
 
-from sonar import monthly, spending_groups
+from sonar import monthly
+from sonar.categorization import groups
 from sonar.lights_on import (
     CategoryExpected,
     complete_months,
@@ -17,12 +18,12 @@ from sonar.monthly import Period
 from sonar.transactions import ParsedTransaction
 
 TYPES = {
-    "groceries": spending_groups.LIGHTS_ON,
-    "transport": spending_groups.LIGHTS_ON,
-    "dining": spending_groups.OCCASIONAL,
-    "rent": spending_groups.FIXED,
-    "savings": spending_groups.TRANSFER,
-    "Salary": spending_groups.INCOME,
+    "groceries": groups.LIGHTS_ON,
+    "transport": groups.LIGHTS_ON,
+    "dining": groups.OCCASIONAL,
+    "rent": groups.FIXED,
+    "savings": groups.TRANSFER,
+    "Salary": groups.INCOME,
 }
 
 FEB = Period(date(2026, 2, 1), date(2026, 2, 1), date(2026, 2, 28))
@@ -210,9 +211,9 @@ def test_group_totals_match_the_monthly_page():
 
     for month in month_spends(rows, TYPES, None, APR.end):
         page = monthly.monthly_spending(rows, TYPES, month.period)
-        groups = spending_groups.group_totals(page.by_category)
-        assert month.lights_on_cents == -groups.lights_on_cents
-        assert month.occasional_cents == -groups.occasional_cents
+        totals = groups.group_totals(page.by_category)
+        assert month.lights_on_cents == -totals.lights_on_cents
+        assert month.occasional_cents == -totals.occasional_cents
 
 
 def test_last_known_day_is_the_latest_booking_when_the_balance_is_later():

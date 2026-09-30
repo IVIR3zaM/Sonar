@@ -1,11 +1,15 @@
-"""DB shell for the taxonomy (SPEC §5, §13 Categorization config): categories and rules.
+"""DB shell for categorization (SPEC §5, §13 Categorization config): categories, rules, re-applying.
 
-`categorize.py` holds the pure parsing, validation and matching; this module
+`rules.py` holds the pure parsing, validation and matching; this module
 stores that shape in `categories` and `category_rules` (0006_categories.sql)
 and gives the Categories page and API their CRUD. Rule writes go through
-`categorize.validate_rule` so the DB accepts exactly what the TOML importer
+`rules.validate_rule` so the DB accepts exactly what the TOML importer
 accepts. Rule `position` is kept contiguous (1..n) after every add, delete or
 move, since rules are tried in that order and the first match wins.
+
+It also reads stored transaction rows, recomputes each one's category and
+writes back only the rows whose category changed, so a rule-set edit takes
+effect on every existing row, not just newly imported ones.
 """
 
 from __future__ import annotations
@@ -13,9 +17,11 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import date
 
-from sonar import spending_groups
-from sonar.categorize import Rule, Taxonomy, validate_rule
+from sonar.categorization import groups
+from sonar.categorization.rules import Rule, Taxonomy, categorize, validate_rule
+from sonar.transactions import ParsedTransaction
 
 _RULE_COLUMNS = (
     "counterparty, counterparty_regex, purpose, purpose_regex, "
@@ -57,7 +63,7 @@ class StoredRule:
 
 
 def load_stored_taxonomy(conn: sqlite3.Connection) -> Taxonomy:
-    """Categories in id order, rules by position, ready for `categorize.match_rule`."""
+    """Categories in id order, rules by position, ready for `rules.match_rule`."""
     categories = dict(conn.execute("SELECT name, type FROM categories ORDER BY id").fetchall())
     rows = conn.execute(
         f"""
@@ -250,7 +256,7 @@ def _move_rule(conn: sqlite3.Connection, id: int, new_position: int) -> None:
 def _validate_category(name: str, type: str) -> None:
     if not name or not name.strip():
         raise ValueError("category name must not be blank")
-    if type not in spending_groups.TYPES:
+    if type not in groups.TYPES:
         raise ValueError(f"unknown category type {type!r}")
 
 
@@ -305,3 +311,86 @@ def _qualify(columns: str, alias: str) -> str:
 
 def _placeholders(n: int) -> str:
     return ", ".join(["?"] * n)
+
+
+# `category` must stay last: `_transaction_from_row` ignores it and
+# `reapply_rules` reads it as `row[-1]` to detect no-op updates.
+_COLUMNS = (
+    "id, account, booking_date, value_date, amount_cents, currency, "
+    "counterparty, purpose, raw_row, iban, mandate_ref, creditor_id, category"
+)
+
+
+def reapply_rules(conn: sqlite3.Connection, rules: tuple[Rule, ...]) -> int:
+    """Recompute `category` for every stored transaction; return rows changed.
+
+    Runs as one transaction, so a rule set is applied to the whole table
+    atomically instead of leaving some rows on an old rule set if something
+    fails partway through.
+    """
+    changed = 0
+    with conn:
+        rows = conn.execute(f"SELECT {_COLUMNS} FROM transactions").fetchall()
+        for row in rows:
+            tx_id, current_category = row[0], row[-1]
+            new_category = categorize(_transaction_from_row(row), rules)
+            if new_category != current_category:
+                conn.execute(
+                    "UPDATE transactions SET category = ? WHERE id = ?",
+                    (new_category, tx_id),
+                )
+                changed += 1
+    return changed
+
+
+def uncategorized_count(conn: sqlite3.Connection) -> int:
+    (count,) = conn.execute("SELECT COUNT(*) FROM transactions WHERE category IS NULL").fetchone()
+    return count
+
+
+def uncategorized_transactions(conn: sqlite3.Connection) -> list[ParsedTransaction]:
+    """Rebuild every uncategorized row as a `ParsedTransaction`, e.g. for the export."""
+    rows = conn.execute(f"SELECT {_COLUMNS} FROM transactions WHERE category IS NULL").fetchall()
+    return [_transaction_from_row(row) for row in rows]
+
+
+def transactions_with_category(
+    conn: sqlite3.Connection,
+) -> list[tuple[ParsedTransaction, str | None]]:
+    """Every stored transaction paired with its category, for recurring-payment detection."""
+    rows = conn.execute(f"SELECT {_COLUMNS} FROM transactions").fetchall()
+    return [(_transaction_from_row(row), row[-1]) for row in rows]
+
+
+def _transaction_from_row(row: tuple) -> ParsedTransaction:
+    (
+        _id,
+        account,
+        booking_date,
+        value_date,
+        amount_cents,
+        currency,
+        counterparty,
+        purpose,
+        raw_row,
+        iban,
+        mandate_ref,
+        creditor_id,
+        _category,
+    ) = row
+    booking = date.fromisoformat(booking_date)
+    return ParsedTransaction(
+        account=account,
+        booking_date=booking,
+        # A missing value_date (some exports omit it) falls back to the
+        # booking date rather than making the field optional everywhere.
+        value_date=date.fromisoformat(value_date) if value_date else booking,
+        amount_cents=amount_cents,
+        currency=currency,
+        counterparty=counterparty or "",
+        purpose=purpose or "",
+        raw_row=raw_row,
+        iban=iban,
+        mandate_ref=mandate_ref,
+        creditor_id=creditor_id,
+    )

@@ -1,4 +1,4 @@
-"""Tests for the pure rule engine in sonar.categorize (SPEC §5)."""
+"""Tests for the pure rule engine in sonar.categorization.rules (SPEC §5)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from sonar.categorize import (
+from sonar.categorization.rules import (
     Rule,
     categorize,
     load_taxonomy,

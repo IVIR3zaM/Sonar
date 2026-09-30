@@ -1,6 +1,6 @@
 """Pure rule engine for categorization (SPEC §5).
 
-Categories and rules live in the SQLite DB (see taxonomy_store.py); TOML
+Categories and rules live in the SQLite DB (see store.py); TOML
 parsing here is kept for the one-off `import-categories` CLI command and for
 tests. Rules are ordered and the first whose conditions all match (AND)
 wins. Rules are re-applied to every stored transaction on each import and at
@@ -15,10 +15,10 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from sonar import spending_groups
+from sonar.categorization import groups
 from sonar.transactions import ParsedTransaction
 
-CATEGORY_TYPES = spending_groups.TYPES
+CATEGORY_TYPES = groups.TYPES
 SIGNS = {"debit", "credit"}
 
 # The legacy import path: the owner's categories.toml predates the N02 split
@@ -83,9 +83,7 @@ def _parse_categories(raw_categories: list[dict]) -> dict[str, str]:
         category_type = raw["type"]
         if category_type == _LEGACY_VARIABLE_TYPE:
             category_type = (
-                spending_groups.LIGHTS_ON
-                if name in _LEGACY_LIGHTS_ON_NAMES
-                else spending_groups.OCCASIONAL
+                groups.LIGHTS_ON if name in _LEGACY_LIGHTS_ON_NAMES else groups.OCCASIONAL
             )
         elif category_type not in CATEGORY_TYPES:
             raise ValueError(f"category {name!r} has unknown type {category_type!r}")

@@ -6,8 +6,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
+from sonar.categorization.store import add_category, add_rule
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.taxonomy_store import add_category, add_rule
 from tests.seed import seed
 
 # Tests seed their own fake taxonomy (categories live only in the DB, N11)

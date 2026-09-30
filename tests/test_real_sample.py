@@ -11,14 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from sonar.categorize import load_taxonomy
-from sonar.categorizing import reapply_rules
+from sonar.categorization.rules import load_taxonomy
+from sonar.categorization.store import load_stored_taxonomy, reapply_rules, replace_taxonomy
 from sonar.dashboard import load_dashboard
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.importing.store import import_file
 from sonar.recurring import sync_detected
 from sonar.settings_store import DEFAULT_OVERDRAFT_LIMIT_CENTS, save_settings
-from sonar.taxonomy_store import load_stored_taxonomy, replace_taxonomy
 
 REPO_ROOT = Path(__file__).parent.parent
 SAMPLES_DIR = REPO_ROOT / "samples"

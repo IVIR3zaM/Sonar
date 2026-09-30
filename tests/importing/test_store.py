@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from sonar.categorize import parse_taxonomy
+from sonar.categorization.rules import parse_taxonomy
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.importing.importers import UnknownFormatError, deutsche_bank_giro
 from sonar.importing.store import import_file

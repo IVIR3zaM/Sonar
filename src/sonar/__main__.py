@@ -8,11 +8,10 @@ from pathlib import Path
 import uvicorn
 
 from sonar.app import create_app
-from sonar.categorize import load_taxonomy
-from sonar.categorizing import reapply_rules, uncategorized_count
+from sonar.categorization.rules import load_taxonomy
+from sonar.categorization.store import reapply_rules, replace_taxonomy, uncategorized_count
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.recurring import sync_detected
-from sonar.taxonomy_store import replace_taxonomy
 
 
 def main() -> None:

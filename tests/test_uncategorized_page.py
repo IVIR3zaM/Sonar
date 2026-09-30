@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.uncategorized_export import HEADER
+from sonar.categorization.export import HEADER
 from tests.html import records, soup, text
 from tests.seed import seed
 

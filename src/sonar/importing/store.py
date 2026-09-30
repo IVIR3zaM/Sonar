@@ -10,8 +10,8 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-from sonar.categorize import Rule
-from sonar.categorizing import reapply_rules
+from sonar.categorization.rules import Rule
+from sonar.categorization.store import reapply_rules
 from sonar.importing.dedup import NumberedTransaction, number_occurrences
 from sonar.importing.importers import pick_importer
 from sonar.transactions import ParsedBalance

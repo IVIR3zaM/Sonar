@@ -1,7 +1,7 @@
-"""The one service layer between HTTP input and `taxonomy_store`.
+"""The one service layer between HTTP input and `categorization.store`.
 
 Shared by the Categories page (N08, N09) and the JSON API (N17): both call
-these functions and nothing in `taxonomy_store` directly, so validation and
+these functions and nothing in `categorization.store` directly, so validation and
 error messages exist in exactly one place. Besides the re-apply function the
 app's routes and the CLI share, this holds the category CRUD used by the
 Categories page (N08): raw text input in, `TaxonomyError` (a friendly
@@ -18,24 +18,25 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
-from sonar import spending_groups, taxonomy_store
-from sonar.categorizing import reapply_rules, uncategorized_count
-from sonar.money import parse_cents
-from sonar.recurring import sync_detected
-from sonar.taxonomy_store import (
+from sonar.categorization import groups, store
+from sonar.categorization.store import (
     CategoryNotFound,  # noqa: F401 re-exported for callers
     RuleNotFound,  # noqa: F401 re-exported for callers
     load_stored_taxonomy,
+    reapply_rules,
+    uncategorized_count,
 )
+from sonar.money import parse_cents
+from sonar.recurring import sync_detected
 
 # N02 group order: income and transfers first (not spending), then the three
 # spending groups in the order the Monthly page shows them.
 GROUP_ORDER = (
-    spending_groups.INCOME,
-    spending_groups.TRANSFER,
-    spending_groups.FIXED,
-    spending_groups.LIGHTS_ON,
-    spending_groups.OCCASIONAL,
+    groups.INCOME,
+    groups.TRANSFER,
+    groups.FIXED,
+    groups.LIGHTS_ON,
+    groups.OCCASIONAL,
 )
 
 _CATEGORY_IN_USE = re.compile(r"^category '(?P<name>.*)' is used by (?P<count>\d+) rule\(s\)$")
@@ -94,13 +95,13 @@ def reapply_stored_taxonomy(conn: sqlite3.Connection, today: date) -> int:
 def list_categories(conn: sqlite3.Connection) -> list[CategoryView]:
     """Categories in `GROUP_ORDER`, then id, ready for the Categories page and API."""
     position = {group: index for index, group in enumerate(GROUP_ORDER)}
-    rows = sorted(taxonomy_store.list_categories(conn), key=lambda c: (position[c.type], c.id))
+    rows = sorted(store.list_categories(conn), key=lambda c: (position[c.type], c.id))
     return [
         CategoryView(
             id=row.id,
             name=row.name,
             group=row.type,
-            group_label=spending_groups.LABELS[row.type],
+            group_label=groups.LABELS[row.type],
             rule_count=row.rule_count,
         )
         for row in rows
@@ -110,7 +111,7 @@ def list_categories(conn: sqlite3.Connection) -> list[CategoryView]:
 def add_category(conn: sqlite3.Connection, today: date, name: str, group: str) -> int:
     name = name.strip()
     try:
-        category_id = taxonomy_store.add_category(conn, name, group)
+        category_id = store.add_category(conn, name, group)
     except ValueError as error:
         raise _category_error(error, name) from None
     reapply_stored_taxonomy(conn, today)
@@ -120,7 +121,7 @@ def add_category(conn: sqlite3.Connection, today: date, name: str, group: str) -
 def update_category(conn: sqlite3.Connection, today: date, id: int, name: str, group: str) -> None:
     name = name.strip()
     try:
-        taxonomy_store.update_category(conn, id, name, group)
+        store.update_category(conn, id, name, group)
     except ValueError as error:
         raise _category_error(error, name) from None
     reapply_stored_taxonomy(conn, today)
@@ -128,14 +129,14 @@ def update_category(conn: sqlite3.Connection, today: date, id: int, name: str, g
 
 def delete_category(conn: sqlite3.Connection, today: date, id: int) -> None:
     try:
-        taxonomy_store.delete_category(conn, id)
+        store.delete_category(conn, id)
     except ValueError as error:
         raise _category_error(error, None) from None
     reapply_stored_taxonomy(conn, today)
 
 
 def _category_error(error: ValueError, name: str | None) -> TaxonomyError:
-    # `taxonomy_store`'s ValueErrors are written for developers; translate the
+    # `categorization.store`'s ValueErrors are written for developers; translate the
     # ones the Categories page and API can trigger into a sentence naming the
     # field, so both surfaces show the same message (SPEC §12 Friendly errors).
     text = str(error)
@@ -188,7 +189,7 @@ def list_rules(conn: sqlite3.Connection) -> list[RuleView]:
             min_amount=_amount_text(rule.min_amount_cents),
             max_amount=_amount_text(rule.max_amount_cents),
         )
-        for rule in taxonomy_store.list_rules(conn)
+        for rule in store.list_rules(conn)
     ]
 
 
@@ -196,7 +197,7 @@ def add_rule(conn: sqlite3.Connection, today: date, fields: Mapping[str, str]) -
     raw = _parse_rule_fields(fields)
     position = _parse_position(fields.get("position"))
     try:
-        rule_id = taxonomy_store.add_rule(conn, raw, position)
+        rule_id = store.add_rule(conn, raw, position)
     except ValueError as error:
         raise _rule_error(error, raw) from None
     reapply_stored_taxonomy(conn, today)
@@ -207,7 +208,7 @@ def update_rule(conn: sqlite3.Connection, today: date, id: int, fields: Mapping[
     raw = _parse_rule_fields(fields)
     position = _parse_position(fields.get("position"))
     try:
-        taxonomy_store.update_rule(conn, id, raw, position)
+        store.update_rule(conn, id, raw, position)
     except ValueError as error:
         raise _rule_error(error, raw) from None
     reapply_stored_taxonomy(conn, today)
@@ -215,22 +216,22 @@ def update_rule(conn: sqlite3.Connection, today: date, id: int, fields: Mapping[
 
 def delete_rule(conn: sqlite3.Connection, today: date, id: int) -> None:
     # RuleNotFound (a LookupError, not a ValueError) passes straight through.
-    taxonomy_store.delete_rule(conn, id)
+    store.delete_rule(conn, id)
     reapply_stored_taxonomy(conn, today)
 
 
 def move_rule(conn: sqlite3.Connection, today: date, id: int, position: str) -> None:
     parsed = _parse_position(position, required=True)
-    taxonomy_store.move_rule(conn, id, parsed)
+    store.move_rule(conn, id, parsed)
     reapply_stored_taxonomy(conn, today)
 
 
 def _parse_rule_fields(fields: Mapping[str, str]) -> dict:
-    """Raw rule-form text to `taxonomy_store.add_rule`'s `raw` mapping.
+    """Raw rule-form text to `store.add_rule`'s `raw` mapping.
 
     Trims every text field (blank -> None); `sign` "any" also becomes None.
     Regex validity, the unknown-category and no-text-condition checks, and
-    min > max are left to `taxonomy_store` (via `categorize.validate_rule`)
+    min > max are left to `categorization.store` (via `rules.validate_rule`)
     and translated back to a friendly message by `_rule_error`.
     """
 
@@ -275,7 +276,7 @@ def _amount_text(cents: int | None) -> str:
 
 
 def _rule_error(error: ValueError, raw: dict) -> TaxonomyError:
-    # `categorize.validate_rule`'s ValueErrors are written for developers;
+    # `rules.validate_rule`'s ValueErrors are written for developers;
     # translate the ones the Rules card and API can trigger into a sentence
     # naming the field, so both surfaces show the same message.
     text = str(error)

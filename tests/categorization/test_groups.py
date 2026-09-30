@@ -1,4 +1,4 @@
-"""Tests for spending_groups.py: the five category types and group totals."""
+"""Tests for groups.py: the five category types and group totals."""
 
 import ast
 from dataclasses import dataclass
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from sonar.spending_groups import (
+from sonar.categorization.groups import (
     FIXED,
     INCOME,
     LIGHTS_ON,
@@ -49,10 +49,11 @@ def test_group_totals_raises_on_unknown_type():
 
 
 def test_no_hardcoded_type_strings():
-    """Guard: type values live only in spending_groups.py, never hard-coded elsewhere."""
-    sonar_dir = Path(__file__).parent.parent / "src" / "sonar"
+    """Guard: type values live only in groups.py, never hard-coded elsewhere."""
+    sonar_dir = Path(__file__).parents[2] / "src" / "sonar"
+    groups_file = sonar_dir / "categorization" / "groups.py"
     for py_file in sorted(sonar_dir.glob("**/*.py")):
-        if py_file.name == "spending_groups.py":
+        if py_file == groups_file:
             continue
         with open(py_file, encoding="utf-8") as f:
             tree = ast.parse(f.read())
@@ -62,6 +63,6 @@ def test_no_hardcoded_type_strings():
                 if node.value in TYPES:
                     # Report file:line
                     raise AssertionError(
-                        f"{py_file.relative_to(py_file.parent.parent.parent)}:{node.lineno} "
+                        f"{py_file.relative_to(sonar_dir.parent.parent)}:{node.lineno} "
                         f"hard-codes type {node.value!r}"
                     )

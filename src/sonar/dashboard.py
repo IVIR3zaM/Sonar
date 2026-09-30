@@ -12,9 +12,10 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Literal
 
-from sonar import debts, forecast, lights_on, payday, spending_groups
+from sonar import debts, forecast, lights_on, payday
 from sonar.balance import BalanceEntry
-from sonar.categorizing import transactions_with_category, uncategorized_count
+from sonar.categorization import groups
+from sonar.categorization.store import transactions_with_category, uncategorized_count
 from sonar.debt_store import DebtView, debt_overview, remaining_cents
 from sonar.forecast import DueItem, FixedCosts, FixedSource, Projection
 from sonar.lights_on import LightsOnForecast
@@ -77,8 +78,8 @@ def load_dashboard(
         due=[],
         due_total_cents=0,
         window_days=None,
-        lights_on_categories=_names_of_type(category_types, spending_groups.LIGHTS_ON),
-        occasional_categories=_names_of_type(category_types, spending_groups.OCCASIONAL),
+        lights_on_categories=_names_of_type(category_types, groups.LIGHTS_ON),
+        occasional_categories=_names_of_type(category_types, groups.OCCASIONAL),
         lights_on=None,
         lights_on_daily=None,
         expected_cents=None,

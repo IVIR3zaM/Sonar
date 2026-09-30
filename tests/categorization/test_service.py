@@ -1,4 +1,4 @@
-"""Tests for taxonomy_service (SPEC §5, §13): the DB re-apply and category CRUD
+"""Tests for categorization.service (SPEC §5, §13): the DB re-apply and category CRUD
 shared by the Categories page (N08) and the JSON API (N17)."""
 
 import sqlite3
@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.taxonomy_service import (
+from sonar.categorization.service import (
     CategoryNotFound,
     RuleNotFound,
     TaxonomyError,
@@ -23,6 +22,7 @@ from sonar.taxonomy_service import (
     update_category,
     update_rule,
 )
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from tests.seed import seed
 
 TODAY = date(2026, 9, 23)
@@ -208,7 +208,7 @@ def test_successful_update_reapplies_and_drops_detection_on_group_change(tmp_pat
         fitness_id = _category_id(conn, "Fitness")
         update_category(conn, TODAY, fitness_id, "Fitness", "occasional")
 
-        # occasional is excluded from recurring detection (spending_groups.py),
+        # occasional is excluded from recurring detection (groups.py),
         # so the re-apply the update runs must drop the detected payment.
         (payment_count,) = conn.execute("SELECT COUNT(*) FROM recurring_payments").fetchone()
         assert payment_count == 0

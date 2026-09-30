@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sonar.categorize import parse_taxonomy
+from sonar.categorization.rules import parse_taxonomy
+from sonar.categorization.store import replace_taxonomy
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.taxonomy_store import replace_taxonomy
 
 
 def seed(db_path: Path, toml_text: str = "") -> None:

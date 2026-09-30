@@ -19,8 +19,28 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sonar import charts, lights_on
 from sonar.api import build_api_router
-from sonar.categorize import Rule
-from sonar.categorizing import (
+from sonar.categorization.export import build_categorization_request
+from sonar.categorization.groups import LABELS as GROUP_LABELS
+from sonar.categorization.groups import LIGHTS_ON, TRANSFER
+from sonar.categorization.rules import Rule
+from sonar.categorization.service import (
+    GROUP_ORDER,
+    CategoryNotFound,
+    RuleNotFound,
+    TaxonomyError,
+    reapply_stored_taxonomy,
+)
+from sonar.categorization.service import add_category as add_category_service
+from sonar.categorization.service import add_rule as add_rule_service
+from sonar.categorization.service import delete_category as delete_category_service
+from sonar.categorization.service import delete_rule as delete_rule_service
+from sonar.categorization.service import list_categories as list_categories_view
+from sonar.categorization.service import list_rules as list_rules_view
+from sonar.categorization.service import move_rule as move_rule_service
+from sonar.categorization.service import update_category as update_category_service
+from sonar.categorization.service import update_rule as update_rule_service
+from sonar.categorization.store import (
+    load_stored_taxonomy,
     transactions_with_category,
     uncategorized_count,
     uncategorized_transactions,
@@ -56,26 +76,6 @@ from sonar.recurring import (
 )
 from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
-from sonar.spending_groups import LABELS as GROUP_LABELS
-from sonar.spending_groups import LIGHTS_ON, TRANSFER
-from sonar.taxonomy_service import (
-    GROUP_ORDER,
-    CategoryNotFound,
-    RuleNotFound,
-    TaxonomyError,
-    reapply_stored_taxonomy,
-)
-from sonar.taxonomy_service import add_category as add_category_service
-from sonar.taxonomy_service import add_rule as add_rule_service
-from sonar.taxonomy_service import delete_category as delete_category_service
-from sonar.taxonomy_service import delete_rule as delete_rule_service
-from sonar.taxonomy_service import list_categories as list_categories_view
-from sonar.taxonomy_service import list_rules as list_rules_view
-from sonar.taxonomy_service import move_rule as move_rule_service
-from sonar.taxonomy_service import update_category as update_category_service
-from sonar.taxonomy_service import update_rule as update_rule_service
-from sonar.taxonomy_store import load_stored_taxonomy
-from sonar.uncategorized_export import build_categorization_request
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"

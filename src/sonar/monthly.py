@@ -24,8 +24,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from sonar.categorization.groups import TRANSFER, GroupTotals, group_totals
 from sonar.payday import payday_in
-from sonar.spending_groups import TRANSFER, GroupTotals, group_totals
 from sonar.transactions import ParsedTransaction
 
 SALARY = "Salary"
@@ -35,7 +35,7 @@ PAYDAY_TOLERANCE = timedelta(days=10)
 # A salary promised after this day of the month is for the next month's budget.
 LAST_SAME_MONTH_SALARY_DAY = 15
 # The page's filter value for payments without a category; category names
-# come from the DB (taxonomy_store.py), which never uses this spelling.
+# come from the DB (categorization/store.py), which never uses this spelling.
 UNCATEGORIZED = "__uncategorized__"
 
 Row = tuple[ParsedTransaction, str | None]

@@ -11,9 +11,8 @@ from fastapi.testclient import TestClient
 
 from sonar import lights_on
 from sonar.app import create_app
-from sonar.categorizing import transactions_with_category
+from sonar.categorization.store import load_stored_taxonomy, transactions_with_category
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.taxonomy_store import load_stored_taxonomy
 from tests.html import cents, records, soup, text
 from tests.seed import seed
 

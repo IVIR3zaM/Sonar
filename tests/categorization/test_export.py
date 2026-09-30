@@ -3,8 +3,8 @@
 from dataclasses import replace
 from datetime import date
 
+from sonar.categorization.export import HEADER, build_categorization_request, group_uncategorized
 from sonar.transactions import ParsedTransaction
-from sonar.uncategorized_export import HEADER, build_categorization_request, group_uncategorized
 
 
 def _tx(**overrides: object) -> ParsedTransaction:

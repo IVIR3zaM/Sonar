@@ -24,7 +24,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from fractions import Fraction
 
-from sonar import monthly, spending_groups
+from sonar import monthly
+from sonar.categorization import groups
 from sonar.monthly import Period
 from sonar.transactions import ParsedTransaction
 
@@ -129,9 +130,9 @@ def month_spend(rows: Iterable[Row], category_types: dict[str, str], period: Per
         if tx.amount_cents >= 0 or not period.start <= tx.booking_date <= period.end:
             continue
         group = category_types.get(category or "")
-        if group == spending_groups.LIGHTS_ON:
+        if group == groups.LIGHTS_ON:
             lights_on[category] += -tx.amount_cents
-        elif group == spending_groups.OCCASIONAL:
+        elif group == groups.OCCASIONAL:
             occasional += -tx.amount_cents
     return MonthSpend(period, dict(lights_on), occasional)
 

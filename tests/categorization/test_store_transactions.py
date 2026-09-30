@@ -4,8 +4,8 @@ import sqlite3
 
 import pytest
 
-from sonar.categorize import Rule
-from sonar.categorizing import (
+from sonar.categorization.rules import Rule
+from sonar.categorization.store import (
     reapply_rules,
     transactions_with_category,
     uncategorized_count,

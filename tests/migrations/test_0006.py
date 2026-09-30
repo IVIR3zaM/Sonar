@@ -4,8 +4,8 @@ import sqlite3
 
 import pytest
 
+from sonar.categorization.groups import TYPES
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.spending_groups import TYPES
 
 EXPECTED_SEED = {
     "Salary": "income",

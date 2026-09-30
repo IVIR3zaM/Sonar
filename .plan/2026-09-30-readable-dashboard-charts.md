@@ -14,12 +14,14 @@ budgets: 2 tries per brief · 2 replans per node
 | N01 | runway scale geometry | exec | - | sonnet/opus | 1 | 0 | DONE | |
 | N02 | runway scale and legend values | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | column value labels | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | visual check | gate | N03 | - | 0 | 0 | WAITING | |
-| N05 | plan acceptance | check | N01,N02,N03,N04 | -/sonnet | 0 | 0 | TODO | |
+| N06 | readable column labels | exec | N03 | sonnet/sonnet | 1 | 0 | DONE | |
+| N04 | visual check | gate | N06 | - | 0 | 1 | WAITING | |
+| N05 | plan acceptance | check | N01,N02,N03,N06,N04 | -/sonnet | 0 | 0 | TODO | |
 
 ## Open questions
 
 - none (Q1 resolved: European style "1,2k €", "12k €", "950 €", applied in N03)
+- Q2 At 375px a column slot is ~26px, so twelve horizontal "1,2k €" labels at a readable ~11px overlap their neighbours; rotate each label vertically above its column (keeps the Q1 format), or drop " €" and keep them horizontal? | recommend: rotate vertically, keeping "1,2k €" (N06 is written for this)
 
 ## Nodes
 
@@ -83,15 +85,36 @@ Done when:
 Findings:
 - none
 
+### N06 readable column labels
+Do: Make the Fixed costs value and month labels readable at desktop and 375px (gate N04 try 1: value labels rendered at ~7–9px). The chart scales with `preserveAspectRatio` meet, so 1 viewBox unit ≈ 1.05px at 375px (≈ 300px wide / 288 units) and is height-bound at desktop by `h-28` (`charts.html:60`). Change only the `month_columns` macro (`charts.html:54-76`):
+(1) Value labels (`charts.html:70-71`): `font-size="10"`, `text-anchor="start"`, `dominant-baseline="central"`, anchored at the slot centre and 3 units above the column top, with `transform="rotate(-90 <x> <y>)"` so the text reads upward inside its own slot and never reaches a neighbour. Keep `data-part="value"`, `data-cents`, the muted fill classes and `compact_eur` unchanged.
+(2) Month labels (`charts.html:72-73`): `font-size="10"`, still horizontal, below the columns.
+(3) Headroom: set the viewBox min-y to -40 (the longest label, "123k €", is about 34 units at font 10) and grow its height to cover the month labels; move nothing else. Change the svg's size class from `h-28` to `h-36 sm:h-48` so the text renders at ≥ 10px at 375px and larger at desktop.
+Keep the rects, their heights, `data-cents`, `<title>`s and the peak's amber class exactly as they are. Rebuild `sonar.css` with the command in CLAUDE.md Setup.
+Spec: SPEC §12 Pages: Dashboard (12-month SVG column chart), Design system, UI acceptance
+Read: src/sonar/templates/components/charts.html:54-76, tests/test_charts.py:13-30, :238-269 and :309-315
+Write: src/sonar/templates/components/charts.html, src/sonar/static/sonar.css, tests/test_charts.py
+Test first: extend or add a macro test over the months at `tests/test_charts.py:255-259`: every `[data-part=value]` has `font-size` "10" and a `transform` starting with "rotate(-90"; the viewBox min-y is ≤ -38. It fails because the labels are horizontal at font-size 7 and min-y is -10.
+Done when:
+- C1 The "Test first" test passes, and each value text's rotate pivot equals its own `x` and `y` attributes.
+- C2 Each value text's `x` lies within its column's rect (`rect x ≤ x ≤ rect x + width`), and its `y` is below the viewBox min-y by at least 36 and above its rect top (`y < rect y`).
+- C3 Every month label (the text without `data-part`) has `font-size` "10" and a `y` within the viewBox (min-y ≤ y ≤ min-y + height).
+- C4 `tests/test_charts.py:238-269` still pass unchanged apart from the new assertions: rect list, heights, `data-cents`, `<title>`s and value texts ("0 €", "100 €", "50 €").
+- C5 The svg keeps `role="img"`, `aria-label` and `<title>`; no inline `<style>`; no new rect.
+- C6 Rebuilding the CSS leaves `sonar.css` unchanged afterwards (`git diff --exit-code src/sonar/static/sonar.css` after a rebuild).
+- C7 The verify command exits 0.
+Findings:
+- none
+
 ### N04 visual check
 Do: Gate. Following the CLAUDE.md Visual check, the orchestrator starts the app on a temp DB, imports the real sample, and sets the salary day, balance and a non-zero overdraft limit. It checks the dashboard `/` in the browser pane at desktop and 375px, light and dark (read_page first, scaled screenshots of the hero card and the Fixed costs card only). Also check a case where the limit, 0 and balance marks sit close together, e.g. a balance just above 0 with a small limit.
 Done when:
 - C1 The runway legend shows the limit, the worst-to-best range and the balance as text, readable in both themes.
 - C2 The scale labels sit under their marks with no overlapping text and none outside the card, at desktop and 375px, including the close-marks case.
-- C3 Each Fixed costs column shows a readable compact value above it, with no overlap or clipping at 375px, and the peak column is still highlighted.
+- C3 Each Fixed costs column shows a readable compact value above it (vertical, rendered text ≥ ~10px, per N06), with no overlap or clipping at 375px, the month labels are readable, and the peak column is still highlighted.
 - C4 No horizontal scroll at 375px.
 Findings:
-- none
+- try 1: C1 C2 C4 pass (desktop and 375px, light and dark, incl. limit −100 € / balance 50 € close-marks case: scale labels stagger into 3 rows, no overlap). C3 fails: the Fixed costs column value labels render at font-size 7 in the viewBox and measure ~9px tall at desktop and ~7px at 375px, too small to read; the SVG is height-bound (h-28) so at desktop the chart fills only ~300 of 638px card width and the labels do not grow. Peak highlight and no clipping are fine.
 
 ### N05 plan acceptance
 Do: check the whole plan against its goal.

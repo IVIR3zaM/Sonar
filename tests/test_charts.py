@@ -268,6 +268,30 @@ def test_month_columns_macro_labels_each_column_with_its_total(render):
         assert float(value["y"]) >= min_y
 
 
+def test_month_columns_macro_value_labels_are_rotated_and_readable(render):
+    months = [
+        SimpleNamespace(month=date(2026, 10, 1), total_cents=0),
+        SimpleNamespace(month=date(2026, 11, 1), total_cents=-10000),
+        SimpleNamespace(month=date(2026, 12, 1), total_cents=-5000),
+    ]
+    soup = render("month_columns", "month_columns(months)", months=months)
+    svg = soup.find("svg")
+    _, min_y, _, box_height = _viewbox(svg)
+    assert min_y <= -38
+    values = svg.select("[data-part=value]")
+    for value, rect in zip(values, svg.find_all("rect"), strict=True):
+        assert value["font-size"] == "10"
+        assert value["transform"] == f"rotate(-90 {value['x']} {value['y']})"
+        rect_x = float(rect["x"])
+        assert rect_x <= float(value["x"]) <= rect_x + float(rect["width"])
+        assert min_y + 36 <= float(value["y"]) < float(rect["y"])
+    month_labels = [t for t in svg.find_all("text") if not t.has_attr("data-part")]
+    assert len(month_labels) == len(months)
+    for label in month_labels:
+        assert label["font-size"] == "10"
+        assert min_y <= float(label["y"]) <= min_y + box_height
+
+
 def test_category_bars_macro_has_one_rect_per_category(render):
     categories = [
         SimpleNamespace(category="groceries", expected_cents=20000),

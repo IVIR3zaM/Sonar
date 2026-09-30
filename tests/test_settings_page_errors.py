@@ -11,12 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.settings_store import current_balance, load_settings
 from tests.html import soup, text
 from tests.seed import seed
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
 TOMORROW = date(2026, 9, 24)
 

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.monthly import UNCATEGORIZED
 from sonar.taxonomy_service import reapply_stored_taxonomy
 from sonar.taxonomy_store import list_categories, update_category
@@ -16,7 +16,6 @@ from tests.html import cents, records, soup, text
 from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 # The fixture's September debits: "Max Mustermann" -2,167.12 (a transfer
 # here), two "Restaurant XYZ" -28.75, and "ACME GmbH" -45.50 plus

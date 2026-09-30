@@ -1,7 +1,6 @@
 """Tests for the categorization DB shell: reapply_rules and uncategorized queries (SPEC §5)."""
 
 import sqlite3
-from pathlib import Path
 
 import pytest
 
@@ -12,9 +11,7 @@ from sonar.categorizing import (
     uncategorized_count,
     uncategorized_transactions,
 )
-from sonar.db import apply_migrations
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 
 RENT_RULE = Rule(category="Rent", counterparty="Landlord")
 

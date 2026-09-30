@@ -11,6 +11,10 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+# Resolved relative to this module, not the process CWD, so migrations are
+# found regardless of where the app is launched from.
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     """Open a SQLite connection, creating the database's parent directory."""

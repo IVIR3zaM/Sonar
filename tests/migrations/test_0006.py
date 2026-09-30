@@ -1,14 +1,11 @@
 """Tests for migration 0006: categories and category_rules (SPEC §5, §13)."""
 
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.spending_groups import TYPES
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 EXPECTED_SEED = {
     "Salary": "income",

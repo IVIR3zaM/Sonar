@@ -5,8 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from sonar.app import MIGRATIONS_DIR, create_app
-from sonar.db import apply_migrations
+from sonar.app import create_app
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.taxonomy_store import add_category, add_rule
 from tests.seed import seed
 

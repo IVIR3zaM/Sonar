@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations, connect
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.taxonomy_service import (
     CategoryNotFound,
     RuleNotFound,
@@ -25,7 +25,6 @@ from sonar.taxonomy_service import (
 )
 from tests.seed import seed
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
 
 DINING_RULE_TOML = """

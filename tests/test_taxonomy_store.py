@@ -1,12 +1,11 @@
 """Tests for taxonomy_store.py: DB CRUD for categories and rules (SPEC §5, §13)."""
 
 import sqlite3
-from pathlib import Path
 
 import pytest
 
 from sonar.categorize import Taxonomy, parse_taxonomy
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.taxonomy_store import (
     CategoryNotFound,
     RuleNotFound,
@@ -22,8 +21,6 @@ from sonar.taxonomy_store import (
     update_category,
     update_rule,
 )
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 FAKE_TOML = """
 [[category]]

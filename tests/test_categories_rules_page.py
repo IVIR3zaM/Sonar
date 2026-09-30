@@ -11,10 +11,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.db import apply_migrations, connect
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from tests.html import soup, text
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
 
 # The example IBAN from the IBAN Wikipedia page, the only one allowed in tests.

@@ -8,17 +8,14 @@ debt instead of counting it twice.
 
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debt_store import add_debt, debt_overview
 from sonar.debts import Installment, InstallmentStatus, Loan, LoanStatus, MatchRule
 from sonar.recurring import add_manual
 from sonar.schedule import SchedulePeriod
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 
 @pytest.fixture

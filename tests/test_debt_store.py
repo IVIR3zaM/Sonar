@@ -2,15 +2,12 @@
 
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debt_store import DebtNotFound, add_debt, delete_debt, list_debts
 from sonar.debts import Installment, Loan, MatchRule
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 
 @pytest.fixture

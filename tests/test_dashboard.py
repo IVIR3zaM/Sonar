@@ -7,12 +7,11 @@ today forecasts the window [2026-09-11, 2026-09-24].
 
 import sqlite3
 from datetime import date, timedelta
-from pathlib import Path
 
 import pytest
 
 from sonar.dashboard import load_dashboard
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debt_store import add_debt
 from sonar.debts import Installment, Loan, MatchRule
 from sonar.forecast import DueItem, Projection
@@ -21,7 +20,6 @@ from sonar.recurring import add_manual
 from sonar.schedule import SchedulePeriod
 from sonar.settings_store import save_settings, set_manual_balance
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 10)
 PAYDAY = date(2026, 9, 25)
 CATEGORY_TYPES = {"Groceries": "lights_on", "Dining": "occasional", "Rent": "fixed"}

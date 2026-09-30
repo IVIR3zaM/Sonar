@@ -9,8 +9,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from sonar.app import MIGRATIONS_DIR, create_app
-from sonar.db import apply_migrations
+from sonar.app import create_app
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.recurring import dismiss, list_payments
 from tests.html import fields, soup
 from tests.seed import seed

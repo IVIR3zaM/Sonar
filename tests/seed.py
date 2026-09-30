@@ -11,10 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from sonar.categorize import parse_taxonomy
-from sonar.db import apply_migrations, connect
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.taxonomy_store import replace_taxonomy
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 
 def seed(db_path: Path, toml_text: str = "") -> None:

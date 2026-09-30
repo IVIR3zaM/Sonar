@@ -12,12 +12,11 @@ from fastapi.testclient import TestClient
 
 from sonar import amortization
 from sonar.app import create_app
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debt_store import list_debts
 from tests.html import cents, fields, soup
 from tests.seed import seed
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 23)
 
 

@@ -11,12 +11,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debt_store import list_debts
 from tests.html import soup, text
 from tests.seed import seed
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 
 def _assert_debts_table_empty(db_path: Path) -> None:

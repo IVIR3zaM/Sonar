@@ -2,15 +2,12 @@
 
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.recurring import add_manual, dismiss, edit_payment, list_payments, sync_detected
 from sonar.schedule import SchedulePeriod
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 FITNESS_TYPES = {"Fitness": "fixed"}
 LIGHTS_ON_TYPES = {"Fitness": "lights_on"}

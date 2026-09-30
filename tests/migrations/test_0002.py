@@ -1,11 +1,8 @@
 """Tests for migration 0002: the `category` column in transactions."""
 
 import sqlite3
-from pathlib import Path
 
-from sonar.db import apply_migrations
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 
 
 def _connect_migrated() -> sqlite3.Connection:

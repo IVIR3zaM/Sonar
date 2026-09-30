@@ -2,12 +2,11 @@
 
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
 from sonar.balance import BalanceEntry
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.settings_store import (
     DEFAULT_OVERDRAFT_LIMIT_CENTS,
     Settings,
@@ -16,8 +15,6 @@ from sonar.settings_store import (
     save_settings,
     set_manual_balance,
 )
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 
 def _connect_migrated() -> sqlite3.Connection:

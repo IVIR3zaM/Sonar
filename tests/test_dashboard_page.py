@@ -16,11 +16,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from tests.html import cents, fields, records, soup, text
 from tests.seed import seed
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 TODAY = date(2026, 9, 10)
 
 # Groceries is `lights_on` and matches the fake counterparty "Fake Market", so

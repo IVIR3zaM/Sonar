@@ -1,13 +1,10 @@
 """Tests for migration 0005: settings (salary day)."""
 
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 
 
 def _connect_migrated() -> sqlite3.Connection:

@@ -7,11 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 from sonar.categorize import parse_taxonomy
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.importers import UnknownFormatError, deutsche_bank_giro
 from sonar.importing import import_file
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
 
 # The fixture has 7 preamble lines, the header, 7 data rows and a footer line.

@@ -26,7 +26,7 @@ from sonar.categorizing import (
     uncategorized_transactions,
 )
 from sonar.dashboard import load_dashboard
-from sonar.db import apply_migrations, connect
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
 from sonar.debts import Installment, Loan, MatchRule
 from sonar.display import cadence, days_until, display_date, eur
@@ -77,9 +77,6 @@ from sonar.taxonomy_service import update_rule as update_rule_service
 from sonar.taxonomy_store import load_stored_taxonomy
 from sonar.uncategorized_export import build_categorization_request
 
-# Resolved relative to this module, not the process CWD, so migrations are
-# found regardless of where the app is launched from.
-MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 

@@ -2,11 +2,10 @@
 
 import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-from sonar.db import apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.recurring import (
     PaymentNotFound,
     add_manual,
@@ -17,8 +16,6 @@ from sonar.recurring import (
     resume_payment,
 )
 from sonar.schedule import SchedulePeriod, occurrences
-
-MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "sonar" / "migrations"
 
 
 @pytest.fixture

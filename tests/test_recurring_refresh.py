@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.recurring import dismiss, list_payments
+from sonar.recurring.store import dismiss, list_payments
 from tests.seed import seed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"

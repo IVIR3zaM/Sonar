@@ -19,7 +19,7 @@ from sonar.categorization.store import transactions_with_category, uncategorized
 from sonar.debt_store import DebtView, debt_overview, remaining_cents
 from sonar.forecast import DueItem, FixedCosts, FixedSource, Projection
 from sonar.lights_on import LightsOnForecast
-from sonar.recurring import list_payments
+from sonar.recurring.store import list_payments
 from sonar.settings_store import current_balance, load_settings
 from sonar.transactions import ParsedTransaction
 

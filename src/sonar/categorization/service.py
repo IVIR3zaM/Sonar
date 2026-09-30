@@ -27,7 +27,7 @@ from sonar.categorization.store import (
     uncategorized_count,
 )
 from sonar.money import parse_cents
-from sonar.recurring import sync_detected
+from sonar.recurring.store import sync_detected
 
 # N02 group order: income and transfers first (not spending), then the three
 # spending groups in the order the Monthly page shows them.

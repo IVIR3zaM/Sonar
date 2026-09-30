@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from sonar.schedule import add_months
+from sonar.recurring.schedule import add_months
 
 # A rate at or below the monthly interest never pays the loan off, so the
 # projection needs a hard end; 50 years is longer than any household loan.

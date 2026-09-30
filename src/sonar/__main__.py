@@ -11,7 +11,7 @@ from sonar.app import create_app
 from sonar.categorization.rules import load_taxonomy
 from sonar.categorization.store import reapply_rules, replace_taxonomy, uncategorized_count
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.recurring import sync_detected
+from sonar.recurring.store import sync_detected
 
 
 def main() -> None:

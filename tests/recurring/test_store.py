@@ -6,7 +6,8 @@ from datetime import date
 import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.recurring import (
+from sonar.recurring.schedule import SchedulePeriod, occurrences
+from sonar.recurring.store import (
     PaymentNotFound,
     add_manual,
     dismiss,
@@ -15,7 +16,6 @@ from sonar.recurring import (
     pause_payment,
     resume_payment,
 )
-from sonar.schedule import SchedulePeriod, occurrences
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ def _table_counts(conn: sqlite3.Connection) -> tuple[int, int]:
 
 
 def test_unknown_id_raises_payment_not_found_without_writing(conn: sqlite3.Connection) -> None:
-    """recurring.py:79 used to crash on fetchone() None instead of raising a clear error."""
+    """store.py:79 used to crash on fetchone() None instead of raising a clear error."""
     before = _table_counts(conn)
 
     with pytest.raises(PaymentNotFound):

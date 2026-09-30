@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from sonar.recurrence import DetectedPayment, detect_recurring
-from sonar.schedule import SchedulePeriod
+from sonar.recurring.detect import DetectedPayment, detect_recurring
+from sonar.recurring.schedule import SchedulePeriod
 from sonar.transactions import ParsedTransaction
 
 TODAY = date(2026, 9, 23)

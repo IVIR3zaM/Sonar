@@ -16,8 +16,8 @@ from sonar.debt_store import add_debt
 from sonar.debts import Installment, Loan, MatchRule
 from sonar.forecast import DueItem, Projection
 from sonar.lights_on import CategoryExpected
-from sonar.recurring import add_manual
-from sonar.schedule import SchedulePeriod
+from sonar.recurring.schedule import SchedulePeriod
+from sonar.recurring.store import add_manual
 from sonar.settings_store import save_settings, set_manual_balance
 
 TODAY = date(2026, 9, 10)
@@ -307,7 +307,7 @@ def test_debt_linked_to_a_recurring_payment_is_counted_once(conn: sqlite3.Connec
     _configured(conn, 100_000)
     for month in range(1, 9):
         _insert_tx(conn, f"2026-{month:02d}-15", -10_000, mandate_ref="M-1")
-    # recurrence.payment_key for a mandate without a creditor id.
+    # detect.payment_key for a mandate without a creditor id.
     _insert_detected(conn, "mandate:/M-1", "Sofa rate", day=15, amount_cents=10_000)
     add_debt(conn, _installment("Sofa", "M-1"))
 

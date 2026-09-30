@@ -14,7 +14,7 @@ from sonar.forecast import (
     project,
     traffic_light,
 )
-from sonar.schedule import SchedulePeriod, pause_after, resume_on
+from sonar.recurring.schedule import SchedulePeriod, pause_after, resume_on
 
 
 def _water(last_paid: date | None = date(2026, 9, 15)) -> FixedSource:

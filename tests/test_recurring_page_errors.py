@@ -4,7 +4,7 @@
 Input validation (bad amount/interval/day/date) must return 400 before any
 database write, with an inline #form-error alert inside the failing form and
 the submitted values kept. An unknown payment id must return 404, rendered
-as the styled error page (PaymentNotFound from recurring.py), not a crash.
+as the styled error page (PaymentNotFound from recurring/store.py), not a crash.
 """
 
 import sqlite3
@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
-from sonar.recurring import list_payments
+from sonar.recurring.store import list_payments
 from tests.html import soup, text
 from tests.seed import seed
 

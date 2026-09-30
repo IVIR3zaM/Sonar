@@ -64,7 +64,8 @@ from sonar.monthly import (
     period_for,
     salary_paydays,
 )
-from sonar.recurring import (
+from sonar.recurring.schedule import SchedulePeriod, next_due_date
+from sonar.recurring.store import (
     PaymentNotFound,
     add_manual,
     dismiss,
@@ -74,7 +75,6 @@ from sonar.recurring import (
     resume_payment,
     sync_detected,
 )
-from sonar.schedule import SchedulePeriod, next_due_date
 from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -129,7 +129,7 @@ def _field(label: str, raw: str, kind: str, parser: Callable[[str], object]) -> 
         raise ValueError(f"{label}: {_FIELD_HINTS[kind]}") from None
 
 
-# Domain modules (schedule.py, debts.py, settings_store.py) raise ValueErrors
+# Domain modules (recurring/schedule.py, debts.py, settings_store.py) raise ValueErrors
 # written for developers, e.g. "total must be positive, got -100". A needle
 # found in that text maps to one sentence naming the field for the page;
 # anything unmapped falls back to the raw message rather than hiding it.

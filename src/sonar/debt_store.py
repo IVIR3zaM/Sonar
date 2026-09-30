@@ -22,7 +22,7 @@ from sonar.debts import (
     linked_keys,
     loan_status,
 )
-from sonar.recurring import RecurringPayment, list_payments
+from sonar.recurring.store import RecurringPayment, list_payments
 
 _COLUMNS = (
     "id, kind, name, rate_cents, match_field, match_value, "

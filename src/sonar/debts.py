@@ -11,10 +11,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
-from sonar import amortization, schedule
+from sonar import amortization
 from sonar.importing.dedup import normalize_text
-from sonar.recurrence import payment_key
-from sonar.schedule import SchedulePeriod
+from sonar.recurring import schedule
+from sonar.recurring.detect import payment_key
+from sonar.recurring.schedule import SchedulePeriod
 from sonar.transactions import ParsedTransaction
 
 MATCH_FIELDS = frozenset({"counterparty", "mandate"})

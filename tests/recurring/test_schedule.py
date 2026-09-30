@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from sonar.schedule import (
+from sonar.recurring.schedule import (
     Occurrence,
     SchedulePeriod,
     next_due_date,

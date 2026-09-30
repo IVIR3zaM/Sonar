@@ -16,7 +16,7 @@ from sonar.categorization.store import load_stored_taxonomy, reapply_rules, repl
 from sonar.dashboard import load_dashboard
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.importing.store import import_file
-from sonar.recurring import sync_detected
+from sonar.recurring.store import sync_detected
 from sonar.settings_store import DEFAULT_OVERDRAFT_LIMIT_CENTS, save_settings
 
 REPO_ROOT = Path(__file__).parent.parent

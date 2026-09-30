@@ -1,6 +1,6 @@
 """DB shell for recurring payments (SPEC §6): storage and manual corrections.
 
-`schedule.py` holds the pure schedule-period logic. This module is the thin
+`recurring/schedule.py` holds the pure schedule-period logic. This module is the thin
 shell around it: it stores a payment's schedule periods, lets the user edit,
 pause, resume, dismiss and add payments, and locks whatever the user has
 touched so detection (T6) never overwrites a correction.
@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from sonar.categorization.store import transactions_with_category
-from sonar.recurrence import DetectedPayment, detect_recurring
-from sonar.schedule import SchedulePeriod, pause_after, resume_on
+from sonar.recurring.detect import DetectedPayment, detect_recurring
+from sonar.recurring.schedule import SchedulePeriod, pause_after, resume_on
 
 _PAYMENT_COLUMNS = (
     "id, detection_key, name, category, status, source, "

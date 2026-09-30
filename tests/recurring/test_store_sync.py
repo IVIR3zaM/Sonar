@@ -6,8 +6,8 @@ from datetime import date
 import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.recurring import add_manual, dismiss, edit_payment, list_payments, sync_detected
-from sonar.schedule import SchedulePeriod
+from sonar.recurring.schedule import SchedulePeriod
+from sonar.recurring.store import add_manual, dismiss, edit_payment, list_payments, sync_detected
 
 FITNESS_TYPES = {"Fitness": "fixed"}
 LIGHTS_ON_TYPES = {"Fitness": "lights_on"}
@@ -109,7 +109,7 @@ def test_new_amount_and_display_name_update_an_unedited_row(conn: sqlite3.Connec
 
     Only the display text and category change here (fake strings); normalize_text
     still maps "GYM INC" to the same key as "Gym Inc", so this is the same series,
-    not a new one (covers recurring.py:219-220, the schedule-changed branch).
+    not a new one (covers store.py:219-220, the schedule-changed branch).
     """
     _seed_monthly_series(conn)
     assert sync_detected(conn, FITNESS_TYPES, date(2026, 9, 23)) == 1

@@ -9,7 +9,7 @@ from sonar.debts import (
     installment_status,
     loan_status,
 )
-from sonar.schedule import SchedulePeriod, occurrences
+from sonar.recurring.schedule import SchedulePeriod, occurrences
 from sonar.transactions import ParsedTransaction
 
 

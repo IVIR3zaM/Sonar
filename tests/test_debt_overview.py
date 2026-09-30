@@ -1,7 +1,7 @@
 """Tests for debt_overview (SPEC §7): status plus the recurring-payment link.
 
 A debt links to a recurring payment through the same detection key that
-recurrence.py would have grouped the matching transactions under, so a
+detect.py would have grouped the matching transactions under, so a
 dashboard forecast (M5) can skip a fixed payment that is already counted as a
 debt instead of counting it twice.
 """
@@ -14,8 +14,8 @@ import pytest
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debt_store import add_debt, debt_overview
 from sonar.debts import Installment, InstallmentStatus, Loan, LoanStatus, MatchRule
-from sonar.recurring import add_manual
-from sonar.schedule import SchedulePeriod
+from sonar.recurring.schedule import SchedulePeriod
+from sonar.recurring.store import add_manual
 
 
 @pytest.fixture

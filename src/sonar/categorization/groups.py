@@ -5,7 +5,7 @@ reduce but not bring to zero, e.g. groceries, transport, shopping) and
 `occasional` (fees, education, donations, health, dining and similar
 one-offs). This module is the single source for the five type values, their
 display labels, the ordered spending groups, and the set excluded from
-recurring detection, so rules.py, recurrence.py and lights_on.py
+recurring detection, so rules.py, recurring/detect.py and lights_on.py
 never repeat the literals.
 """
 

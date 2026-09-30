@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 
 from sonar.app import _format_cents, create_app
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.recurring import list_payments
-from sonar.schedule import occurrences
+from sonar.recurring.schedule import occurrences
+from sonar.recurring.store import list_payments
 from tests.html import cents, fields, soup
 from tests.seed import seed
 

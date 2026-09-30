@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
-from sonar import schedule
-from sonar.schedule import SchedulePeriod
+from sonar.recurring import schedule
+from sonar.recurring.schedule import SchedulePeriod
 
 MONTHS_SHOWN = 12
 

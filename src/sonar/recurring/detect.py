@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from datetime import date
 from statistics import median_low
 
-from sonar import schedule
 from sonar.categorization.groups import EXCLUDED_FROM_RECURRENCE
 from sonar.importing.dedup import normalize_text
-from sonar.schedule import TOLERANCE, SchedulePeriod, add_months
+from sonar.recurring import schedule
+from sonar.recurring.schedule import TOLERANCE, SchedulePeriod, add_months
 from sonar.transactions import ParsedTransaction
 
 # Shorter intervals need more evidence: two payments a month apart are often chance.

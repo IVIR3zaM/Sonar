@@ -12,8 +12,8 @@ import pytest
 
 from sonar.dashboard import load_dashboard
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.debt_store import add_debt
-from sonar.debts import Installment, Loan, MatchRule
+from sonar.debts.model import Installment, Loan, MatchRule
+from sonar.debts.store import add_debt
 from sonar.forecast import DueItem, Projection
 from sonar.lights_on import CategoryExpected
 from sonar.recurring.schedule import SchedulePeriod

@@ -1,8 +1,8 @@
-"""Tests for debts.last_payment_date (SPEC §7): the latest matching debit."""
+"""Tests for debts.model.last_payment_date (SPEC §7): the latest matching debit."""
 
 from datetime import date
 
-from sonar.debts import Installment, MatchRule, last_payment_date
+from sonar.debts.model import Installment, MatchRule, last_payment_date
 from sonar.transactions import ParsedTransaction
 
 

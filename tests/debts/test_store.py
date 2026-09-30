@@ -6,8 +6,8 @@ from datetime import date
 import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.debt_store import DebtNotFound, add_debt, delete_debt, list_debts
-from sonar.debts import Installment, Loan, MatchRule
+from sonar.debts.model import Installment, Loan, MatchRule
+from sonar.debts.store import DebtNotFound, add_debt, delete_debt, list_debts
 
 
 @pytest.fixture

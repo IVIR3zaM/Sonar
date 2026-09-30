@@ -1,6 +1,6 @@
 from datetime import date
 
-from sonar.debts import (
+from sonar.debts.model import (
     Installment,
     Loan,
     LoanStatus,

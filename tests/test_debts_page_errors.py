@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from sonar.app import create_app
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.debt_store import list_debts
+from sonar.debts.store import list_debts
 from tests.html import soup, text
 from tests.seed import seed
 

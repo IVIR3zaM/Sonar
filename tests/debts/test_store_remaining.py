@@ -1,12 +1,12 @@
-"""Tests for debt_store.remaining_cents (SPEC §9 section 3): one "amount
+"""Tests for debts.store.remaining_cents (SPEC §9 section 3): one "amount
 remaining" figure for both installments and loans, shared by /debts and the
 dashboard.
 """
 
 from datetime import date
 
-from sonar.debt_store import DebtView, remaining_cents
-from sonar.debts import Installment, InstallmentStatus, Loan, LoanStatus, MatchRule
+from sonar.debts.model import Installment, InstallmentStatus, Loan, LoanStatus, MatchRule
+from sonar.debts.store import DebtView, remaining_cents
 
 
 def _installment_view(remaining: int) -> DebtView:

@@ -47,8 +47,8 @@ from sonar.categorization.store import (
 )
 from sonar.dashboard import load_dashboard
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
-from sonar.debts import Installment, Loan, MatchRule
+from sonar.debts.model import Installment, Loan, MatchRule
+from sonar.debts.store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
 from sonar.display import cadence, days_until, display_date, eur
 from sonar.importing.importers import UnknownFormatError
 from sonar.importing.store import import_file
@@ -129,7 +129,7 @@ def _field(label: str, raw: str, kind: str, parser: Callable[[str], object]) -> 
         raise ValueError(f"{label}: {_FIELD_HINTS[kind]}") from None
 
 
-# Domain modules (recurring/schedule.py, debts.py, settings_store.py) raise ValueErrors
+# Domain modules (recurring/schedule.py, debts/model.py, settings_store.py) raise ValueErrors
 # written for developers, e.g. "total must be positive, got -100". A needle
 # found in that text maps to one sentence naming the field for the page;
 # anything unmapped falls back to the raw message rather than hiding it.
@@ -801,7 +801,7 @@ def create_app(
                 balance_as_of=_field("As of", balance_as_of, "date", date.fromisoformat),
                 rate_cents=_field("Monthly rate", rate, "amount", parse_cents),
                 # An empty field means no interest was entered, not a 0% rate,
-                # so the loan amortizes linearly (see amortization.loan_schedule).
+                # so the loan amortizes linearly (see debts/amortization.loan_schedule).
                 interest_bp=(
                     _field("Interest", interest, "percent", parse_basis_points)
                     if interest.strip()

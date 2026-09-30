@@ -1,7 +1,7 @@
 """Tests for the Installments and loans page (SPEC §7): plain HTML forms, happy paths.
 
 Expected cents/dates come from the T2/T3/T5 worked examples in the plan or are
-computed here through amortization.py directly, never copied from page output.
+computed here through debts/amortization.py directly, never copied from page output.
 """
 
 import sqlite3
@@ -10,10 +10,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from sonar import amortization
 from sonar.app import create_app
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.debt_store import list_debts
+from sonar.debts import amortization
+from sonar.debts.store import list_debts
 from tests.html import cents, fields, soup
 from tests.seed import seed
 
@@ -290,7 +290,7 @@ def test_debts_page_shows_installments_loans_and_total(tmp_path):
         sofa_delete = _card(page, "Sofa").select_one("form")
         assert "confirm(" in sofa_delete["onsubmit"]
 
-        # Linear loan: expected values from amortization.py directly.
+        # Linear loan: expected values from debts/amortization.py directly.
         car_schedule = amortization.loan_schedule(500_000, date(2026, 6, 30), 100_000, None)
         car_projected = amortization.balance_on(500_000, car_schedule, TODAY)
         car_payoff = amortization.payoff_date(car_schedule)
@@ -312,7 +312,7 @@ def test_debts_page_shows_installments_loans_and_total(tmp_path):
         assert car_bar["aria-valuenow"] == str(_paid_percent(500_000 - car_projected, 500_000))
         assert _card(page, "Car loan").select_one('[data-badge="paid-off"]') is None
 
-        # 6.00% loan: expected values from amortization.py directly.
+        # 6.00% loan: expected values from debts/amortization.py directly.
         interest_schedule = amortization.loan_schedule(1_000_000, date(2026, 8, 15), 100_000, 600)
         expected_projected = amortization.balance_on(1_000_000, interest_schedule, TODAY)
         expected_payoff = amortization.payoff_date(interest_schedule)

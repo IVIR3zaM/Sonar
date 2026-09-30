@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from sonar.debts import Installment, MatchRule, debt_schedule, installment_status
+from sonar.debts.model import Installment, MatchRule, debt_schedule, installment_status
 from sonar.forecast import (
     DueItem,
     FixedCostRow,

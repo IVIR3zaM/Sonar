@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from sonar.debts import (
+from sonar.debts.model import (
     Installment,
     InstallmentStatus,
     Loan,

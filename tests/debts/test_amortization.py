@@ -1,6 +1,6 @@
 from datetime import date
 
-from sonar.amortization import (
+from sonar.debts.amortization import (
     MAX_MONTHS,
     LoanPayment,
     balance_on,

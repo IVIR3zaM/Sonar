@@ -1,7 +1,7 @@
 """Tests for the re-run paths of debts (SPEC §7): restart, re-import, re-detect.
 
 `debt_overview` recomputes status and links fresh from stored transactions on
-every call (see debt_store.py), so these tests exercise the app's existing
+every call (see debts/store.py), so these tests exercise the app's existing
 routes (restart, /import, /reapply) rather than any dedicated sync step.
 """
 

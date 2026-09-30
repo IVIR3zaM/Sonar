@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
-from sonar import amortization
+from sonar.debts import amortization
 from sonar.importing.dedup import normalize_text
 from sonar.recurring import schedule
 from sonar.recurring.detect import payment_key

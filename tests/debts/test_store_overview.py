@@ -12,8 +12,8 @@ from datetime import date
 import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.debt_store import add_debt, debt_overview
-from sonar.debts import Installment, InstallmentStatus, Loan, LoanStatus, MatchRule
+from sonar.debts.model import Installment, InstallmentStatus, Loan, LoanStatus, MatchRule
+from sonar.debts.store import add_debt, debt_overview
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.recurring.store import add_manual
 

@@ -16,8 +16,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N03 | importing package | exec | N01,N02 | sonnet/haiku | 1 | 0 | DONE | |
 | N04 | categorization package | exec | N03 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | recurring package | exec | N04 | sonnet/haiku | 1 | 0 | DONE | |
-| N06 | debts package | exec | N05 | sonnet/haiku | 1 | 0 | RUNNING | |
-| N07 | cashflow package | exec | N06 | sonnet/haiku | 0 | 0 | TODO | |
+| N06 | debts package | exec | N05 | sonnet/haiku | 1 | 0 | DONE | |
+| N07 | cashflow package | exec | N06 | sonnet/haiku | 1 | 0 | RUNNING | |
 | N08 | web package, templates and static | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | page routers: dashboard, monthly, lights_on, uncategorized, import_ | exec | N08 | sonnet/sonnet | 0 | 0 | TODO | |
 | N10 | page routers: recurring, debts, settings, categories; forms.py | exec | N09 | sonnet/sonnet | 0 | 0 | TODO | |

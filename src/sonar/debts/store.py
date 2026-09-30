@@ -1,6 +1,6 @@
 """DB shell for installments and loans (SPEC §7): storage only.
 
-`debts.py` holds the pure model and status calculations. This module just
+`model.py` holds the pure model and status calculations. This module just
 persists the hand-entered debt rows so they survive restarts and upgrades,
 per SPEC §3's rule that hand-entered data must survive schema changes.
 """
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from sonar.categorization.store import transactions_with_category
-from sonar.debts import (
+from sonar.debts.model import (
     Installment,
     InstallmentStatus,
     Loan,

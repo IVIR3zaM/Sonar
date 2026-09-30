@@ -29,6 +29,8 @@ class Dashboard:
     payday: date | None
     days_to_payday: int | None
     balance: BalanceEntry | None
+    # The balance's as-of date: every estimate starts from it (SPEC §13).
+    estimated_from: date | None
     overdraft_limit_cents: int
     due: list[DueItem]
     due_total_cents: int
@@ -53,11 +55,16 @@ class Dashboard:
 def load_dashboard(
     conn: sqlite3.Connection, category_types: dict[str, str], today: date
 ) -> Dashboard:
-    """Everything the dashboard shows, as of `today`."""
+    """Everything the dashboard shows, estimated from the balance's date.
+
+    `today` only counts the calendar days to payday; the estimates follow the
+    data, which may end before today.
+    """
     settings = load_settings(conn)
     balance = current_balance(conn)
+    estimate_date = today if balance is None else balance.as_of
     rows = transactions_with_category(conn)
-    views = debt_overview(conn, today)
+    views = debt_overview(conn, estimate_date)
     sources = _fixed_sources(conn, views, [tx for tx, _ in rows])
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
     board = Dashboard(
@@ -65,6 +72,7 @@ def load_dashboard(
         payday=None,
         days_to_payday=None,
         balance=balance,
+        estimated_from=None if balance is None else balance.as_of,
         overdraft_limit_cents=settings.overdraft_limit_cents,
         due=[],
         due_total_cents=0,
@@ -76,7 +84,7 @@ def load_dashboard(
         expected_cents=None,
         projection=None,
         light=None,
-        fixed_costs=forecast.fixed_costs(sources, today),
+        fixed_costs=forecast.fixed_costs(sources, estimate_date),
         debts=remaining,
         debts_total_cents=sum(cents for _, cents in remaining),
         uncategorized_count=uncategorized_count(conn),
@@ -86,14 +94,13 @@ def load_dashboard(
         # is still useful, so only the forecast part stays empty.
         return board
 
-    next_payday = payday.next_payday(today, settings.salary_day)
     # The balance already contains everything booked up to its own date, so
-    # the forecast starts the day after it, even when that is before today.
-    start = balance.as_of + timedelta(days=1)
+    # the forecast covers the cycle that date is in, even when that cycle's
+    # payday is already behind today.
+    next_payday = payday.next_payday(estimate_date, settings.salary_day)
+    start = estimate_date + timedelta(days=1)
     end = next_payday - timedelta(days=1)
-    # An import balance dated past payday would give a negative length; an
-    # empty window simply means nothing more is expected.
-    window_days = max((end - start).days + 1, 0)
+    window_days = (end - start).days + 1
     due = forecast.fixed_due(sources, start, end)
     due_total = sum(item.amount_cents for item in due)
     until = lights_on.last_known_day(rows, balance.as_of)

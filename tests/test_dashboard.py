@@ -199,18 +199,110 @@ def test_due_covers_the_day_after_the_balance_date_up_to_the_day_before_payday(
     assert board.projection == Projection(94_000, 94_000)
 
 
-@pytest.mark.parametrize("as_of", ["2026-09-24", "2026-09-30"])
-def test_balance_on_or_after_the_day_before_payday_leaves_nothing_due(
-    conn: sqlite3.Connection, as_of: str
+def test_balance_on_the_day_before_payday_leaves_nothing_due(
+    conn: sqlite3.Connection,
 ) -> None:
     save_settings(conn, 26, -50_000)
-    _insert_import_balance(conn, as_of, 10_000)
+    _insert_import_balance(conn, "2026-09-24", 10_000)
     _monthly(conn, "Day before payday", 24, 4_000)
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
     assert board.due == []
     assert board.projection == Projection(10_000, 10_000)
+
+
+def test_balance_after_a_payday_forecasts_to_the_following_one(
+    conn: sqlite3.Connection,
+) -> None:
+    save_settings(conn, 26, -50_000)
+    _insert_import_balance(conn, "2026-09-30", 10_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, date(2026, 10, 1))
+
+    assert board.payday == date(2026, 10, 26)
+    assert board.window_days == 25
+
+
+def test_estimated_from_is_the_balance_date(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000, as_of=date(2026, 9, 8))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.estimated_from == date(2026, 9, 8)
+
+
+def test_no_balance_has_no_estimate_date(conn: sqlite3.Connection) -> None:
+    save_settings(conn, 26, -50_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.estimated_from is None
+
+
+def test_data_from_before_a_passed_payday_forecasts_the_cycle_it_is_in(
+    conn: sqlite3.Connection,
+) -> None:
+    # Paydays are 2026-09-25 and 2026-10-26; the data ends before the first.
+    save_settings(conn, 26, -50_000)
+    _insert_import_balance(conn, "2026-09-20", 100_000)
+    _monthly(conn, "Before payday", 22, 2_000)
+    _monthly(conn, "After payday", 1, 4_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, date(2026, 9, 28))
+
+    assert board.payday == date(2026, 9, 25)
+    assert board.window_days == 4
+    assert board.days_to_payday == -3
+    assert board.due == [DueItem("Before payday", date(2026, 9, 22), 2_000)]
+
+
+def test_one_day_old_balance_counts_days_to_payday_from_today(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000, as_of=date(2026, 9, 9))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.payday == PAYDAY
+    assert board.window_days == 15
+    assert board.days_to_payday == 15
+
+
+def test_fixed_cost_next_due_is_counted_from_the_estimate_date(
+    conn: sqlite3.Connection,
+) -> None:
+    save_settings(conn, 26, -50_000)
+    _insert_import_balance(conn, "2026-09-20", 100_000)
+    _monthly(conn, "Rent", 22, 2_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, date(2026, 9, 28))
+
+    (row,) = board.fixed_costs.rows
+    assert row.next_due == date(2026, 9, 22)
+
+
+def test_debt_remainder_is_projected_to_the_estimate_date(
+    conn: sqlite3.Connection,
+) -> None:
+    save_settings(conn, 26, -50_000)
+    _insert_import_balance(conn, "2026-09-20", 100_000)
+    # The first rate falls on 2026-09-24: after the balance date, before today.
+    add_debt(
+        conn,
+        Loan(
+            name="Car",
+            balance_cents=100_000,
+            balance_as_of=date(2026, 8, 24),
+            rate_cents=60_000,
+            interest_bp=None,
+            match=MatchRule("mandate", "M-3"),
+        ),
+    )
+
+    board = load_dashboard(conn, CATEGORY_TYPES, date(2026, 9, 28))
+
+    assert board.debts == [("Car", 100_000)]
 
 
 def test_debt_linked_to_a_recurring_payment_is_counted_once(conn: sqlite3.Connection) -> None:

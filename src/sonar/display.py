@@ -65,11 +65,15 @@ def cadence(interval_months: int, day: int) -> str:
 def days_until(n: int) -> str:
     """Format the number of days until payday.
 
-    Returns "today" for n=0, "in 1 day" for n=1, "in N days" for n>1.
+    Returns "today" for n=0, "in 1 day" for n=1, "in N days" for n>1, and
+    "1 day ago" / "N days ago" once the payday has passed.
     """
     if n == 0:
         return "today"
-    elif n == 1:
+    if n == 1:
         return "in 1 day"
-    else:
-        return f"in {n} days"
+    if n == -1:
+        return "1 day ago"
+    if n < 0:
+        return f"{-n} days ago"
+    return f"in {n} days"

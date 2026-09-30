@@ -174,7 +174,8 @@ def test_runway_legend_shows_the_values(tmp_path):
     assert cents(overdraft) == -50_000
     assert text(projected).startswith("Projected at payday")
     assert [int(a["data-cents"]) for a in projected.select("[data-cents]")] == [worst, best]
-    assert text(balance).startswith("Balance today")
+    assert text(balance).startswith("Balance on")
+    assert balance.select_one("time[datetime]")["datetime"] == "2026-09-10"
     assert cents(balance) == -40_000
     ids = [el["id"] for el in page.select("[id]")]
     assert len(ids) == len(set(ids))
@@ -527,3 +528,33 @@ def test_dashboard_and_lights_on_page_learn_from_the_same_months(tmp_path):
     forecast = fields(dashboard.select_one("#lights-on-forecast"))
     assert abs(cents(lights.select_one("#daily-low")) * days - forecast["low"]) <= days
     assert abs(cents(lights.select_one("#daily-high")) * days - forecast["high"]) <= days
+
+
+def _page_with_balance(tmp_path, *, today: date, as_of: date):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    with TestClient(create_app(db_path, today=lambda: today)) as client:
+        client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        client.post("/settings/balance", data={"amount": "100.00", "as_of": as_of.isoformat()})
+        return soup(client.get("/"))
+
+
+def test_hero_shows_the_date_the_estimate_starts_from(tmp_path):
+    page = _page_with_balance(tmp_path, today=date(2026, 9, 11), as_of=date(2026, 9, 10))
+
+    estimated = page.select_one("#hero #estimated-from")
+    assert text(estimated).startswith("Estimated from")
+    assert estimated.select_one("time[datetime]")["datetime"] == "2026-09-10"
+    assert page.select_one("#stale-data") is None
+
+
+def test_passed_payday_shows_a_stale_data_notice(tmp_path):
+    page = _page_with_balance(tmp_path, today=date(2026, 9, 30), as_of=date(2026, 9, 10))
+
+    notice = page.select_one("#stale-data")
+    assert notice["role"] == "status"
+    assert notice.select_one("time[datetime]")["datetime"] == "2026-09-25"
+    assert notice.select_one("a")["href"] == "/import"
+    days = page.select_one("#days-to-payday")
+    assert int(days["data-days"]) < 0
+    assert text(days) == "5 days ago"

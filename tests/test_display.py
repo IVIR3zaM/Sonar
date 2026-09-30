@@ -64,5 +64,10 @@ def test_days_until_one():
     assert days_until(1) == "in 1 day"
 
 
+def test_days_until_past_days():
+    assert days_until(-1) == "1 day ago"
+    assert days_until(-3) == "3 days ago"
+
+
 def test_days_until_multiple_days():
     assert days_until(15) == "in 15 days"

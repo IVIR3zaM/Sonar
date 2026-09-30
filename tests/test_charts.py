@@ -7,7 +7,15 @@ import pytest
 from bs4 import BeautifulSoup
 
 from sonar.app import create_app, templates
-from sonar.charts import bars, columns, line_points, month_label, runway
+from sonar.charts import (
+    SCALE_MIN_GAP,
+    bars,
+    columns,
+    line_points,
+    month_label,
+    runway,
+    runway_scale,
+)
 
 
 @pytest.fixture
@@ -57,6 +65,61 @@ def test_runway_orders_limit_zero_band_and_balance_on_one_axis():
     # balance must land in this order for a real overdraft-limit projection.
     g = runway(-50000, 125000, -324382, -258416, 300)
     assert 0 <= g.band_start_x < g.band_end_x <= g.limit_x < g.zero_x < g.balance_x <= 300
+
+
+def test_runway_scale_places_limit_zero_and_balance_along_the_axis():
+    marks = runway_scale(-50000, 100000, -20000, 30000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance"]
+    assert [m.cents for m in marks] == [-50000, 0, 100000]
+    assert [m.percent for m in marks] == [0.0, 33.3, 100.0]
+    assert [m.align for m in marks] == ["start", "center", "end"]
+    assert [m.row for m in marks] == [0, 0, 0]
+
+
+def test_runway_scale_stacks_close_marks_on_separate_rows():
+    marks = runway_scale(-5000, 3000, -400000, -300000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance"]
+    assert [m.row for m in marks] == [0, 1, 2]
+    for row in {m.row for m in marks}:
+        percents = [m.percent for m in marks if m.row == row]
+        assert all(b - a >= SCALE_MIN_GAP for a, b in zip(percents, percents[1:], strict=False))
+
+
+def test_runway_scale_without_overdraft_has_no_limit_mark():
+    marks = runway_scale(0, 100000, 0, 100000)
+    assert [m.part for m in marks] == ["zero", "balance"]
+
+
+def test_runway_scale_collapses_everything_at_zero_into_the_balance():
+    marks = runway_scale(0, 0, -10000, 10000)
+    assert [m.part for m in marks] == ["balance"]
+    assert marks[0].cents == 0
+
+
+def test_runway_scale_aligns_edge_marks_inward():
+    marks = runway_scale(-100000, 100000, 0, 0)
+    assert [m.align for m in marks] == ["start", "center", "end"]
+    assert runway_scale(-1000, 100000, 0, 0)[0].align == "start"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        (-50000, 125000, -324382, -258416),
+        (-10000, 5000, -40000, -20000),
+        (-5000, 3000, -400000, -300000),
+    ],
+)
+def test_runway_scale_matches_the_svg_axis(args):
+    g = runway(*args, 300)
+    x_by_part = {"limit": g.limit_x, "zero": g.zero_x, "balance": g.balance_x}
+    for mark in runway_scale(*args):
+        assert abs(mark.percent * 3 - x_by_part[mark.part]) <= 1.5
+
+
+def test_runway_scale_all_zero_is_safe():
+    marks = runway_scale(0, 0, 0, 0)
+    assert [(m.part, m.percent, m.row) for m in marks] == [("balance", 0.0, 0)]
 
 
 def test_columns_scale_the_largest_value_to_full_height():

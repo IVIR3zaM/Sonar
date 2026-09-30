@@ -41,6 +41,60 @@ def runway(limit: int, balance: int, worst: int, best: int, width: int) -> Runwa
     return Runway(x(limit), x(0), x(balance), band_start, band_end)
 
 
+# A label like "−1.500,00 €" at text-xs takes about a quarter of the bar at 375px.
+SCALE_MIN_GAP = 25
+_EDGE_PERCENT = 12.5
+
+
+@dataclass(frozen=True)
+class ScaleMark:
+    part: str  # "limit" | "zero" | "balance"
+    cents: int
+    percent: float
+    align: str  # "start" | "center" | "end"
+    row: int
+
+
+def runway_scale(limit: int, balance: int, worst: int, best: int) -> list[ScaleMark]:
+    """Label positions, as percentages of the runway bar, for limit, zero and balance.
+
+    The labels are HTML under the SVG, not SVG text: the SVG uses
+    preserveAspectRatio="none", which would stretch text. Positions come from
+    `runway` so every label lines up with its mark.
+    """
+    axis = runway(limit, balance, worst, best, width=1000)
+    x_by_part = {"limit": axis.limit_x, "zero": axis.zero_x, "balance": axis.balance_x}
+    cents_by_part = {"limit": limit, "zero": 0, "balance": balance}
+    # Equal values share one label; the first part listed wins.
+    kept: dict[int, str] = {}
+    for part in ("balance", "zero", "limit"):
+        kept.setdefault(cents_by_part[part], part)
+    parts = sorted(kept.values(), key=lambda part: x_by_part[part])
+
+    marks: list[ScaleMark] = []
+    row_ends: list[float] = []  # percent of the last mark on each row
+    for part in parts:
+        percent = x_by_part[part] / 10
+        row = next(
+            (i for i, end in enumerate(row_ends) if percent - end >= SCALE_MIN_GAP),
+            len(row_ends),
+        )
+        if row == len(row_ends):
+            row_ends.append(percent)
+        else:
+            row_ends[row] = percent
+        marks.append(ScaleMark(part, cents_by_part[part], percent, _align(percent), row))
+    return marks
+
+
+def _align(percent: float) -> str:
+    if percent < _EDGE_PERCENT:
+        return "start"
+    if percent > 100 - _EDGE_PERCENT:
+        return "end"
+    return "center"
+
+
 def columns(values: Sequence[int], height: int) -> list[int]:
     """Column heights, with the largest magnitude filling `height`."""
     return _scale(values, height)

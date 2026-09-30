@@ -123,13 +123,11 @@ def write(root: Path, rel_path: str, source: str) -> None:
 # Real tree
 
 
-@in_progress
 def test_only_storage_modules_import_sqlite3():
     offenders = sqlite_offenders(SRC)
     assert not offenders, "\n".join(offenders)
 
 
-@in_progress
 def test_only_web_imports_web_frameworks():
     offenders = web_framework_offenders(SRC)
     assert not offenders, "\n".join(offenders)
@@ -140,7 +138,6 @@ def test_only_web_imports_web():
     assert not offenders, "\n".join(offenders)
 
 
-@in_progress
 def test_top_level_modules_are_the_shared_few():
     offenders = top_level_offenders(SRC)
     assert not offenders, "\n".join(offenders)

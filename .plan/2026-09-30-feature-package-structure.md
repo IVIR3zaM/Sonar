@@ -1,7 +1,7 @@
 # Feature package structure
-status: RUNNING
+status: DONE
 created: 2026-09-30 · updated: 2026-09-30
-goal: src/sonar split into feature packages (importing, categorization, recurring, debts, cashflow) and web/ (pages/ routers), tests mirrored, import rules enforced by tests/test_architecture.py; no behavior change; collected tests = count at e4d88fb + tests/test_architecture.py
+goal: src/sonar split into feature packages (importing, categorization, recurring, debts, cashflow) and web/ (pages/ routers), tests mirrored, import rules enforced by tests/test_architecture.py; no behavior change; collected tests = count at 132cabf (last commit before this plan) + tests/test_architecture.py
 request: owner request 2026-09-30 (feature name `cashflow`): restructure src/sonar into feature packages, architecture test first, docs updated
 spec: SPEC §2, §11, §12 (UI acceptance: CSS rebuild unchanged)
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -23,7 +23,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N10 | page routers: recurring, debts, settings, categories; forms.py | exec | N09 | sonnet/sonnet | 1 | 0 | DONE | |
 | N11 | docs: CLAUDE.md, planner.md, SPEC paths | exec | N08 | haiku/haiku | 1 | 0 | DONE | |
 | N12 | visual check | gate | N10,N11 | - | 0 | 0 | DONE | |
-| N13 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12 | -/sonnet | 1 | 0 | VERIFYING | |
+| N13 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12 | -/sonnet | 1 | 1 | DONE | |
 
 ## Open questions
 
@@ -218,11 +218,11 @@ Findings:
 Do: check the whole plan against its goal.
 Done when:
 - C1 the verify command exits 0
-- C2 no test lost: `uv run pytest --collect-only -q | tail -1` at HEAD equals the count at e4d88fb (collect it in a temporary worktree under the scratchpad: `git worktree add <dir> e4d88fb`, run `uv run pytest --collect-only -q | tail -1` there, then `git worktree remove <dir>`) plus the count collected from tests/test_architecture.py
+- C2 no test lost: `uv run pytest --collect-only -q | tail -1` at HEAD equals the count at 132cabf, the last commit before this plan (collect it in a temporary worktree under the scratchpad: `git worktree add <dir> 132cabf`, run `uv run pytest --collect-only -q | tail -1` there, then `git worktree remove <dir>`) plus the count collected from tests/test_architecture.py
 - C3 SPEC §11 still holds (the areas touched are all of src/sonar; the suite plus `uv run python -c "import sonar.__main__"` and a `create_app` smoke run on a temp DB cover it)
-- C4 SPEC §12 UI acceptance: rebuilding with the CLAUDE.md Setup command leaves src/sonar/web/static/sonar.css unchanged (`git diff --exit-code`); `git diff -M e4d88fb --stat -- src/sonar/web/templates src/sonar/web/static src/sonar/migrations` shows renames only
+- C4 SPEC §12 UI acceptance: rebuilding with the CLAUDE.md Setup command leaves src/sonar/web/static/sonar.css unchanged (`git diff --exit-code`); `git diff -M 132cabf --stat -- src/sonar/web/templates src/sonar/web/static src/sonar/migrations` shows renames only
 - C5 tests/test_architecture.py passes with no xfail marker, and rule 3's only exemption is the top-level `__main__.py`; src/sonar top level holds only `__init__`, `__main__`, `db`, `money`, `transactions`, `migrations/` and the six packages; tests/ holds `__init__.py`, `html.py`, `seed.py`, `fixtures/`, top-level tests for those top-level modules plus test_architecture, test_html_helper and test_real_sample, and the subpackages importing, categorization, recurring, debts, cashflow, web, migrations, each with `__init__.py`
 - C6 history follows the moves: `git log --follow --oneline -- src/sonar/recurring/detect.py` and `-- src/sonar/web/app.py` list commits older than this plan
 - C7 `rg -n 'sonar\.(app|api|display|charts|dedup|importers|categorize|categorizing|taxonomy_store|taxonomy_service|uncategorized_export|spending_groups|schedule|recurrence|debt_store|amortization|payday|balance|forecast|monthly|lights_on|settings_store|dashboard)\b' src tests CLAUDE.md SPEC.md .claude` prints nothing
 Findings:
-- none
+- try 1: C2 .plan/2026-09-30-feature-package-structure.md:221 baseline stale: HEAD collects 833; e4d88fb 806 + test_architecture 18 = 824; the 9-test gap is the four forecast-from-balance-date commits after e4d88fb; at 132cabf (real pre-plan base) 815 + 18 = 833; no test lost in the move

@@ -13,8 +13,8 @@ budgets: 2 tries per brief · 2 replans per node
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | anchor the dashboard on the estimate date | exec | - | opus/opus | 2 | 0 | DONE | |
 | N02 | show the estimate date and a passed payday | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | visual check | gate | N02 | - | 0 | 0 | WAITING | |
-| N04 | plan acceptance | check | N01,N02,N03 | -/sonnet | 0 | 0 | TODO | |
+| N03 | visual check | gate | N02 | - | 0 | 0 | DONE | |
+| N04 | plan acceptance | check | N01,N02,N03 | -/sonnet | 1 | 0 | VERIFYING | |
 
 ## Open questions
 

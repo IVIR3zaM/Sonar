@@ -1,13 +1,12 @@
-"""Tests for settings_store.py: salary day, overdraft limit, manual balance (SPEC §8, §4)."""
+"""Tests for cashflow/store.py: salary day, overdraft limit, manual balance (SPEC §8, §4)."""
 
 import sqlite3
 from datetime import date
 
 import pytest
 
-from sonar.balance import BalanceEntry
-from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.settings_store import (
+from sonar.cashflow.balance import BalanceEntry
+from sonar.cashflow.store import (
     DEFAULT_OVERDRAFT_LIMIT_CENTS,
     Settings,
     current_balance,
@@ -15,6 +14,7 @@ from sonar.settings_store import (
     save_settings,
     set_manual_balance,
 )
+from sonar.db import MIGRATIONS_DIR, apply_migrations
 
 
 def _connect_migrated() -> sqlite3.Connection:

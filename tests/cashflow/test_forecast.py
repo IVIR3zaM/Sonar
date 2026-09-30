@@ -2,8 +2,7 @@ from datetime import date
 
 import pytest
 
-from sonar.debts.model import Installment, MatchRule, debt_schedule, installment_status
-from sonar.forecast import (
+from sonar.cashflow.forecast import (
     DueItem,
     FixedCostRow,
     FixedSource,
@@ -14,6 +13,7 @@ from sonar.forecast import (
     project,
     traffic_light,
 )
+from sonar.debts.model import Installment, MatchRule, debt_schedule, installment_status
 from sonar.recurring.schedule import SchedulePeriod, pause_after, resume_on
 
 

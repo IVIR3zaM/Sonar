@@ -24,9 +24,9 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from fractions import Fraction
 
-from sonar import monthly
+from sonar.cashflow import monthly
+from sonar.cashflow.monthly import Period
 from sonar.categorization import groups
-from sonar.monthly import Period
 from sonar.transactions import ParsedTransaction
 
 LOOKBACK_MONTHS = 3

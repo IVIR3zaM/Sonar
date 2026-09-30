@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
+from sonar.cashflow.service import load_dashboard
+from sonar.cashflow.store import DEFAULT_OVERDRAFT_LIMIT_CENTS, save_settings
 from sonar.categorization.rules import load_taxonomy
 from sonar.categorization.store import load_stored_taxonomy, reapply_rules, replace_taxonomy
-from sonar.dashboard import load_dashboard
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.importing.store import import_file
 from sonar.recurring.store import sync_detected
-from sonar.settings_store import DEFAULT_OVERDRAFT_LIMIT_CENTS, save_settings
 
 REPO_ROOT = Path(__file__).parent.parent
 SAMPLES_DIR = REPO_ROOT / "samples"

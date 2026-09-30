@@ -24,8 +24,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from sonar.cashflow.payday import payday_in
 from sonar.categorization.groups import TRANSFER, GroupTotals, group_totals
-from sonar.payday import payday_in
 from sonar.transactions import ParsedTransaction
 
 SALARY = "Salary"

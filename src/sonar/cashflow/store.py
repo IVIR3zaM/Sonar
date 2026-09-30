@@ -11,7 +11,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
-from sonar.balance import BalanceEntry, latest_balance
+from sonar.cashflow.balance import BalanceEntry, latest_balance
 
 # Lives in code, not a column DEFAULT: when no settings row exists yet, a
 # column DEFAULT never applies, so this value must be written explicitly on

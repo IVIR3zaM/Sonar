@@ -5,16 +5,16 @@ from fractions import Fraction
 
 import pytest
 
-from sonar import monthly
-from sonar.categorization import groups
-from sonar.lights_on import (
+from sonar.cashflow import monthly
+from sonar.cashflow.lights_on import (
     CategoryExpected,
     complete_months,
     last_known_day,
     lights_on_forecast,
     month_spends,
 )
-from sonar.monthly import Period
+from sonar.cashflow.monthly import Period
+from sonar.categorization import groups
 from sonar.transactions import ParsedTransaction
 
 TYPES = {

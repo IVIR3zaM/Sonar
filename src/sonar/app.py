@@ -17,8 +17,22 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from sonar import charts, lights_on
+from sonar import charts
 from sonar.api import build_api_router
+from sonar.cashflow import lights_on
+from sonar.cashflow.monthly import (
+    UNCATEGORIZED,
+    Period,
+    adjacent_months,
+    monthly_spending,
+    only_category,
+    parse_month,
+    payment_months,
+    period_for,
+    salary_paydays,
+)
+from sonar.cashflow.service import load_dashboard
+from sonar.cashflow.store import current_balance, load_settings, save_settings, set_manual_balance
 from sonar.categorization.export import build_categorization_request
 from sonar.categorization.groups import LABELS as GROUP_LABELS
 from sonar.categorization.groups import LIGHTS_ON, TRANSFER
@@ -45,7 +59,6 @@ from sonar.categorization.store import (
     uncategorized_count,
     uncategorized_transactions,
 )
-from sonar.dashboard import load_dashboard
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
@@ -53,17 +66,6 @@ from sonar.display import cadence, days_until, display_date, eur
 from sonar.importing.importers import UnknownFormatError
 from sonar.importing.store import import_file
 from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
-from sonar.monthly import (
-    UNCATEGORIZED,
-    Period,
-    adjacent_months,
-    monthly_spending,
-    only_category,
-    parse_month,
-    payment_months,
-    period_for,
-    salary_paydays,
-)
 from sonar.recurring.schedule import SchedulePeriod, next_due_date
 from sonar.recurring.store import (
     PaymentNotFound,
@@ -75,7 +77,6 @@ from sonar.recurring.store import (
     resume_payment,
     sync_detected,
 )
-from sonar.settings_store import current_balance, load_settings, save_settings, set_manual_balance
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -129,7 +130,7 @@ def _field(label: str, raw: str, kind: str, parser: Callable[[str], object]) -> 
         raise ValueError(f"{label}: {_FIELD_HINTS[kind]}") from None
 
 
-# Domain modules (recurring/schedule.py, debts/model.py, settings_store.py) raise ValueErrors
+# Domain modules (recurring/schedule.py, debts/model.py, cashflow/store.py) raise ValueErrors
 # written for developers, e.g. "total must be positive, got -100". A needle
 # found in that text maps to one sentence naming the field for the page;
 # anything unmapped falls back to the raw message rather than hiding it.

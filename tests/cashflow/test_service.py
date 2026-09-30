@@ -10,15 +10,15 @@ from datetime import date, timedelta
 
 import pytest
 
-from sonar.dashboard import load_dashboard
+from sonar.cashflow.forecast import DueItem, Projection
+from sonar.cashflow.lights_on import CategoryExpected
+from sonar.cashflow.service import load_dashboard
+from sonar.cashflow.store import save_settings, set_manual_balance
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import add_debt
-from sonar.forecast import DueItem, Projection
-from sonar.lights_on import CategoryExpected
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.recurring.store import add_manual
-from sonar.settings_store import save_settings, set_manual_balance
 
 TODAY = date(2026, 9, 10)
 PAYDAY = date(2026, 9, 25)

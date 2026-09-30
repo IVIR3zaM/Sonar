@@ -11,8 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
+from sonar.cashflow.store import current_balance, load_settings
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.settings_store import current_balance, load_settings
 from tests.html import soup, text
 from tests.seed import seed
 

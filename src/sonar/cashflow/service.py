@@ -12,16 +12,16 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Literal
 
-from sonar import forecast, lights_on, payday
-from sonar.balance import BalanceEntry
+from sonar.cashflow import forecast, lights_on, payday
+from sonar.cashflow.balance import BalanceEntry
+from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection
+from sonar.cashflow.lights_on import LightsOnForecast
+from sonar.cashflow.store import current_balance, load_settings
 from sonar.categorization import groups
 from sonar.categorization.store import transactions_with_category, uncategorized_count
 from sonar.debts import model
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
-from sonar.forecast import DueItem, FixedCosts, FixedSource, Projection
-from sonar.lights_on import LightsOnForecast
 from sonar.recurring.store import list_payments
-from sonar.settings_store import current_balance, load_settings
 from sonar.transactions import ParsedTransaction
 
 

@@ -39,7 +39,7 @@ EXCLUDED_FROM_RECURRENCE = frozenset({LIGHTS_ON, OCCASIONAL, TRANSFER})
 
 
 class CategoryTotalLike(Protocol):
-    """Duck-typed shape of monthly.CategoryTotal; avoids importing sonar.monthly."""
+    """Duck-typed shape of cashflow.monthly.CategoryTotal; avoids importing it."""
 
     category: str | None
     category_type: str | None

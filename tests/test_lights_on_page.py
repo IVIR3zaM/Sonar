@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from sonar import lights_on
 from sonar.app import create_app
+from sonar.cashflow import lights_on
 from sonar.categorization.store import load_stored_taxonomy, transactions_with_category
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from tests.html import cents, records, soup, text

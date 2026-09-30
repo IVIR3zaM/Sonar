@@ -8,10 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
+from sonar.cashflow.monthly import UNCATEGORIZED
 from sonar.categorization.service import reapply_stored_taxonomy
 from sonar.categorization.store import list_categories, update_category
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.monthly import UNCATEGORIZED
 from tests.html import cents, records, soup, text
 from tests.seed import seed
 

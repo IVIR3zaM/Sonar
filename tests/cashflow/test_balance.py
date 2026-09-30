@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from sonar.balance import BalanceEntry, latest_balance
+from sonar.cashflow.balance import BalanceEntry, latest_balance
 
 
 class TestLatestBalance:

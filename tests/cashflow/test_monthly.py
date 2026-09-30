@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from sonar.monthly import (
+from sonar.cashflow.monthly import (
     UNCATEGORIZED,
     CategoryTotal,
     Period,

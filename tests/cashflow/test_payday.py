@@ -7,7 +7,7 @@ from datetime import date
 
 import pytest
 
-from sonar.payday import (
+from sonar.cashflow.payday import (
     Cycle,
     complete_cycles,
     current_cycle,

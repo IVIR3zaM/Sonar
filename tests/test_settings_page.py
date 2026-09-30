@@ -7,9 +7,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from sonar.app import create_app
+from sonar.cashflow.store import load_settings
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.display import eur
-from sonar.settings_store import load_settings
 from tests.html import cents, fields, soup, text
 from tests.seed import seed
 

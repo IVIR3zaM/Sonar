@@ -11,8 +11,8 @@ budgets: 2 tries per brief · 2 replans per node
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | architecture test (xfail) | exec | - | sonnet/sonnet | 1 | 0 | RUNNING | |
-| N02 | MIGRATIONS_DIR in db.py, tests/migrations | exec | - | haiku/haiku | 1 | 0 | RUNNING | |
+| N01 | architecture test (xfail) | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
+| N02 | MIGRATIONS_DIR in db.py, tests/migrations | exec | - | haiku/haiku | 1 | 0 | DONE | |
 | N03 | importing package | exec | N01,N02 | sonnet/haiku | 0 | 0 | TODO | |
 | N04 | categorization package | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N05 | recurring package | exec | N04 | sonnet/haiku | 0 | 0 | TODO | |

@@ -15,8 +15,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N02 | runway scale and legend values | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | column value labels | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | readable column labels | exec | N03 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | visual check | gate | N06 | - | 0 | 1 | WAITING | |
-| N05 | plan acceptance | check | N01,N02,N03,N06,N04 | -/sonnet | 0 | 0 | TODO | |
+| N04 | visual check | gate | N06 | - | 0 | 1 | DONE | |
+| N05 | plan acceptance | check | N01,N02,N03,N06,N04 | -/sonnet | 1 | 0 | VERIFYING | |
 
 ## Open questions
 

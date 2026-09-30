@@ -56,9 +56,15 @@
           {{ amount(dashboard.projection.best_cents, attrs={"data-field": "best"}) }}
         </p>
         <p class="mt-1 text-xs text-ink-muted">Worst to best case · overdraft limit {{ amount(dashboard.overdraft_limit_cents, id="overdraft-limit", colored=false, attrs={"data-field": "limit"}) }}</p>
-        <p id="shortfall" data-cents="{{ dashboard.expected_cents }}" class="mt-2 text-sm font-medium text-ink">
-          About {{ amount(dashboard.expected_cents|abs, colored=false) }}
-          {%- if dashboard.expected_cents < 0 %} short before payday{% else %} to spare{% endif %}
+        {% set headroom = dashboard.expected_cents - dashboard.overdraft_limit_cents %}
+        <p id="shortfall" data-cents="{{ dashboard.expected_cents }}" data-headroom="{{ headroom }}" class="mt-2 text-sm font-medium text-ink">
+          {%- if dashboard.expected_cents >= 0 %}
+          About {{ amount(dashboard.expected_cents, colored=false) }} to spare
+          {%- elif headroom >= 0 %}
+          About {{ amount(dashboard.expected_cents|abs, colored=false) }} into your overdraft, {{ amount(headroom, colored=false) }} before the limit
+          {%- else %}
+          About {{ amount(headroom|abs, colored=false) }} past your overdraft limit
+          {%- endif %}
         </p>
       </div>
 

@@ -280,10 +280,12 @@ def test_full_dashboard_row_scoped(tmp_path):
         occasional = card.select_one("#occasional-note")
         assert "Dining" in text(occasional)
         assert occasional.select_one('a[href="/monthly"]') is not None
-        # 800.00 - 600.00 due - 276.96 expected = 76.96 short.
+        # 800.00 - 600.00 due - 276.96 expected = -76.96: inside the -500.00
+        # overdraft, 423.04 before the limit.
         shortfall = page.select_one("#shortfall")
         assert cents(shortfall) == -7_696
-        assert text(shortfall) == "About 76,96 € short before payday"
+        assert shortfall["data-headroom"] == "42304"
+        assert text(shortfall) == "About 76,96 € into your overdraft, 423,04 € before the limit"
         assert fields(page.select_one("#balance")) == {"amount": 80_000, "as_of": "2026-09-10"}
         assert page.select_one("#balance [data-field=amount]").get_text() == "800,00\u00a0€"
         assert text(page.select_one("#payday")) == "25 Sep 2026"
@@ -348,6 +350,10 @@ def test_full_dashboard_row_scoped(tmp_path):
         assert _projection(page) == (-32_000, -4_000)
         assert _pill(page) == PILL_TEXT["red"]
         assert _runway(page) == (-32_000, -4_000)
+        # 700.00 - 600.00 - 276.96 = -176.96, past the 0.00 limit.
+        shortfall = page.select_one("#shortfall")
+        assert shortfall["data-headroom"] == "-17696"
+        assert text(shortfall) == "About 176,96 € past your overdraft limit"
 
         # 800.00 gives [-220.00, 60.00]: only the best case stays above 0.00, so yellow.
         client.post("/settings/balance", data={"amount": "800.00", "as_of": "2026-09-10"})

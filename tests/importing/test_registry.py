@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from sonar.importers import UnknownFormatError, pick_importer
+from sonar.importing.importers import UnknownFormatError, pick_importer
 
 
 def _importer(name: str, matches: bool) -> SimpleNamespace:

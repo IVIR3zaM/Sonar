@@ -3,10 +3,10 @@
 from datetime import date
 from pathlib import Path
 
-from sonar.importers import IMPORTERS, deutsche_bank_giro
+from sonar.importing.importers import IMPORTERS, deutsche_bank_giro
 from sonar.transactions import ParsedBalance
 
-FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
+FIXTURE = Path(__file__).parent.parent / "fixtures" / "db_girokonto.csv"
 
 
 def _content() -> bytes:

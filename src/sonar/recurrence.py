@@ -14,7 +14,7 @@ from datetime import date
 from statistics import median_low
 
 from sonar import schedule, spending_groups
-from sonar.dedup import normalize_text
+from sonar.importing.dedup import normalize_text
 from sonar.schedule import TOLERANCE, SchedulePeriod, add_months
 from sonar.transactions import ParsedTransaction
 

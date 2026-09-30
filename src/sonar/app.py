@@ -30,8 +30,8 @@ from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.debt_store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
 from sonar.debts import Installment, Loan, MatchRule
 from sonar.display import cadence, days_until, display_date, eur
-from sonar.importers import UnknownFormatError
-from sonar.importing import import_file
+from sonar.importing.importers import UnknownFormatError
+from sonar.importing.store import import_file
 from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
 from sonar.monthly import (
     UNCATEGORIZED,

@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 from sonar.categorize import Rule
 from sonar.categorizing import reapply_rules
-from sonar.dedup import NumberedTransaction, number_occurrences
-from sonar.importers import pick_importer
+from sonar.importing.dedup import NumberedTransaction, number_occurrences
+from sonar.importing.importers import pick_importer
 from sonar.transactions import ParsedBalance
 
 

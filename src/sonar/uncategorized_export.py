@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
-from sonar.dedup import normalize_text
+from sonar.importing.dedup import normalize_text
 from sonar.transactions import ParsedTransaction
 
 HEADER = "Categorization request: follow the Categorization workflow in CLAUDE.md."

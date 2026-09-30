@@ -8,10 +8,10 @@ import pytest
 
 from sonar.categorize import parse_taxonomy
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.importers import UnknownFormatError, deutsche_bank_giro
-from sonar.importing import import_file
+from sonar.importing.importers import UnknownFormatError, deutsche_bank_giro
+from sonar.importing.store import import_file
 
-FIXTURE = Path(__file__).parent / "fixtures" / "db_girokonto.csv"
+FIXTURE = Path(__file__).parent.parent / "fixtures" / "db_girokonto.csv"
 
 # The fixture has 7 preamble lines, the header, 7 data rows and a footer line.
 _HEADER_END = 8
@@ -157,7 +157,7 @@ def test_importer_without_parse_balance_leaves_balances_table_empty(conn, monkey
         detect=lambda content: True,
         parse=deutsche_bank_giro.parse,
     )
-    monkeypatch.setattr("sonar.importing.pick_importer", lambda content: stub)
+    monkeypatch.setattr("sonar.importing.store.pick_importer", lambda content: stub)
 
     result = import_file(conn, content, "giro.csv")
 

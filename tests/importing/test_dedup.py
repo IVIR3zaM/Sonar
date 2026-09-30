@@ -3,7 +3,7 @@
 from dataclasses import replace
 from datetime import date
 
-from sonar.dedup import fingerprint, number_occurrences
+from sonar.importing.dedup import fingerprint, number_occurrences
 from sonar.transactions import ParsedTransaction
 
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from sonar import amortization, schedule
-from sonar.dedup import normalize_text
+from sonar.importing.dedup import normalize_text
 from sonar.recurrence import payment_key
 from sonar.schedule import SchedulePeriod
 from sonar.transactions import ParsedTransaction

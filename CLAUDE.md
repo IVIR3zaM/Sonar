@@ -9,7 +9,7 @@ A local household finance dashboard for importing bank exports, categorizing tra
 
 ```bash
 uv sync              # Install dependencies
-TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/static/src/app.css -o src/sonar/static/sonar.css --minify  # Build CSS
+TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify  # Build CSS
 uv run sonar         # Start the app (http://127.0.0.1:8000)
 uv run pytest        # Run tests
 uv run ruff check .  # Check style and lint
@@ -19,11 +19,11 @@ uv run sonar import-categories data/categories.toml  # One-off: load the owner's
 
 ## Layout
 
-- `src/sonar/`: main package
-- `src/sonar/migrations/`: numbered SQL files (NNNN_*.sql), applied at startup
-- `src/sonar/templates/`: Jinja2 templates; `components/` holds the macros
-- `src/sonar/importers/`: one module per bank format (NAME, detect, parse, optional parse_balance), registered in IMPORTERS; a new source = one importer module + fixture tests
-- `tests/`: pytest tests; `tests/html.py` holds the page-test helpers
+- `src/sonar/<feature>/`: one package per feature (`importing`, `categorization`, `recurring`, `debts`, `cashflow`). Pure logic has a domain name (`detect.py`, `forecast.py`); `store.py` is the only DB access; `service.py` coordinates several stores.
+- `src/sonar/web/`: `app.py` wires only; `pages/` has one router per page; `api.py`; `templates/` (`components/` holds the macros); `static/`
+- `src/sonar/importing/importers/`: one module per bank format (NAME, detect, parse, optional parse_balance), registered in IMPORTERS; a new source = one importer module + fixture tests
+- `src/sonar/`: top level holds only `__main__`, `db`, `money`, `transactions`, `migrations/`
+- `tests/`: follows `src/sonar/`'s layout (`tests/<feature>/`, `tests/web/`); `tests/html.py` holds the page-test helpers
 - `data/`: SQLite database, gitignored
 - `samples/`: real bank exports, gitignored, never used in tests
 - `.plan/`: one file per plan, `YYYY-MM-DD-<slug>.md`, holding its graph and its state
@@ -35,6 +35,7 @@ uv run sonar import-categories data/categories.toml  # One-off: load the owner's
 - **KISS and YAGNI.** Add an abstraction only when it has at least 2 real uses or a concrete need in SPEC. A design pattern must pay for its complexity; the importer registry is the known case that does.
 - **Readable by a human.** Code reads top-down like prose. Small functions, domain names (`booking_date`, `next_due_date`), type hints. Comments explain *why*, never *what*.
 - **Functional core, thin shell.** Parsing, dedup, categorization, recurrence detection and forecasting are pure functions over plain dataclasses; the database and web layers call them. `today` is always a parameter; domain code never calls `date.today()`.
+- **Structure.** New code goes in an existing feature package; a new package needs a SPEC feature behind it. One concept has one name: its pure part and its store sit side by side, never as `x` / `x_ing` / `x_store` at the top level. A page's routes go in `web/pages/<page>.py`, never in `app.py`. `tests/test_architecture.py` enforces the import rules.
 - **Money and dates.** Money is integer cents, never float. Dates are `datetime.date`.
 - **Tests.** pytest, fast, no network. Fixtures are anonymized; real data never goes in tests.
 - **Lint.** `ruff check` and `ruff format --check` are clean.
@@ -98,7 +99,7 @@ Use these two skills, not the global `graph-plan` skill.
 
 Categories and rules live only in the DB (N11); nothing here edits a file.
 
-1. **Trigger:** a pasted export starting with `HEADER` (`uncategorized_export.py:21`), or an owner request to categorize.
+1. **Trigger:** a pasted export starting with `HEADER` (`categorization/export.py:21`), or an owner request to categorize.
 2. **Use the running app:** `curl -s http://127.0.0.1:8000/api/categories`; if it doesn't answer, start `uv run sonar` in the background (stop it at the end if you started it).
 3. **Read:** `GET /api/categories`, `GET /api/rules`, `GET /api/uncategorized`.
 4. **Propose:** the exact category adds/edits/removes and rule adds/edits/removes (category name and group; rule fields and position; first match wins). Ask the owner to confirm. Write nothing before confirmation.

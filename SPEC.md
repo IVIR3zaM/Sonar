@@ -23,7 +23,7 @@ Moved to `CLAUDE.md` (Engineering rules). The Verifier enforces them.
 - FastAPI with server-rendered Jinja2 pages and HTMX for small interactions. No SPA, no JS build step.
 - SQLite via stdlib `sqlite3` with plain SQL. No ORM.
 - pytest and ruff.
-- M6 amendment (user, 2026-09-24): styling uses Tailwind CSS v4 via the `pytailwindcss` standalone CLI (dev only, no Node). The built `src/sonar/static/sonar.css` is committed, so `uv run sonar` still needs no build step. htmx is vendored under `src/sonar/static/`, not loaded from a CDN.
+- M6 amendment (user, 2026-09-24): styling uses Tailwind CSS v4 via the `pytailwindcss` standalone CLI (dev only, no Node). The built `src/sonar/web/static/sonar.css` is committed, so `uv run sonar` still needs no build step. htmx is vendored under `src/sonar/web/static/`, not loaded from a CDN.
 
 Why this stack: Python has the best tooling for CSV and PDF parsing (pdfplumber later) and for German banking (python-fints, Enable Banking examples), and this is the fewest moving parts for a local app.
 
@@ -177,11 +177,11 @@ M0–M6 are done. Their task graphs, replans and commits are in `.plan/2026-09-2
 
 ## 12. UI (M6)
 
-Presentation only. Domain modules (`forecast.py`, `dashboard.py`, `debts.py`, `recurring.py`, `variable_forecast.py`, ...) and their tests stay unchanged, unless a template needs a value no domain object exposes yet.
+Presentation only. Domain modules (`cashflow/forecast.py`, `cashflow/service.py`, `debts/model.py`, `recurring/store.py`, `variable_forecast.py`) and their tests stay unchanged, unless a template needs a value no domain object exposes yet.
 
 **Tooling**
 
-- Tailwind source is `src/sonar/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command is in `CLAUDE.md` Setup.
+- Tailwind source is `src/sonar/web/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command is in `CLAUDE.md` Setup.
 - Mount `StaticFiles` at `/static` in `create_app`. Vendor htmx under `static/vendor/`.
 - No JS framework. Use native `<details>`/`<dialog>`, `hx-confirm` and small inline progressive-enhancement scripts only.
 
@@ -216,7 +216,7 @@ Presentation only. Domain modules (`forecast.py`, `dashboard.py`, `debts.py`, `r
 **UI acceptance (the Verifier checks this on any UI change)**
 
 - [ ] pytest green, ruff clean; the section 11 checklist still holds.
-- [ ] Rebuilding the CSS leaves `src/sonar/static/sonar.css` unchanged (`git diff --exit-code`).
+- [ ] Rebuilding the CSS leaves `src/sonar/web/static/sonar.css` unchanged (`git diff --exit-code`).
 - [ ] `uv run sonar` starts without the Tailwind binary or network access.
 - [ ] Every page extends `base.html`, uses the component macros, and has no inline `<style>`.
 - [ ] Invalid form input shows an inline error with status 400 and keeps the entered values.

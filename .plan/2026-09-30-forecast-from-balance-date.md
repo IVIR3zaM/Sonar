@@ -1,5 +1,5 @@
 # Forecast from the balance date
-status: RUNNING
+status: DONE
 created: 2026-09-30 · updated: 2026-09-30
 goal: every dashboard estimate is anchored on the date the data is known up to (the estimate date), not the calendar day, and the dashboard says "Estimated from <date>"
 request: dashboard forecast (payday projection, due payments, Keep the lights on days, shortfall, runway) uses the real today although the balance may be older; base it on the balance/transactions date and show that date; payday and days to payday stay sensible
@@ -14,7 +14,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N01 | anchor the dashboard on the estimate date | exec | - | opus/opus | 2 | 0 | DONE | |
 | N02 | show the estimate date and a passed payday | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | visual check | gate | N02 | - | 0 | 0 | DONE | |
-| N04 | plan acceptance | check | N01,N02,N03 | -/sonnet | 1 | 0 | VERIFYING | |
+| N04 | plan acceptance | check | N01,N02,N03 | -/sonnet | 1 | 0 | DONE | |
 
 ## Open questions
 

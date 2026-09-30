@@ -3,14 +3,10 @@
 import ast
 from pathlib import Path
 
-import pytest
-
 SRC = Path(__file__).parent.parent / "src" / "sonar"
 
 TOP_LEVEL_MODULES = {"__init__", "__main__", "db", "money", "transactions"}
 ROUTE_METHODS = {"get", "post", "put", "delete", "patch"}
-
-in_progress = pytest.mark.xfail(strict=False, reason="feature-package moves in progress")
 
 
 def python_files(root: Path) -> list[Path]:
@@ -143,7 +139,6 @@ def test_top_level_modules_are_the_shared_few():
     assert not offenders, "\n".join(offenders)
 
 
-@in_progress
 def test_web_app_has_no_routes():
     offenders = app_route_offenders(SRC)
     assert not offenders, "\n".join(offenders)

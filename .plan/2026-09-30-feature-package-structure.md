@@ -20,9 +20,9 @@ budgets: 2 tries per brief · 2 replans per node
 | N07 | cashflow package | exec | N06 | sonnet/haiku | 1 | 0 | DONE | |
 | N08 | web package, templates and static | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | page routers: dashboard, monthly, lights_on, uncategorized, import_ | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
-| N10 | page routers: recurring, debts, settings, categories; forms.py | exec | N09 | sonnet/sonnet | 1 | 0 | RUNNING | |
+| N10 | page routers: recurring, debts, settings, categories; forms.py | exec | N09 | sonnet/sonnet | 1 | 0 | DONE | |
 | N11 | docs: CLAUDE.md, planner.md, SPEC paths | exec | N08 | haiku/haiku | 1 | 0 | DONE | |
-| N12 | visual check | gate | N10,N11 | - | 0 | 0 | TODO | |
+| N12 | visual check | gate | N10,N11 | - | 0 | 0 | WAITING | |
 | N13 | plan acceptance | check | N01,N02,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12 | -/sonnet | 0 | 0 | TODO | |
 
 ## Open questions

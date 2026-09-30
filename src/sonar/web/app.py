@@ -2,39 +2,21 @@
 
 from __future__ import annotations
 
-import math
-import sqlite3
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import date
-from fractions import Fraction
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, Form, Request
 from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from sonar.cashflow import lights_on
-from sonar.cashflow.monthly import (
-    UNCATEGORIZED,
-    Period,
-    adjacent_months,
-    monthly_spending,
-    only_category,
-    parse_month,
-    payment_months,
-    period_for,
-    salary_paydays,
-)
-from sonar.cashflow.service import load_dashboard
 from sonar.cashflow.store import current_balance, load_settings, save_settings, set_manual_balance
-from sonar.categorization.export import build_categorization_request
 from sonar.categorization.groups import LABELS as GROUP_LABELS
-from sonar.categorization.groups import LIGHTS_ON, TRANSFER
-from sonar.categorization.rules import Rule
+from sonar.categorization.groups import TRANSFER
 from sonar.categorization.service import (
     GROUP_ORDER,
     CategoryNotFound,
@@ -51,17 +33,9 @@ from sonar.categorization.service import list_rules as list_rules_view
 from sonar.categorization.service import move_rule as move_rule_service
 from sonar.categorization.service import update_category as update_category_service
 from sonar.categorization.service import update_rule as update_rule_service
-from sonar.categorization.store import (
-    load_stored_taxonomy,
-    transactions_with_category,
-    uncategorized_count,
-    uncategorized_transactions,
-)
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import DebtNotFound, add_debt, debt_overview, delete_debt, remaining_cents
-from sonar.importing.importers import UnknownFormatError
-from sonar.importing.store import import_file
 from sonar.money import parse_basis_points, parse_cents, parse_signed_cents
 from sonar.recurring.schedule import SchedulePeriod, next_due_date
 from sonar.recurring.store import (
@@ -72,11 +46,11 @@ from sonar.recurring.store import (
     list_payments,
     pause_payment,
     resume_payment,
-    sync_detected,
 )
 from sonar.web import charts
 from sonar.web.api import build_api_router
 from sonar.web.display import cadence, days_until, display_date, eur
+from sonar.web.pages import dashboard, import_, lights_on, monthly, uncategorized
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -95,11 +69,6 @@ def _format_percent(interest_bp: int | None) -> str:
     # A loan without interest_bp is amortized linearly; the page says so
     # instead of printing a rate that was never entered.
     return "linear" if interest_bp is None else f"{_format_cents(interest_bp)}%"
-
-
-def _nav_badge(count: int, oob: bool = False) -> str:
-    macro = templates.get_template("components/nav_badge.html").module.nav_badge
-    return str(macro(count, oob))
 
 
 def _row_error(errors: dict, kind: str, row_id: int) -> dict | None:
@@ -169,54 +138,6 @@ def _group_label(category_type: str | None) -> str | None:
     return GROUP_LABELS.get(category_type)
 
 
-def _cents(amount: Fraction) -> int:
-    # Half a cent rounds up, like lights_on.py's own rounding; these Fraction
-    # amounts are never negative.
-    return math.floor(amount + Fraction(1, 2))
-
-
-def _lights_on_table_rows(
-    months: list[lights_on.MonthSpend], categories: list[str], used: tuple[Period, ...]
-) -> list[dict]:
-    """One row per month, in cents, for the Keep-the-lights-on table."""
-    return [
-        {
-            "period": m.period,
-            "used": m.period in used,
-            "total_cents": _cents(m.daily_lights_on),
-            "by_category": {c: _cents(m.daily_by_category.get(c, Fraction(0))) for c in categories},
-            "occasional_cents": _cents(m.daily_occasional),
-        }
-        for m in months
-    ]
-
-
-def _lights_on_chart_series(
-    months: list[lights_on.MonthSpend], categories: list[str]
-) -> list[dict]:
-    """Total (if any category is set up) + one line per category + Occasional."""
-    series = []
-    if categories:
-        series.append(
-            {"name": "Keep the lights on", "values": [_cents(m.daily_lights_on) for m in months]}
-        )
-    series.extend(
-        {
-            "name": category,
-            "values": [_cents(m.daily_by_category.get(category, Fraction(0))) for m in months],
-        }
-        for category in categories
-    )
-    series.append(
-        {
-            "name": "Occasional payments (not forecast)",
-            "values": [_cents(m.daily_occasional) for m in months],
-            "muted": True,
-        }
-    )
-    return series
-
-
 templates.env.filters["money"] = _format_cents
 templates.env.filters["percent"] = _format_percent
 templates.env.filters["eur"] = eur
@@ -254,6 +175,11 @@ def create_app(
     app = FastAPI(lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(build_api_router(db_path, today))
+    app.include_router(dashboard.build_router(db_path, today, templates))
+    app.include_router(monthly.build_router(db_path, today, templates))
+    app.include_router(lights_on.build_router(db_path, today, templates))
+    app.include_router(uncategorized.build_router(db_path, today, templates))
+    app.include_router(import_.build_router(db_path, today, templates))
 
     @app.exception_handler(PaymentNotFound)
     async def payment_not_found_handler(request: Request, exc: PaymentNotFound) -> HTMLResponse:
@@ -427,164 +353,6 @@ def create_app(
             },
             status_code=status_code,
         )
-
-    @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request) -> HTMLResponse:
-        conn = connect(db_path)
-        try:
-            taxonomy = load_stored_taxonomy(conn)
-            board = load_dashboard(conn, taxonomy.categories, today())
-        finally:
-            conn.close()
-        return templates.TemplateResponse(request, "index.html", {"dashboard": board})
-
-    @app.get("/monthly", response_class=HTMLResponse)
-    async def monthly_page(
-        request: Request, month: str | None = None, category: str | None = None
-    ) -> HTMLResponse:
-        conn = connect(db_path)
-        try:
-            taxonomy = load_stored_taxonomy(conn)
-            rows = transactions_with_category(conn)
-            salary_day = load_settings(conn).salary_day
-        finally:
-            conn.close()
-        paydays = salary_paydays(rows)
-        months = payment_months(rows, salary_day, paydays)
-        if month is None:
-            # The latest month with data rather than the clock's: exports are
-            # often weeks old, and an empty current month would open the page.
-            selected = months[0] if months else today().replace(day=1)
-        else:
-            try:
-                selected = parse_month(month)
-            except ValueError:
-                raise StarletteHTTPException(status_code=404) from None
-        older, newer = adjacent_months(months, selected)
-        spending = monthly_spending(
-            rows, taxonomy.categories, period_for(selected, salary_day, paydays)
-        )
-        # The category table always shows the whole month; only the payment
-        # list below it narrows to the chosen category.
-        category = category or None
-        return templates.TemplateResponse(
-            request,
-            "monthly.html",
-            {
-                "spending": spending,
-                "category": category,
-                "category_label": "Uncategorized" if category == UNCATEGORIZED else category,
-                "payments": (
-                    only_category(spending.payments, category) if category else spending.payments
-                ),
-                "salary_months": salary_day is not None,
-                "months": months,
-                "older": older,
-                "newer": newer,
-            },
-        )
-
-    @app.get("/lights-on", response_class=HTMLResponse)
-    async def lights_on_page(request: Request) -> HTMLResponse:
-        conn = connect(db_path)
-        try:
-            taxonomy = load_stored_taxonomy(conn)
-            rows = transactions_with_category(conn)
-            salary_day = load_settings(conn).salary_day
-            balance = current_balance(conn)
-        finally:
-            conn.close()
-        categories = sorted(
-            name for name, group in taxonomy.categories.items() if group == LIGHTS_ON
-        )
-        until = lights_on.last_known_day(rows, balance.as_of if balance else None)
-        months = (
-            []
-            if until is None
-            else lights_on.month_spends(rows, taxonomy.categories, salary_day, until)
-        )
-        shown = months[-24:]
-        recent = lights_on.lights_on_forecast(months, 1)
-        return templates.TemplateResponse(
-            request,
-            "lights_on.html",
-            {
-                "categories": categories,
-                "months": shown,
-                "chart_labels": [charts.month_label(m.period.month) for m in shown],
-                "daily": recent,
-                "salary_months": salary_day is not None,
-                "table_rows": _lights_on_table_rows(
-                    shown, categories, recent.months_used if recent else ()
-                ),
-                "chart_series": _lights_on_chart_series(shown, categories),
-            },
-        )
-
-    @app.get("/uncategorized", response_class=HTMLResponse)
-    async def uncategorized_page(request: Request) -> HTMLResponse:
-        conn = connect(db_path)
-        try:
-            txs = uncategorized_transactions(conn)
-        finally:
-            conn.close()
-        return templates.TemplateResponse(
-            request,
-            "uncategorized.html",
-            {
-                "transactions": txs,
-                "count": len(txs),
-                "request_text": build_categorization_request(txs),
-            },
-        )
-
-    @app.post("/reapply", response_class=HTMLResponse)
-    async def reapply(request: Request) -> HTMLResponse:
-        # Reloads the taxonomy stored in the DB so an edit made through the
-        # Categories page or the API takes effect without restarting the app.
-        conn = connect(db_path)
-        try:
-            count = reapply_stored_taxonomy(conn, today())
-        finally:
-            conn.close()
-        # The nav badge rides along out of band so it agrees with the page count.
-        return HTMLResponse(
-            f'<span id="uncategorized-count">{count}</span>{_nav_badge(count, oob=True)}'
-        )
-
-    @app.get("/uncategorized/badge", response_class=HTMLResponse)
-    async def uncategorized_badge() -> HTMLResponse:
-        conn = connect(db_path)
-        try:
-            count = uncategorized_count(conn)
-        finally:
-            conn.close()
-        return HTMLResponse(_nav_badge(count))
-
-    @app.get("/import", response_class=HTMLResponse)
-    async def import_form(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "import.html")
-
-    @app.post("/import", response_class=HTMLResponse)
-    async def import_upload(
-        request: Request,
-        files: list[UploadFile] = File(...),  # noqa: B008 - FastAPI's required pattern
-    ) -> HTMLResponse:
-        # One connection for the whole upload; one file's failure (unknown
-        # format) must not stop the others in the same request. The taxonomy
-        # is loaded once per request, not once per file, so all files in one
-        # upload see the same rule set.
-        conn = connect(db_path)
-        try:
-            taxonomy = load_stored_taxonomy(conn)
-            results = [
-                _import_one(conn, await f.read(), f.filename or "", taxonomy.rules) for f in files
-            ]
-            # Once per request, after every file, so detection sees the full upload.
-            sync_detected(conn, taxonomy.categories, today())
-        finally:
-            conn.close()
-        return templates.TemplateResponse(request, "import_results.html", {"results": results})
 
     @app.get("/recurring", response_class=HTMLResponse)
     async def recurring_page(request: Request) -> HTMLResponse:
@@ -1117,20 +885,3 @@ def _validate_schedule(amount_cents: int, interval_months: int, day: int) -> Non
         interval_months=interval_months,
         day=day,
     )
-
-
-def _import_one(
-    conn: sqlite3.Connection, content: bytes, filename: str, rules: tuple[Rule, ...]
-) -> dict:
-    """Import one file, turning an unrecognized format into a display-ready row."""
-    try:
-        result = import_file(conn, content, filename, rules=rules)
-    except UnknownFormatError as error:
-        return {"filename": filename, "error": str(error)}
-    return {
-        "filename": result.filename,
-        "format": result.format,
-        "added": result.added,
-        "duplicates": result.duplicates,
-        "uncategorized": result.uncategorized,
-    }

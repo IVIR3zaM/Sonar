@@ -12,6 +12,9 @@ from datetime import date
 
 from sonar.display import display_date
 
+# Non-breaking space before the currency sign, as in display.eur.
+_NBSP = "\u00a0"
+
 
 @dataclass(frozen=True)
 class Runway:
@@ -125,6 +128,22 @@ def line_points(
         step = width / (len(s) - 1) if len(s) > 1 else 0
         points.append([(round(i * step), height - h) for i, h in enumerate(heights)])
     return points
+
+
+def compact_eur(cents: int) -> str:
+    """Short euro amount for chart labels: "950 €", "1,2k €", "12k €".
+
+    Magnitude only, because columns show size, not sign. Integer arithmetic
+    rounds half up, so no float ever touches money.
+    """
+    euros = (abs(cents) + 50) // 100
+    if euros < 1000:
+        return f"{euros}{_NBSP}€"
+    if euros < 10_000:
+        tenths = (euros + 50) // 100  # tenths of a thousand
+        whole, decimal = divmod(tenths, 10)
+        return f"{whole}{f',{decimal}' if decimal else ''}k{_NBSP}€"
+    return f"{(euros + 500) // 1000}k{_NBSP}€"
 
 
 def month_label(month: date) -> str:

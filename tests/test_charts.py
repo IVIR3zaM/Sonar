@@ -11,6 +11,7 @@ from sonar.charts import (
     SCALE_MIN_GAP,
     bars,
     columns,
+    compact_eur,
     line_points,
     month_label,
     runway,
@@ -135,6 +136,22 @@ def test_columns_all_zero_is_safe():
     assert columns([], 80) == []
 
 
+@pytest.mark.parametrize(
+    ("cents", "expected"),
+    [
+        (0, "0\u00a0€"),
+        (-95049, "950\u00a0€"),
+        (99950, "1k\u00a0€"),
+        (-123456, "1,2k\u00a0€"),
+        (100000, "1k\u00a0€"),
+        (996000, "10k\u00a0€"),
+        (-1234567, "12k\u00a0€"),
+    ],
+)
+def test_compact_eur_shortens_by_magnitude(cents, expected):
+    assert compact_eur(cents) == expected
+
+
 def test_bars_scale_the_largest_value_to_full_width():
     assert bars([200, 50], 300) == [300, 75]
 
@@ -232,6 +249,23 @@ def test_month_columns_macro_has_one_rect_per_month(render):
     assert [r["data-cents"] for r in rects] == ["0", "-10000", "-5000"]
     assert [r["height"] for r in rects] == ["0", "80", "40"]
     assert "Nov 2026" in rects[1].find("title").get_text()
+
+
+def test_month_columns_macro_labels_each_column_with_its_total(render):
+    months = [
+        SimpleNamespace(month=date(2026, 10, 1), total_cents=0),
+        SimpleNamespace(month=date(2026, 11, 1), total_cents=-10000),
+        SimpleNamespace(month=date(2026, 12, 1), total_cents=-5000),
+    ]
+    soup = render("month_columns", "month_columns(months)", months=months)
+    svg = soup.find("svg")
+    values = svg.select("[data-part=value]")
+    assert [v.get_text(strip=True) for v in values] == ["0\u00a0€", "100\u00a0€", "50\u00a0€"]
+    assert [v["data-cents"] for v in values] == ["0", "-10000", "-5000"]
+    _, min_y, _, _ = _viewbox(svg)
+    for value, rect in zip(values, svg.find_all("rect"), strict=True):
+        assert float(value["y"]) < float(rect["y"])
+        assert float(value["y"]) >= min_y
 
 
 def test_category_bars_macro_has_one_rect_per_category(render):

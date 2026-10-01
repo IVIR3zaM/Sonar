@@ -5,7 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "sonar"
 version = "0.1.0"
-description = "Sonar"
+description = "Local-first household finance dashboard: bank imports, categorization, recurring payments and a cash-flow forecast to payday"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",

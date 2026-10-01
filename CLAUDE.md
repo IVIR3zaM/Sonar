@@ -26,8 +26,7 @@ uv run sonar import-categories data/categories.toml  # One-off: load the owner's
 - `tests/`: follows `src/sonar/`'s layout (`tests/<feature>/`, `tests/web/`); `tests/html.py` holds the page-test helpers
 - `data/`: SQLite database, gitignored
 - `samples/`: real bank exports, gitignored, never used in tests
-- `.plan/`: one file per plan, `YYYY-MM-DD-<slug>.md`, holding its graph and its state
-- `.claude/agents/`: planner, executor, verifier. `.claude/skills/`: new-plan, run-plan
+- `.plan/`: Planzilla plans. `.planzilla/`, `.agents/`, `.claude/agents/plz-*`, `.claude/skills/plz-*`: vendored Planzilla, never hand-edited
 
 ## Engineering rules (the Verifier enforces these)
 
@@ -52,46 +51,21 @@ uv run sonar import-categories data/categories.toml  # One-off: load the owner's
 
 ## Token discipline (every session and every agent)
 
-- No prose, narration, restated tasks or summaries of intent. Replies use the exact formats of the agent files.
+- No prose, narration, restated tasks or summaries of intent. Replies use the exact formats of the role files.
 - Between agents, pass paths and `file:line`, never file contents.
 - Read only what the task needs: Grep, then Read with offset/limit. Never read `uv.lock`, `sonar.css`, `static/vendor/`, finished plans, or a sample in full.
 - The orchestrator's context stays near-empty. It reads the plan's head only, never briefs, diffs, source or test output.
-- Pick the cheapest model that does the job well. Agent files stay at most 25 lines; this file is loaded by every agent, so keep it short.
+- Pick the cheapest model that does the job well. This file is loaded by every agent, so keep it short.
 
-## Graph workflow
+## Planzilla workflow
 
-Every code change goes through a plan. The exceptions are the Categorization workflow and edits to docs or workflow files.
+Every code change goes through a plan. The exceptions are the Categorization workflow and edits to docs or workflow files. Planzilla is vendored in `.planzilla/` (never edit it; upgrade with `planzilla install`); its rules are in `AGENTS.md`.
 
-1. **Plan:** `/new-plan <request>`. The Planner writes `.plan/<today>-<slug>.md`: a header, the graph table, open questions and one brief per node. The main session shows the graph and waits for approval (`DRAFT` → `READY`).
-2. **Run:** `/run-plan [name]`. The main session becomes the Orchestrator. Without a name it suggests the next open plan. It dispatches Executors, then Verifiers, and commits each verified node.
-3. **Pause and resume:** the plan file is the only runtime state. Stop at any time; `/run-plan <name>` picks up from the file.
+1. **Plan:** `/plz-new-plan <request>`. Plans live in `.plan/`; show the graph and wait for approval.
+2. **Run:** `/plz-run-plan [slug]`. Dispatches executors and verifiers, one commit per verified node.
+3. **Pause and resume:** plan state is the only runtime state; `/plz-run-plan <slug>` resumes.
 
-Use these two skills, not the global `graph-plan` skill.
-
-| Role | Runs as | Writes | Default model | Replies with |
-|---|---|---|---|---|
-| Orchestrator | main session | plan status, commits; never product code | session | ≤ 3 lines to the user per wave |
-| Planner | `.claude/agents/planner.md` | `.plan/` only | opus | `PLANNED …`, `REPLANNED …`, `SPLIT …` |
-| Executor | `.claude/agents/executor.md` | its node's Write paths only | per node | `DONE N03 \| tests: n passed` or `BLOCKED N03: <reason>` |
-| Verifier | `.claude/agents/verifier.md` | nothing | per node | `PASS N03` or `FAIL N03` plus ≤ 5 finding bullets |
-
-**Graph rules**
-
-- One node is one coherent change that one executor finishes in one context, starting with a failing test. If its Read and Write paths can't be named, split it.
-- Dependencies are explicit edges. Nodes that may run in the same wave have disjoint Write paths.
-- Briefs are self-contained: Do, Read, Write, Test first, and numbered, falsifiable Done-when criteria (C1, C2, …). Cite `SPEC §n` and `file:line`; don't paste.
-- Verification is a phase of every exec node. Nothing starts on unverified work, and no agent verifies its own work.
-- Every attempt is a fresh agent. The node's Findings in the plan are the only thing that carries over.
-- A retry fixes the work (Verifier FAIL). A replan fixes the brief (Executor BLOCKED, the same criterion failing twice, or tries used up). The human fixes the plan (replans used up).
-- Budgets per node: 2 tries per brief, 2 replans. Then the node is BLOCKED: tell the user and keep running the nodes that don't depend on it.
-- The orchestrator writes a node's status before dispatching it. Each verified node is one commit, the checkpoint a replan resets to.
-- Every plan ends with a `check` node for the whole plan: verify command, SPEC §11, and the SPEC §12 UI acceptance when templates changed.
-
-**Model selection:** the Planner suggests one per node (`exec/verify`); the orchestrator decides.
-
-- haiku: mechanical work (fixtures, config, renames, simple templates) and verifying it.
-- sonnet: well-specified implementation and routine verification.
-- opus: planning and replanning; tricky logic (dedup, recurrence, schedule periods, forecasting) and verifying it.
+Sonar's rules above (TDD, structure, visual check, `check` node with SPEC §11 and §12) go into the plans' criteria.
 
 **Human checkpoints:** after a plan is written; when a plan has open questions (one question each, with a recommended answer); at `gate` nodes that need the user; when a node is BLOCKED; when a node needs `samples/` and it is empty.
 

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Planzilla</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --fg: #1b1f24; --muted: #5d6673; --line: #d8dce2;
+  --todo: #8a93a0; --planning: #7a5cc7; --replanning: #b4558f; --executing: #1f6feb;
+  --verifying: #b7791f; --retry: #c2562b; --waiting: #4d8a9b; --done: #1a7f45; --blocked: #cf222e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216; --card: #181c22; --fg: #e6e9ee; --muted: #9aa4b2; --line: #2b323b;
+    --todo: #8a93a0; --planning: #a58bf0; --replanning: #e07bb4; --executing: #58a6ff;
+    --verifying: #e3b341; --retry: #f0825a; --waiting: #6cc0d4; --done: #3fb970; --blocked: #ff6b6b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 12px; background: var(--bg); color: var(--fg);
+  font: 15px/1.4 system-ui, sans-serif; }
+main { max-width: 960px; margin: 0 auto; }
+h1 { font-size: 1.25rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; }
+.bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 8px 0; }
+.bar > div { height: 100%; background: var(--done); width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 0.8rem; margin-bottom: 12px; }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px;
+  border-radius: 50%; margin-right: 4px; background: var(--c); }
+h2 { font-size: 0.95rem; margin: 16px 0 6px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; }
+.node { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--c);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.id { font-weight: 600; font-family: ui-monospace, monospace; }
+.title { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.badge { font-size: 0.75rem; font-weight: 600; color: var(--c); border: 1px solid var(--c);
+  border-radius: 10px; padding: 0 8px; }
+.detail { color: var(--muted); font-size: 0.8rem; margin-top: 4px; overflow-wrap: anywhere; }
+.last { font-family: ui-monospace, monospace; }
+.todo { --c: var(--todo); } .planning { --c: var(--planning); }
+.replanning { --c: var(--replanning); } .executing { --c: var(--executing); }
+.verifying { --c: var(--verifying); } .retry { --c: var(--retry); }
+.waiting { --c: var(--waiting); } .done { --c: var(--done); } .blocked { --c: var(--blocked); }
+#error { color: var(--blocked); font-size: 0.85rem; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Planzilla</h1>
+  <div class="meta" id="meta">loading</div>
+  <div class="bar"><div id="progress"></div></div>
+  <div class="legend" id="legend"></div>
+  <div id="error"></div>
+  <div id="waves"></div>
+</main>
+<script>
+"use strict";
+var VIEWS = ["planning", "replanning", "executing", "verifying", "done", "blocked",
+  "todo", "retry", "waiting"];
+var POLL_MS = 2000;
+
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function fmt(seconds) {
+  if (seconds === null || seconds === undefined) return "-";
+  if (seconds >= 3600) {
+    var m = Math.floor((seconds % 3600) / 60);
+    return Math.floor(seconds / 3600) + "h" + (m < 10 ? "0" : "") + m + "m";
+  }
+  if (seconds >= 60) return Math.floor(seconds / 60) + "m";
+  return seconds + "s";
+}
+
+function renderNode(n) {
+  var box = el("div", "node " + n.view);
+  var head = el("div", "head");
+  head.appendChild(el("span", "id", n.id));
+  head.appendChild(el("span", "title", n.title));
+  head.appendChild(el("span", "badge", n.view));
+  box.appendChild(head);
+  var parts = ["try " + n["try"], "rp " + n.rp, fmt(n.elapsed)];
+  if (n.note) parts.push(n.note);
+  box.appendChild(el("div", "detail", parts.join(" · ")));
+  box.appendChild(el("div", "detail last", n.last));
+  return box;
+}
+
+function render(s) {
+  document.getElementById("title").textContent = s.title;
+  document.getElementById("meta").textContent = s.plan + " · " + s.status + " · tier " +
+    s.tier + " · " + s.done + "/" + s.total + " done · " + fmt(s.elapsed) +
+    " · updated " + s.updated;
+  document.getElementById("progress").style.width =
+    (s.total ? (100 * s.done) / s.total : 0) + "%";
+  var counts = {};
+  s.waves.forEach(function (w) {
+    w.nodes.forEach(function (n) { counts[n.view] = (counts[n.view] || 0) + 1; });
+  });
+  var legend = document.getElementById("legend");
+  legend.replaceChildren();
+  VIEWS.forEach(function (v) {
+    var item = el("span", v, v + " " + (counts[v] || 0));
+    item.style.setProperty("--c", "var(--" + v + ")");
+    legend.appendChild(item);
+  });
+  var waves = document.getElementById("waves");
+  waves.replaceChildren();
+  s.waves.forEach(function (w) {
+    waves.appendChild(el("h2", "", "wave " + w.wave));
+    w.nodes.forEach(function (n) { waves.appendChild(renderNode(n)); });
+  });
+}
+
+function poll() {
+  fetch("/state.json", { cache: "no-store" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (s) {
+      document.getElementById("error").textContent = "";
+      render(s);
+    })
+    .catch(function (e) {
+      document.getElementById("error").textContent = "cannot read the plan: " + e.message;
+    });
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

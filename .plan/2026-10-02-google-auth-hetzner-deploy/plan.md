@@ -53,5 +53,5 @@ budgets: 2 tries per brief · 2 replans per node
 | N12 | HTTP check of changed pages | check | N08 | -/sonnet | 1 | 1 | DONE | |
 | N13 | owner deploy to the Gateway VM | gate | N15 | -/- | 0 | 0 | TODO | |
 | N14 | plan acceptance | check | N13 | -/opus | 0 | 0 | TODO | |
-| N15 | owner visual check in a browser | gate | N11,N12 | -/- | 0 | 0 | TODO | |
+| N15 | owner visual check in a browser | gate | N11,N12 | -/- | 0 | 0 | DONE | |
 | N16 | local .env and run script | exec | N10 | sonnet/sonnet | 1 | 0 | DONE | |

@@ -49,6 +49,10 @@ uv run sonar list-emails                    # show the access list
 uv run sonar sync-emails you@example.com    # replace the whole list (at least one email)
 ```
 
+## Deploy
+
+To run Sonar on a Hetzner VM behind Google sign-in, follow [deploy/README.md](deploy/README.md).
+
 ## Categorizing with Claude Code
 
 Sonar has no rule editor in the UI. You manage categories and rules by talking to [Claude Code](https://claude.com/claude-code):

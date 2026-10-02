@@ -21,7 +21,7 @@ from sonar.categorization.groups import LABELS as GROUP_LABELS
 from sonar.categorization.groups import TRANSFER
 from sonar.categorization.service import CategoryNotFound, RuleNotFound, reapply_stored_taxonomy
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.debts.store import DebtNotFound
+from sonar.debts.store import DebtNotFound, DraftNotFound
 from sonar.recurring.store import PaymentNotFound
 from sonar.web import access, charts
 from sonar.web.api import build_api_router
@@ -145,6 +145,12 @@ def create_app(
     async def debt_not_found_handler(request: Request, exc: DebtNotFound) -> HTMLResponse:
         return templates.TemplateResponse(
             request, "error.html", {"message": f"No such debt: {exc}"}, status_code=404
+        )
+
+    @app.exception_handler(DraftNotFound)
+    async def draft_not_found_handler(request: Request, exc: DraftNotFound) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request, "error.html", {"message": f"No such draft: {exc}"}, status_code=404
         )
 
     @app.exception_handler(CategoryNotFound)

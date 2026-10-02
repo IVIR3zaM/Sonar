@@ -44,6 +44,38 @@
 </form>
 {%- endmacro %}
 
+{#- One completion form of a needs-details card. Field ids carry the draft id
+   and kind so several cards on one page keep every label on its own input. #}
+{% macro draft_form(draft, kind, error) -%}
+{% set p = draft.prefill %}
+{% set v = error.fields if error else {} %}
+{% set fid = "draft-" ~ draft.id ~ "-" ~ kind ~ "-" %}
+<details class="mt-3 rounded-control border border-line"{% if error %} open{% endif %}>
+  <summary class="cursor-pointer select-none px-3 py-2 text-sm font-medium text-ink">Complete as {{ kind }}</summary>
+  <div class="border-t border-line p-3">
+    <form id="complete-{{ kind }}-{{ draft.id }}" method="post" action="/debts/drafts/{{ draft.id }}/{{ kind }}" class="grid grid-cols-1 gap-4">
+      {% if error %}<div role="alert" data-draft-error class="rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ error.message }}</div>{% endif %}
+      {{ field("name", "Name", id=fid ~ "name", value=v.name if error else p.name, required=true) }}
+      {% if kind == "installment" %}
+      {{ field("total", "Total", id=fid ~ "total", value=v.total or '', required=true, help="e.g. 1200.00") }}
+      {{ field("rate", "Rate", id=fid ~ "rate", value=v.rate if error else p.rate_cents | money, required=true, help="Amount paid each installment") }}
+      {{ field("interval_months", "Every N month(s)", id=fid ~ "interval_months", type="number", value=v.interval_months if error else p.interval_months, required=true, attrs={"min": 1}) }}
+      {{ field("first_payment_date", "First payment", id=fid ~ "first_payment_date", type="date", value=v.first_payment_date if error else p.first_payment_date.isoformat(), required=true) }}
+      {{ field("payments_count", "Number of payments", id=fid ~ "payments_count", type="number", value=v.payments_count or '', required=true, attrs={"min": 1}) }}
+      {% else %}
+      {{ field("balance", "Balance", id=fid ~ "balance", value=v.balance or '', required=true, help="Statement balance, e.g. 5000.00") }}
+      {{ field("balance_as_of", "As of", id=fid ~ "balance_as_of", type="date", value=v.balance_as_of or '', required=true) }}
+      {{ field("rate", "Monthly rate", id=fid ~ "rate", value=v.rate if error else p.rate_cents | money, required=true, help="Amount paid each month") }}
+      {{ field("interest", "Interest % (optional)", id=fid ~ "interest", value=v.interest or '', help="e.g. 6.00% - leave empty for a linear payoff") }}
+      {% endif %}
+      {{ field("match_field", "Match on", id=fid ~ "match_field", value=v.match_field if error else p.match.field, options=match_options) }}
+      {{ field("match_value", "Match value", id=fid ~ "match_value", value=v.match_value if error else p.match.value, required=true, help="Counterparty text or SEPA mandate reference") }}
+      <div>{{ button("Complete as " ~ kind) }}</div>
+    </form>
+  </div>
+</details>
+{%- endmacro %}
+
 {% block content %}
 <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
   <div>
@@ -52,6 +84,35 @@
   </div>
   {{ stat("Total remaining", value=amount(total_remaining, colored=false), id="debts-total") }}
 </header>
+
+{% if drafts %}
+<section id="debt-drafts" class="mb-10">
+  <h2 class="mb-3 text-sm font-semibold text-ink">Needs details</h2>
+  <div class="{{ grid }}">
+    {% for draft in drafts %}
+    {% set p = draft.prefill %}
+    {% set error = draft_error if draft_error and draft_error.id == draft.id else none %}
+    {% call card(attrs={"data-draft-id": draft.id}) %}
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <h3 class="text-sm font-semibold text-ink" data-field="name">{{ p.name }}</h3>
+        {{ badge("Needs details", tone="warn", attrs={"data-badge": "needs-details"}) }}
+      </div>
+
+      <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <div><dt class="{{ dt }}">Rate</dt><dd class="{{ dd }}" data-field="rate">{{ amount(p.rate_cents, colored=false) }}</dd></div>
+        <div><dt class="{{ dt }}">Every</dt><dd class="{{ dd }}" data-field="every">{{ p.interval_months }} month(s)</dd></div>
+        <div><dt class="{{ dt }}">First payment</dt><dd class="{{ dd }}" data-field="first_payment">{{ date(p.first_payment_date) }}</dd></div>
+      </dl>
+
+      <p class="mt-3 text-xs text-ink-muted" data-field="match">{{ p.match.field }}: {{ p.match.value }}</p>
+
+      {{ draft_form(draft, "installment", error if error and error.kind == "installment" else none) }}
+      {{ draft_form(draft, "loan", error if error and error.kind == "loan" else none) }}
+    {% endcall %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="mb-10">
   <h2 class="mb-3 text-sm font-semibold text-ink">Installments</h2>

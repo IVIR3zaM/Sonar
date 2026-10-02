@@ -45,9 +45,9 @@ budgets: 2 tries per brief · 2 replans per node
 | N05 | API bearer token and auth docs | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | category debt flag | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | draft debts from recurring payments | exec | N06 | opus/opus | 1 | 0 | DONE | |
-| N08 | needs-details debts on the debts page | exec | N07 | sonnet/sonnet | 0 | 0 | BRIEFING | |
+| N08 | needs-details debts on the debts page | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | terraform deploy module | exec | N05 | opus/opus | 1 | 1 | DONE | |
-| N10 | Google setup and deploy guide | exec | N09 | sonnet/sonnet | 0 | 0 | TODO | |
+| N10 | Google setup and deploy guide | exec | N08,N09 | sonnet/sonnet | 0 | 1 | TODO | |
 | N11 | owner Google OAuth setup | gate | N10 | -/- | 0 | 0 | TODO | |
 | N12 | visual check | check | N08 | -/sonnet | 0 | 0 | TODO | |
 | N13 | owner deploy to the Gateway VM | gate | N11,N12 | -/- | 0 | 0 | TODO | |

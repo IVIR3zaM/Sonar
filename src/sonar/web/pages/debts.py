@@ -6,15 +6,82 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from sonar.db import connect
 from sonar.debts.model import Installment, Loan, MatchRule
-from sonar.debts.store import add_debt, debt_overview, delete_debt, remaining_cents
+from sonar.debts.store import (
+    add_debt,
+    complete_draft,
+    debt_overview,
+    delete_debt,
+    remaining_cents,
+    sync_drafts,
+)
 from sonar.money import parse_basis_points, parse_cents
 from sonar.web import forms
+
+INSTALLMENT_FIELDS = (
+    "name",
+    "total",
+    "rate",
+    "interval_months",
+    "first_payment_date",
+    "payments_count",
+    "match_field",
+    "match_value",
+)
+LOAN_FIELDS = (
+    "name",
+    "balance",
+    "balance_as_of",
+    "rate",
+    "interest",
+    "match_field",
+    "match_value",
+)
+
+
+async def _form_values(request: Request, names: tuple[str, ...]) -> dict[str, str]:
+    # A missing field becomes "" so it reaches our own ValueError -> 400, not FastAPI's 422.
+    form = await request.form()
+    return {name: str(form.get(name, "")) for name in names}
+
+
+def _installment_from(values: dict[str, str]) -> Installment:
+    """Shared by the add and the complete-draft routes; raises ValueError on a bad field."""
+    return Installment(
+        name=values["name"],
+        total_cents=forms.field("Total", values["total"], "amount", parse_cents),
+        rate_cents=forms.field("Rate", values["rate"], "amount", parse_cents),
+        interval_months=forms.field("Every N month(s)", values["interval_months"], "int", int),
+        first_payment_date=forms.field(
+            "First payment", values["first_payment_date"], "date", date.fromisoformat
+        ),
+        payments_count=forms.field("Number of payments", values["payments_count"], "int", int),
+        match=MatchRule(values["match_field"], values["match_value"]),
+    )
+
+
+def _loan_from(values: dict[str, str]) -> Loan:
+    """Shared by the add and the complete-draft routes; raises ValueError on a bad field."""
+    interest = values["interest"]
+    return Loan(
+        name=values["name"],
+        balance_cents=forms.field("Balance", values["balance"], "amount", parse_cents),
+        balance_as_of=forms.field("As of", values["balance_as_of"], "date", date.fromisoformat),
+        rate_cents=forms.field("Monthly rate", values["rate"], "amount", parse_cents),
+        # An empty field means no interest was entered, not a 0% rate,
+        # so the loan amortizes linearly (see debts/amortization.loan_schedule).
+        interest_bp=(
+            forms.field("Interest", interest, "percent", parse_basis_points)
+            if interest.strip()
+            else None
+        ),
+        match=MatchRule(values["match_field"], values["match_value"]),
+    )
 
 
 def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Templates) -> APIRouter:
@@ -23,11 +90,12 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
     def _render_debts_page(
         request: Request, status_code: int = 200, errors: dict | None = None
     ) -> HTMLResponse:
-        # Shared by the GET route and the two add-debt POST error paths.
+        # Shared by the GET route and the POST error paths.
         errors = errors or {}
         conn = connect(db_path)
         try:
             views = debt_overview(conn, today())
+            drafts = sync_drafts(conn)
         finally:
             conn.close()
         installments = [v for v in views if isinstance(v.debt, Installment)]
@@ -44,6 +112,8 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 "total_remaining": total_remaining,
                 "installment_error": errors.get("installment"),
                 "loan_error": errors.get("loan"),
+                "drafts": drafts,
+                "draft_error": errors.get("draft"),
             },
             status_code=status_code,
         )
@@ -53,42 +123,11 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         return _render_debts_page(request)
 
     @router.post("/debts/installments")
-    async def add_installment(
-        request: Request,
-        # Every field defaults to "" so an empty or missing value reaches our
-        # own ValueError -> 400, not FastAPI's 422.
-        name: str = Form(""),
-        total: str = Form(""),
-        rate: str = Form(""),
-        interval_months: str = Form(""),
-        first_payment_date: str = Form(""),
-        payments_count: str = Form(""),
-        match_field: str = Form(""),
-        match_value: str = Form(""),
-    ) -> HTMLResponse:
+    async def add_installment(request: Request) -> HTMLResponse:
+        values = await _form_values(request, INSTALLMENT_FIELDS)
         try:
-            debt = Installment(
-                name=name,
-                total_cents=forms.field("Total", total, "amount", parse_cents),
-                rate_cents=forms.field("Rate", rate, "amount", parse_cents),
-                interval_months=forms.field("Every N month(s)", interval_months, "int", int),
-                first_payment_date=forms.field(
-                    "First payment", first_payment_date, "date", date.fromisoformat
-                ),
-                payments_count=forms.field("Number of payments", payments_count, "int", int),
-                match=MatchRule(match_field, match_value),
-            )
+            debt = _installment_from(values)
         except ValueError as error:
-            values = {
-                "name": name,
-                "total": total,
-                "rate": rate,
-                "interval_months": interval_months,
-                "first_payment_date": first_payment_date,
-                "payments_count": payments_count,
-                "match_field": match_field,
-                "match_value": match_value,
-            }
             return _render_debts_page(
                 request,
                 status_code=400,
@@ -102,43 +141,11 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         return RedirectResponse("/debts", status_code=303)
 
     @router.post("/debts/loans")
-    async def add_loan(
-        request: Request,
-        # Every field defaults to "" so an empty or missing value reaches our
-        # own ValueError -> 400, not FastAPI's 422.
-        name: str = Form(""),
-        balance: str = Form(""),
-        balance_as_of: str = Form(""),
-        rate: str = Form(""),
-        interest: str = Form(""),
-        match_field: str = Form(""),
-        match_value: str = Form(""),
-    ) -> HTMLResponse:
+    async def add_loan(request: Request) -> HTMLResponse:
+        values = await _form_values(request, LOAN_FIELDS)
         try:
-            debt = Loan(
-                name=name,
-                balance_cents=forms.field("Balance", balance, "amount", parse_cents),
-                balance_as_of=forms.field("As of", balance_as_of, "date", date.fromisoformat),
-                rate_cents=forms.field("Monthly rate", rate, "amount", parse_cents),
-                # An empty field means no interest was entered, not a 0% rate,
-                # so the loan amortizes linearly (see debts/amortization.loan_schedule).
-                interest_bp=(
-                    forms.field("Interest", interest, "percent", parse_basis_points)
-                    if interest.strip()
-                    else None
-                ),
-                match=MatchRule(match_field, match_value),
-            )
+            debt = _loan_from(values)
         except ValueError as error:
-            values = {
-                "name": name,
-                "balance": balance,
-                "balance_as_of": balance_as_of,
-                "rate": rate,
-                "interest": interest,
-                "match_field": match_field,
-                "match_value": match_value,
-            }
             return _render_debts_page(
                 request,
                 status_code=400,
@@ -147,6 +154,41 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         conn = connect(db_path)
         try:
             add_debt(conn, debt)
+        finally:
+            conn.close()
+        return RedirectResponse("/debts", status_code=303)
+
+    @router.post("/debts/drafts/{id}/installment")
+    async def complete_draft_as_installment(request: Request, id: int) -> HTMLResponse:
+        return await _complete_draft(
+            request, id, "installment", INSTALLMENT_FIELDS, _installment_from
+        )
+
+    @router.post("/debts/drafts/{id}/loan")
+    async def complete_draft_as_loan(request: Request, id: int) -> HTMLResponse:
+        return await _complete_draft(request, id, "loan", LOAN_FIELDS, _loan_from)
+
+    async def _complete_draft(
+        request: Request,
+        draft_id: int,
+        kind: str,
+        field_names: tuple[str, ...],
+        build: Callable[[dict[str, str]], Installment | Loan],
+    ) -> HTMLResponse:
+        values = await _form_values(request, field_names)
+        try:
+            debt = build(values)
+        except ValueError as error:
+            draft = {
+                "id": draft_id,
+                "kind": kind,
+                "message": forms.friendly(error),
+                "fields": values,
+            }
+            return _render_debts_page(request, status_code=400, errors={"draft": draft})
+        conn = connect(db_path)
+        try:
+            complete_draft(conn, draft_id, debt)
         finally:
             conn.close()
         return RedirectResponse("/debts", status_code=303)

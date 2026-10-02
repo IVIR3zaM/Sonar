@@ -123,7 +123,9 @@ def create_app(
         google = google or auth_pages.google_client(auth)
         app.include_router(auth_pages.build_router(auth, google, templates))
         # Added last means outermost: the session must wrap the gate that reads it.
-        app.add_middleware(BaseHTTPMiddleware, dispatch=access.sign_in_gate(db_path, templates))
+        app.add_middleware(
+            BaseHTTPMiddleware, dispatch=access.sign_in_gate(db_path, templates, auth.api_token)
+        )
         app.add_middleware(
             SessionMiddleware,
             secret_key=auth.session_secret,

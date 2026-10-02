@@ -1,6 +1,6 @@
 # Sonar
 
-A local household finance dashboard for importing bank exports, categorizing transactions, detecting recurring payments, and forecasting cash flow to payday. Runs on `127.0.0.1` with no authentication. Python 3.12 with FastAPI, SQLite, Jinja2 templates and HTMX.
+A local household finance dashboard for importing bank exports, categorizing transactions, detecting recurring payments, and forecasting cash flow to payday. Runs on `127.0.0.1`; Google sign-in is optional (SPEC §13 Sign-in). Python 3.12 with FastAPI, SQLite, Jinja2 templates and HTMX.
 
 - **What to build:** `SPEC.md`, the source of truth for behavior. Cite it as `SPEC §n`; §13 amendments override earlier sections.
 - **How to work:** this file.
@@ -75,10 +75,10 @@ Sonar's rules above (TDD, structure, visual check, `check` node with SPEC §11 a
 Categories and rules live only in the DB (N11); nothing here edits a file.
 
 1. **Trigger:** a pasted export starting with `HEADER` (`categorization/export.py:21`), or an owner request to categorize.
-2. **Use the running app:** `curl -s http://127.0.0.1:8000/api/categories`; if it doesn't answer, start `uv run sonar` in the background (stop it at the end if you started it).
+2. **Use the running app:** `curl -s http://127.0.0.1:8000/api/categories`; if it doesn't answer, start `uv run sonar` in the background (stop it at the end if you started it). When sign-in is on, every curl below also adds `-H "Authorization: Bearer $SONAR_API_TOKEN"`.
 3. **Read:** `GET /api/categories`, `GET /api/rules`, `GET /api/uncategorized`.
 4. **Propose:** the exact category adds/edits/removes and rule adds/edits/removes (category name and group; rule fields and position; first match wins). Ask the owner to confirm. Write nothing before confirmation.
-5. **Write:** after confirmation, call the endpoints below with `curl -s -X POST -H 'Content-Type: application/json' -d '{...}' ...` (PUT/DELETE the same way). Stop and report on any 4xx. Every write re-applies rules and re-runs recurring detection.
+5. **Write:** after confirmation, call the endpoints below with `curl -s -X POST -H 'Content-Type: application/json' -d '{...}' ...` (PUT/DELETE the same way). With sign-in on, add `-H "Authorization: Bearer $SONAR_API_TOKEN"` to every call. Stop and report on any 4xx. Every write re-applies rules and re-runs recurring detection.
 6. **Reply** in at most 5 lines: the changes made and the uncategorized count before and after.
 7. Edit no repo file, add no tests for rules, never write real names, IBANs or creditor IDs into a tracked file (they live only in the local DB). Handle it in the main session, without the agent graph.
 

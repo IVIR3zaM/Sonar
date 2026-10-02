@@ -7,6 +7,7 @@ revoked email is locked out on its next request.
 
 from __future__ import annotations
 
+import hmac
 from collections.abc import Awaitable, Callable
 from contextlib import closing
 from pathlib import Path
@@ -27,7 +28,7 @@ CallNext = Callable[[Request], Awaitable[Response]]
 
 
 def sign_in_gate(
-    db_path: Path, templates: Jinja2Templates
+    db_path: Path, templates: Jinja2Templates, api_token: str | None = None
 ) -> Callable[[Request, CallNext], Awaitable[Response]]:
     """The dispatch function for a BaseHTTPMiddleware placed inside SessionMiddleware."""
 
@@ -36,6 +37,13 @@ def sign_in_gate(
         if path.startswith(PUBLIC_PREFIXES):
             return await call_next(request)
         is_api = path == "/api" or path.startswith("/api/")
+        bearer = _bearer_token(request) if is_api and api_token else None
+        if bearer is not None:
+            # A machine credential: no session and no allow-list, and a wrong one is never
+            # rescued by a session.
+            if _same_token(bearer, api_token):
+                return await call_next(request)
+            return JSONResponse({"error": "Wrong API token."}, status_code=401)
         email = request.session.get("email")
         if email is None:
             if is_api:
@@ -58,6 +66,16 @@ def not_allowed_page(
     return templates.TemplateResponse(
         request, "not_allowed.html", {"email": email}, status_code=403
     )
+
+
+def _bearer_token(request: Request) -> str | None:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    return token if scheme.lower() == "bearer" else None
+
+
+def _same_token(given: str, expected: str) -> bool:
+    # Bytes, because comparing str raises on non-ASCII input.
+    return hmac.compare_digest(given.encode(), expected.encode())
 
 
 def _is_allowed(db_path: Path, email: str) -> bool:

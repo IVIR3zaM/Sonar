@@ -22,6 +22,8 @@ class AuthSettings:
     google_client_secret: str
     session_secret: str
     base_url: str
+    # Optional machine credential for /api/*; not one of the four that switch sign-in on.
+    api_token: str | None = None
 
     @property
     def secure_cookies(self) -> bool:
@@ -48,4 +50,5 @@ def auth_settings(env: Mapping[str, str]) -> AuthSettings | None:
         google_client_secret=client_secret,
         session_secret=session_secret,
         base_url=base_url.rstrip("/"),
+        api_token=env.get("SONAR_API_TOKEN") or None,
     )

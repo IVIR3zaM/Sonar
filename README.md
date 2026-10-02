@@ -2,7 +2,7 @@
 
 A local-first household finance dashboard. Sonar imports bank CSV exports, categorizes transactions, detects recurring payments, tracks installments and loans, and forecasts whether the balance will last until the next payday.
 
-It runs on your own machine (`127.0.0.1`), keeps everything in a local SQLite file, and never talks to your bank or any other service.
+It runs on your own machine (`127.0.0.1`), keeps everything in a local SQLite file, and never talks to your bank. It contacts no outside service unless you turn on Google sign-in (below), which talks to Google only to sign you in.
 
 ## Features
 
@@ -24,13 +24,38 @@ uv run sonar
 
 Open <http://127.0.0.1:8000>, import an export, then set your salary day and current balance under Settings. Your data lives in `data/sonar.db`, which is gitignored.
 
+## Sign-in (optional)
+
+By default anyone who can reach the app can use it. Set all four of these to require a Google sign-in instead (set only some and `sonar` refuses to start):
+
+- `SONAR_GOOGLE_CLIENT_ID` and `SONAR_GOOGLE_CLIENT_SECRET`: the OAuth client from Google Cloud.
+- `SONAR_SESSION_SECRET`: a long random string that signs the session cookie.
+- `SONAR_BASE_URL`: the public address of the app, for example `https://sonar.example.com`.
+
+Register `<SONAR_BASE_URL>/auth/callback` as the authorized redirect URI of the Google OAuth client.
+
+Other settings:
+
+- `SONAR_API_TOKEN`: optional. With sign-in on, `/api/*` (and only the API, never pages) also accepts `Authorization: Bearer <token>`, for scripts and Claude Code.
+- `SONAR_DB_PATH`: the SQLite file (default `data/sonar.db`).
+- `SONAR_PORT`: the port (default `8000`).
+
+Only emails on the access list can sign in. Manage it from the command line (each accepts `--db PATH`):
+
+```bash
+uv run sonar allow-email you@example.com    # let this email sign in
+uv run sonar revoke-email you@example.com   # lock this email out on its next request
+uv run sonar list-emails                    # show the access list
+uv run sonar sync-emails you@example.com    # replace the whole list (at least one email)
+```
+
 ## Categorizing with Claude Code
 
 Sonar has no rule editor in the UI. You manage categories and rules by talking to [Claude Code](https://claude.com/claude-code):
 
 1. On the Uncategorized page, copy the export block and paste it into Claude Code in this repository.
 2. Claude reads the current categories, rules and uncategorized transactions through the local JSON API (`/api/categories`, `/api/rules`, `/api/uncategorized`).
-3. It proposes changes, and once you confirm, writes them through the same API.
+3. It proposes changes, and once you confirm, writes them through the same API. With sign-in on, the API needs `SONAR_API_TOKEN`: Claude sends it as `Authorization: Bearer $SONAR_API_TOKEN` on every call.
 
 Rules live only in your local database, so personal names, IBANs and creditor IDs never end up in the repository. The full workflow is in [AGENTS.md](AGENTS.md).
 

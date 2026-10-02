@@ -58,3 +58,31 @@ def test_secure_cookies_only_with_an_https_base_url():
 
     assert https is not None and https.secure_cookies
     assert http is not None and not http.secure_cookies
+
+
+def test_the_api_token_is_read_with_the_four_settings():
+    settings = auth_settings({**FULL_ENV, "SONAR_API_TOKEN": "api-token"})
+
+    assert settings is not None and settings.api_token == "api-token"
+
+
+def test_the_api_token_is_none_when_unset_or_empty():
+    unset = auth_settings(FULL_ENV)
+    empty = auth_settings({**FULL_ENV, "SONAR_API_TOKEN": ""})
+
+    assert unset is not None and unset.api_token is None
+    assert empty is not None and empty.api_token is None
+
+
+def test_the_api_token_alone_is_not_sign_in_and_not_an_error():
+    assert auth_settings({"SONAR_API_TOKEN": "api-token"}) is None
+
+
+def test_a_partial_set_plus_the_token_still_names_only_the_four_vars():
+    env = {"SONAR_GOOGLE_CLIENT_ID": "client-id", "SONAR_API_TOKEN": "api-token"}
+
+    with pytest.raises(ValueError) as error:
+        auth_settings(env)
+
+    assert "SONAR_API_TOKEN" not in str(error.value)
+    assert "SONAR_BASE_URL" in str(error.value)

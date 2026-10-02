@@ -18,7 +18,7 @@ FULL_AUTH_ENV = {
 @pytest.fixture(autouse=True)
 def no_server_env(monkeypatch):
     """The developer's own shell must not turn sign-in on or move the port in these tests."""
-    for name in (*AUTH_ENV_VARS, "SONAR_PORT"):
+    for name in (*AUTH_ENV_VARS, "SONAR_API_TOKEN", "SONAR_PORT"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -148,3 +148,9 @@ def test_email_subcommands_run_with_a_partial_auth_env(monkeypatch, tmp_path, ca
     main()
 
     assert capsys.readouterr().out.strip() == "Allowed owner@example.com."
+
+
+def test_full_auth_env_with_a_token_passes_the_token_to_the_app(monkeypatch):
+    mock_create_app, _ = _run_server(monkeypatch, {**FULL_AUTH_ENV, "SONAR_API_TOKEN": "api-token"})
+
+    assert mock_create_app.call_args.kwargs["auth"].api_token == "api-token"

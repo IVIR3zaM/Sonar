@@ -11,6 +11,7 @@ A local household finance dashboard for importing bank exports, categorizing tra
 uv sync              # Install dependencies
 TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify  # Build CSS
 uv run sonar         # Start the app (http://127.0.0.1:8000)
+./run.sh  # Start with the settings in .env (see .env.example)
 uv run pytest        # Run tests
 uv run ruff check .  # Check style and lint
 uv run ruff format --check .  # Check formatting

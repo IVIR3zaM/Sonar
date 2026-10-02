@@ -31,27 +31,34 @@ Start from an empty Google Cloud project.
      - `https://sonar.example.com/auth/callback`
      - `http://127.0.0.1:8000/auth/callback`
 4. Copy the client ID and client secret.
-5. Create your variables file and put the client ID and secret only there:
+5. Create your variables file and put the client ID and secret there and, for local runs, in `.env`:
 
    ```bash
    cp deploy/terraform/terraform.tfvars.example deploy/terraform/terraform.tfvars
    ```
 
-   `terraform.tfvars` is gitignored. Never put the client ID or secret anywhere else in the repository.
+   `terraform.tfvars` and `.env` are both gitignored. Never put the client ID or secret anywhere else in the repository.
 
 ## 2. Check sign-in locally
 
 Before deploying, prove the OAuth client works on your machine. Use a temp database, never `data/sonar.db`.
 
 ```bash
-export SONAR_GOOGLE_CLIENT_ID="<client id>"
-export SONAR_GOOGLE_CLIENT_SECRET="<client secret>"
-export SONAR_SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
-export SONAR_BASE_URL="http://127.0.0.1:8000"   # 127.0.0.1, not localhost: it must match the redirect URI
-export SONAR_DB_PATH="$(mktemp -d)/sonar.db"
+cp .env.example .env
+```
 
-uv run sonar allow-email owner@example.com
-uv run sonar
+In `.env`, fill in:
+
+- `SONAR_GOOGLE_CLIENT_ID` and `SONAR_GOOGLE_CLIENT_SECRET`: from step 4.
+- `SONAR_SESSION_SECRET`: the output of `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'`.
+- `SONAR_BASE_URL`: `http://127.0.0.1:8000` (127.0.0.1, not localhost: it must match the redirect URI).
+- `SONAR_ALLOWED_EMAILS`: `owner@example.com`.
+- `SONAR_DB_PATH`: a temp file, for example `/tmp/sonar-check/sonar.db`.
+
+Then start it. `run.sh` loads `.env`, syncs the allowed emails into the database and starts Sonar:
+
+```bash
+./run.sh
 ```
 
 Open <http://127.0.0.1:8000> and check:
@@ -60,7 +67,7 @@ Open <http://127.0.0.1:8000> and check:
 - Signing in with any other Google account shows the not-allowed page.
 - Logging out returns to the sign-in page.
 
-Stop the app and unset the variables (`unset SONAR_GOOGLE_CLIENT_ID SONAR_GOOGLE_CLIENT_SECRET SONAR_SESSION_SECRET SONAR_BASE_URL SONAR_DB_PATH`).
+Stop the app. Afterwards empty the sign-in variables in `.env` and restore `SONAR_DB_PATH=data/sonar.db`.
 
 ## 3. Patch Gateway's nginx
 

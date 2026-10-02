@@ -33,6 +33,7 @@ budgets: 2 tries per brief · 2 replans per node
 - D22 N13 Agents push only claude/youthful-thompson-0snams (D24); the owner merges it into main on github.com/IVIR3zaM/Sonar and pushes main before N13, sets sonar_git_ref to that main commit, patches Gateway's nginx.conf template, fills terraform.tfvars and runs terraform apply; no agent touches real credentials, the Gateway repo or the VM | confirmed
 - D23 N11 The owner does the Google Cloud setup from deploy/README.md; the client id and secret live only in gitignored terraform.tfvars (and a shell env for a local check) | confirmed
 - D24 Push per node: each node commit is pushed to origin claude/youthful-thompson-0snams, the checked-out branch of this cloud session (plan push: per-node); N01 proves push rights to it; nothing is pushed to main by an agent | confirmed
+- D25 N16 Local runs read a gitignored `.env` (bash `KEY=value`) through an executable `./run.sh` at the repo root: it exports `.env`, syncs SONAR_ALLOWED_EMAILS (comma-separated, authoritative like terraform's allowed_emails; empty = access list untouched) with `uv run sonar sync-emails`, then execs `uv run sonar`; the tracked `.env.example` lists every variable with sign-in off so it runs as copied; the client id and secret may also live in `.env` (amends D23); no Python or SPEC change | confirmed
 
 ## Graph
 
@@ -48,8 +49,9 @@ budgets: 2 tries per brief · 2 replans per node
 | N08 | needs-details debts on the debts page | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | terraform deploy module | exec | N05 | opus/opus | 1 | 1 | DONE | |
 | N10 | Google setup and deploy guide | exec | N08,N09 | sonnet/sonnet | 1 | 1 | DONE | |
-| N11 | owner Google OAuth setup | gate | N10 | -/- | 0 | 0 | TODO | |
+| N11 | owner Google OAuth setup | gate | N16 | -/- | 0 | 1 | TODO | |
 | N12 | HTTP check of changed pages | check | N08 | -/sonnet | 1 | 1 | DONE | |
 | N13 | owner deploy to the Gateway VM | gate | N15 | -/- | 0 | 0 | TODO | |
 | N14 | plan acceptance | check | N13 | -/opus | 0 | 0 | TODO | |
 | N15 | owner visual check in a browser | gate | N11,N12 | -/- | 0 | 0 | TODO | |
+| N16 | local .env and run script | exec | N10 | sonnet/sonnet | 1 | 0 | DONE | |

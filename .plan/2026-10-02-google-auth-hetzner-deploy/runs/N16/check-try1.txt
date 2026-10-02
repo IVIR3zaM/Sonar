@@ -1,0 +1,36 @@
+== C1 uv run pytest -q tests/test_run_script.py
+exit 0
+.....                                                                    [100%]
+5 passed in 0.06s
+== C3 test -x run.sh && bash -n run.sh && git check-ignore -q .env && ! git check-ignore -q .env.example && test -z "$(git ls-files .env)"
+exit 0
+== C4 for v in SONAR_GOOGLE_CLIENT_ID SONAR_GOOGLE_CLIENT_SECRET SONAR_SESSION_SECRET SONAR_BASE_URL SONAR_API_TOKEN SONAR_DB_PATH SONAR_PORT SONAR_ALLOWED_EMAILS; do grep -q "^$v=" .env.example || { echo "missing $v"; exit 1; }; done && for f in deploy/README.md README.md AGENTS.md; do grep -q 'run.sh' "$f" || { echo "no run.sh in $f"; exit 1; }; done
+exit 0
+== C6 uv run pytest -q -x && uv run ruff check .
+exit 0
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 21%]
+........................................................................ [ 28%]
+........................................................................ [ 35%]
+........................................................................ [ 43%]
+........................................................................ [ 50%]
+........................................................................ [ 57%]
+.......................................................ssss............. [ 64%]
+........................................................................ [ 71%]
+........................................................................ [ 78%]
+........................................................................ [ 86%]
+........................................................................ [ 93%]
+...................................................................      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /home/user/Sonar/.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/user/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+999 passed, 4 skipped, 2 warnings in 35.69s
+All checks passed!

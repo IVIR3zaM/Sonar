@@ -36,9 +36,17 @@ Register `<SONAR_BASE_URL>/auth/callback` as the authorized redirect URI of the 
 
 Other settings:
 
+- `SONAR_ALLOWED_EMAILS`: optional, comma-separated. `./run.sh` syncs it into the access list on every start; empty leaves the list untouched.
 - `SONAR_API_TOKEN`: optional. With sign-in on, `/api/*` (and only the API, never pages) also accepts `Authorization: Bearer <token>`, for scripts and Claude Code.
 - `SONAR_DB_PATH`: the SQLite file (default `data/sonar.db`).
 - `SONAR_PORT`: the port (default `8000`).
+
+To run with these settings, copy the template and start through the script. It loads `.env` (gitignored), syncs `SONAR_ALLOWED_EMAILS` and starts Sonar:
+
+```bash
+cp .env.example .env   # then edit .env
+./run.sh
+```
 
 Only emails on the access list can sign in. Manage it from the command line (each accepts `--db PATH`):
 

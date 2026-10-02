@@ -11,7 +11,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date
 
-from sonar.categorization.store import transactions_with_category
+from sonar.categorization.store import list_categories, transactions_with_category
+from sonar.debts.drafts import DraftPrefill, draft_prefill, qualifies
 from sonar.debts.model import (
     Installment,
     InstallmentStatus,
@@ -35,6 +36,10 @@ class DebtNotFound(LookupError):
     """Raised by delete_debt when `id` has no matching row."""
 
 
+class DraftNotFound(LookupError):
+    """Raised by complete_draft when `id` has no open draft."""
+
+
 @dataclass(frozen=True)
 class StoredDebt:
     id: int
@@ -47,6 +52,13 @@ class DebtView:
     debt: Installment | Loan
     status: InstallmentStatus | LoanStatus
     linked_payments: tuple[RecurringPayment, ...]
+
+
+@dataclass(frozen=True)
+class DebtDraft:
+    id: int
+    detection_key: str
+    prefill: DraftPrefill
 
 
 def debt_overview(conn: sqlite3.Connection, today: date) -> list[DebtView]:
@@ -88,47 +100,97 @@ def remaining_cents(view: DebtView) -> int:
     return view.status.projected_balance_cents
 
 
+def sync_drafts(conn: sqlite3.Connection) -> list[DebtDraft]:
+    """Bring the drafts in line with the payments, then return the open ones by name.
+
+    Completed rows are never touched: a payment that became a debt once never
+    gets a draft again, even after that debt is deleted (SPEC §13 Draft debts).
+    """
+    txs = [tx for tx, _category in transactions_with_category(conn)]
+    debt_categories = {c.name for c in list_categories(conn) if c.debt}
+    debt_keys = frozenset().union(*(linked_keys(s.debt, txs) for s in list_debts(conn)))
+    prefills = {
+        payment.detection_key: prefill
+        for payment in list_payments(conn)
+        if qualifies(payment, debt_categories, debt_keys)
+        and (prefill := draft_prefill(payment, txs)) is not None
+    }
+    with conn:
+        stored = {key for (key,) in conn.execute("SELECT detection_key FROM debt_drafts")}
+        conn.executemany(
+            "INSERT INTO debt_drafts (detection_key) VALUES (?)",
+            [(key,) for key in sorted(prefills.keys() - stored)],
+        )
+        conn.executemany(
+            "DELETE FROM debt_drafts WHERE detection_key = ? AND status = 'open'",
+            [(key,) for key in stored - prefills.keys()],
+        )
+        rows = conn.execute(
+            "SELECT id, detection_key FROM debt_drafts WHERE status = 'open'"
+        ).fetchall()
+    drafts = [DebtDraft(id, key, prefills[key]) for id, key in rows]
+    return sorted(drafts, key=lambda draft: draft.prefill.name)
+
+
+def complete_draft(conn: sqlite3.Connection, draft_id: int, debt: Installment | Loan) -> int:
+    """Turn an open draft into an ordinary debt; both writes commit together."""
+    with conn:
+        row = conn.execute(
+            "SELECT 1 FROM debt_drafts WHERE id = ? AND status = 'open'", (draft_id,)
+        ).fetchone()
+        if row is None:
+            raise DraftNotFound(draft_id)
+        debt_id = _insert_debt(conn, debt)
+        conn.execute("UPDATE debt_drafts SET status = 'completed' WHERE id = ?", (draft_id,))
+    return debt_id
+
+
 def add_debt(conn: sqlite3.Connection, debt: Installment | Loan) -> int:
     """Insert one debt, writing only the columns its kind uses."""
     with conn:
-        if isinstance(debt, Installment):
-            cursor = conn.execute(
-                """
-                INSERT INTO debts (
-                    kind, name, rate_cents, match_field, match_value,
-                    total_cents, interval_months, first_payment_date, payments_count
-                ) VALUES ('installment', ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    debt.name,
-                    debt.rate_cents,
-                    debt.match.field,
-                    debt.match.value,
-                    debt.total_cents,
-                    debt.interval_months,
-                    debt.first_payment_date.isoformat(),
-                    debt.payments_count,
-                ),
-            )
-        else:
-            cursor = conn.execute(
-                """
-                INSERT INTO debts (
-                    kind, name, rate_cents, match_field, match_value,
-                    balance_cents, balance_as_of, interest_bp
-                ) VALUES ('loan', ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    debt.name,
-                    debt.rate_cents,
-                    debt.match.field,
-                    debt.match.value,
-                    debt.balance_cents,
-                    debt.balance_as_of.isoformat(),
-                    debt.interest_bp,
-                ),
-            )
-        return cursor.lastrowid
+        return _insert_debt(conn, debt)
+
+
+def _insert_debt(conn: sqlite3.Connection, debt: Installment | Loan) -> int:
+    # No transaction of its own, so complete_draft can pair it with its update.
+    if isinstance(debt, Installment):
+        cursor = conn.execute(
+            """
+            INSERT INTO debts (
+                kind, name, rate_cents, match_field, match_value,
+                total_cents, interval_months, first_payment_date, payments_count
+            ) VALUES ('installment', ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                debt.name,
+                debt.rate_cents,
+                debt.match.field,
+                debt.match.value,
+                debt.total_cents,
+                debt.interval_months,
+                debt.first_payment_date.isoformat(),
+                debt.payments_count,
+            ),
+        )
+    else:
+        cursor = conn.execute(
+            """
+            INSERT INTO debts (
+                kind, name, rate_cents, match_field, match_value,
+                balance_cents, balance_as_of, interest_bp
+            ) VALUES ('loan', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                debt.name,
+                debt.rate_cents,
+                debt.match.field,
+                debt.match.value,
+                debt.balance_cents,
+                debt.balance_as_of.isoformat(),
+                debt.interest_bp,
+            ),
+        )
+    return cursor.lastrowid
 
 
 def list_debts(conn: sqlite3.Connection) -> list[StoredDebt]:

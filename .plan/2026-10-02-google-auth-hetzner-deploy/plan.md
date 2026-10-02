@@ -1,5 +1,5 @@
 # Google login and Hetzner deploy
-status: READY
+status: RUNNING
 created: 2026-10-02 · updated: 2026-10-02
 goal: Sonar runs on a real domain behind Google login with a DB allow-list, deployed by terraform onto the Gateway VM, with one instruction file and loans drafted from fixed payments
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -38,7 +38,7 @@ budgets: 2 tries per brief · 2 replans per node
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | preflight | check | - | -/sonnet | 0 | 0 | TODO | |
+| N01 | preflight | check | - | -/sonnet | 1 | 0 | DONE | |
 | N02 | AGENTS.md as the single instruction source | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N03 | allowed emails store and CLI | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | Google login and sessions | exec | N03 | opus/opus | 0 | 0 | TODO | |

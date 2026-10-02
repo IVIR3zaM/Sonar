@@ -1,5 +1,5 @@
 # Google login and Hetzner deploy
-status: RUNNING
+status: WAITING
 created: 2026-10-02 · updated: 2026-10-02
 goal: Sonar runs on a real domain behind Google login with a DB allow-list, deployed by terraform onto the Gateway VM, with one instruction file and loans drafted from fixed payments
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -49,6 +49,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N09 | terraform deploy module | exec | N05 | opus/opus | 1 | 1 | DONE | |
 | N10 | Google setup and deploy guide | exec | N08,N09 | sonnet/sonnet | 1 | 1 | DONE | |
 | N11 | owner Google OAuth setup | gate | N10 | -/- | 0 | 0 | TODO | |
-| N12 | visual check | check | N08 | -/sonnet | 0 | 0 | BRIEFING | |
-| N13 | owner deploy to the Gateway VM | gate | N11,N12 | -/- | 0 | 0 | TODO | |
+| N12 | HTTP check of changed pages | check | N08 | -/sonnet | 1 | 1 | DONE | |
+| N13 | owner deploy to the Gateway VM | gate | N15 | -/- | 0 | 0 | TODO | |
 | N14 | plan acceptance | check | N13 | -/opus | 0 | 0 | TODO | |
+| N15 | owner visual check in a browser | gate | N11,N12 | -/- | 0 | 0 | TODO | |

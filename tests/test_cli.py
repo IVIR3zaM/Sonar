@@ -133,3 +133,29 @@ def test_main_dispatches_import_categories_from_argv(tmp_path, monkeypatch):
     main()
 
     assert calls == [(Path("cats.toml"), Path("data/x.db"))]
+
+
+def test_import_categories_db_defaults_to_sonar_db_path(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "sonar.__main__.import_categories", lambda path, db: calls.append((path, db))
+    )
+    monkeypatch.setenv("SONAR_DB_PATH", str(tmp_path / "env.db"))
+    monkeypatch.setattr("sys.argv", ["sonar", "import-categories", "cats.toml"])
+
+    main()
+
+    assert calls == [(Path("cats.toml"), tmp_path / "env.db")]
+
+
+def test_import_categories_db_defaults_to_data_sonar_db(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "sonar.__main__.import_categories", lambda path, db: calls.append((path, db))
+    )
+    monkeypatch.delenv("SONAR_DB_PATH", raising=False)
+    monkeypatch.setattr("sys.argv", ["sonar", "import-categories", "cats.toml"])
+
+    main()
+
+    assert calls == [(Path("cats.toml"), Path("data/sonar.db"))]

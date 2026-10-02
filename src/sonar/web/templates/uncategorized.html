@@ -58,7 +58,7 @@
     {% endif %}
   {% endcall %}
 
-  {% call card(title="Copy for Claude Code", subtitle="Paste this into the categorization workflow (CLAUDE.md).") %}
+  {% call card(title="Copy for Claude Code", subtitle="Paste this into the categorization workflow (AGENTS.md).") %}
     <pre id="categorization-request" class="max-h-80 overflow-auto rounded-control bg-surface-muted p-3 font-mono text-xs whitespace-pre-wrap text-ink">{{ request_text }}</pre>
     <div class="mt-3">
       {{ button("Copy", variant="secondary", type="button", id="copy-request") }}

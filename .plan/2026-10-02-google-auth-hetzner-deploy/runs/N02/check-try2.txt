@@ -1,0 +1,46 @@
+== C1 test "$(cat CLAUDE.md)" = "@AGENTS.md" && test "$(wc -l < CLAUDE.md)" -eq 1
+exit 0
+== C2 diff <(git show HEAD:AGENTS.md | sed -n '/planzilla:begin/,/planzilla:end/p') <(sed -n '/planzilla:begin/,/planzilla:end/p' AGENTS.md) && tail -n 1 AGENTS.md | grep -qx '<!-- planzilla:end -->' && head -n 1 AGENTS.md | grep -qx '# Sonar'
+exit 2
+sh: 1: Syntax error: "(" unexpected
+== C4 uv run pytest -q tests/categorization/test_export.py tests/web/test_uncategorized_page.py && grep -qF 'HEADER = "Categorization request: follow the Categorization workflow in AGENTS.md."' src/sonar/categorization/export.py
+exit 0
+...............                                                          [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/user/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+15 passed, 1 warning in 0.93s
+== C5 test -z "$(git grep -l 'CLAUDE\.md' -- . ':!.plan/2026-*' ':!.planzilla' ':!.agents' ':!.claude' ':!AGENTS.md' ':!SPEC.md')"
+exit 0
+== C7 TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && grep -q 'categorization workflow (AGENTS.md)' src/sonar/web/templates/uncategorized.html
+exit 0
+≈ tailwindcss v4.3.3
+
+Done in 109ms
+== C8 test -z "$(git status --porcelain -- .planzilla .agents .claude)"
+exit 0
+== C9 uv run pytest -q -x && uv run ruff check .
+exit 0
+........................................................................ [  8%]
+........................................................................ [ 17%]
+........................................................................ [ 25%]
+........................................................................ [ 34%]
+........................................................................ [ 43%]
+........................................................................ [ 51%]
+........................................................................ [ 60%]
+...................ssss................................................. [ 69%]
+........................................................................ [ 77%]
+........................................................................ [ 86%]
+........................................................................ [ 95%]
+.........................................                                [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/user/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+829 passed, 4 skipped, 1 warning in 28.55s
+All checks passed!

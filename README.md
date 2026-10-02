@@ -32,7 +32,7 @@ Sonar has no rule editor in the UI. You manage categories and rules by talking t
 2. Claude reads the current categories, rules and uncategorized transactions through the local JSON API (`/api/categories`, `/api/rules`, `/api/uncategorized`).
 3. It proposes changes, and once you confirm, writes them through the same API.
 
-Rules live only in your local database, so personal names, IBANs and creditor IDs never end up in the repository. The full workflow is in [CLAUDE.md](CLAUDE.md).
+Rules live only in your local database, so personal names, IBANs and creditor IDs never end up in the repository. The full workflow is in [AGENTS.md](AGENTS.md).
 
 ## Development
 
@@ -46,7 +46,7 @@ TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.cs
 Stack: FastAPI, Jinja2 and HTMX, SQLite with plain SQL and numbered migrations, and Tailwind CSS v4 (prebuilt, so running the app needs no build step). Money is stored as integer cents.
 
 - [SPEC.md](SPEC.md) describes the intended behavior.
-- [CLAUDE.md](CLAUDE.md) holds the engineering rules and the plan-driven workflow: a planner, executor and verifier agent build each change test-first.
+- [AGENTS.md](AGENTS.md) holds the engineering rules and the plan-driven workflow: a planner, executor and verifier agent build each change test-first.
 
 ### Adding a bank format
 

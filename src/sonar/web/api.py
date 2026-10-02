@@ -3,7 +3,7 @@
 Thin HTTP translation over `categorization.service`: every endpoint reads or
 writes through its functions and nothing else, so validation, regex and
 amount parsing exist in exactly one place (shared with the Categories page).
-Also used by the CLAUDE.md Categorization workflow, which reads and writes
+Also used by the AGENTS.md Categorization workflow, which reads and writes
 categories and rules here instead of editing a file.
 """
 

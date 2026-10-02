@@ -1,6 +1,6 @@
 # Planzilla config (FORMAT §8). A missing key takes its default; a plan's header wins over this file.
 
-# Engineering rules (TDD, structure, visual check, SPEC §11/§12 check node) live in CLAUDE.md, not here.
+# Engineering rules (TDD, structure, visual check, SPEC §11/§12 check node) live in AGENTS.md, not here.
 
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
 verify_fast: uv run pytest -q -x && uv run ruff check .

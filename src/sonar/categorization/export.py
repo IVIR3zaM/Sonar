@@ -1,7 +1,7 @@
 """Build the copy-to-Claude-Code export for uncategorized transactions (SPEC §5).
 
 The "Uncategorized" page turns unmatched rows into one compact text block.
-Pasting it into Claude Code triggers the CLAUDE.md Categorization workflow,
+Pasting it into Claude Code triggers the AGENTS.md Categorization workflow,
 which reads and writes categories and rules through the JSON API (N17)
 rather than editing a file directly. `group_uncategorized` builds the same
 grouped rows the API's GET /api/uncategorized returns, so the text export
@@ -18,7 +18,7 @@ from datetime import date
 from sonar.importing.dedup import normalize_text
 from sonar.transactions import ParsedTransaction
 
-HEADER = "Categorization request: follow the Categorization workflow in CLAUDE.md."
+HEADER = "Categorization request: follow the Categorization workflow in AGENTS.md."
 
 _NO_COUNTERPARTY = "(no counterparty)"
 _PURPOSE_MAX_LEN = 80

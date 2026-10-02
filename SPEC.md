@@ -1,6 +1,6 @@
 # Sonar: Product Spec
 
-What the app does. It is the source of truth for behavior. How we work (the graph workflow, engineering rules, conventions, token discipline) lives in `CLAUDE.md`. Section numbers are stable, because code, migrations and plans cite them (`SPEC §6`).
+What the app does. It is the source of truth for behavior. How we work (the graph workflow, engineering rules, conventions, token discipline) lives in `AGENTS.md`. Section numbers are stable, because code, migrations and plans cite them (`SPEC §6`).
 
 ## 0. What we're building
 
@@ -11,11 +11,11 @@ A local web app for our household. It imports bank exports, categorizes transact
 
 ## 1. How we work
 
-Moved to `CLAUDE.md` (Graph workflow). Plans live in `.plan/`.
+Moved to `AGENTS.md` (Graph workflow). Plans live in `.plan/`.
 
 ## 2. Engineering rules
 
-Moved to `CLAUDE.md` (Engineering rules). The Verifier enforces them.
+Moved to `AGENTS.md` (Engineering rules). The Verifier enforces them.
 
 ## 3. Stack (already decided)
 
@@ -149,7 +149,7 @@ One page that answers "are we going to be OK?" at a glance.
 
 ## 10. Milestones
 
-M0–M6 are done. Their task graphs, replans and commits are in `.plan/2026-09-23-initial-build-m0-m6.md`. New work gets a new plan (`CLAUDE.md`).
+M0–M6 are done. Their task graphs, replans and commits are in `.plan/2026-09-23-initial-build-m0-m6.md`. New work gets a new plan (`AGENTS.md`).
 
 - **M0 Skeleton:** uv project, ruff, pytest, FastAPI hello page, migration runner, `CLAUDE.md`, `.claude/agents/`, `.gitignore`.
 - **M1 Import:** importer registry, Deutsche Bank CSV importer built from the sample in `samples/`, idempotent storage, upload page with results. Importing the real sample must succeed.
@@ -181,7 +181,7 @@ Presentation only. Domain modules (`cashflow/forecast.py`, `cashflow/service.py`
 
 **Tooling**
 
-- Tailwind source is `src/sonar/web/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command is in `CLAUDE.md` Setup.
+- Tailwind source is `src/sonar/web/static/src/app.css`: `@import "tailwindcss"`, `@source` pointing at the templates, `@theme` tokens (colors, radius, fonts) and a dark variant. The build command is in `AGENTS.md` Setup.
 - Mount `StaticFiles` at `/static` in `create_app`. Vendor htmx under `static/vendor/`.
 - No JS framework. Use native `<details>`/`<dialog>`, `hx-confirm` and small inline progressive-enhancement scripts only.
 
@@ -211,7 +211,7 @@ Presentation only. Domain modules (`cashflow/forecast.py`, `cashflow/service.py`
 - Every POST that returns a plain-text 400 today re-renders its page with status 400, an inline `#form-error` alert, and the entered values kept. GET and error paths share one render helper per page.
 - A 404 renders a styled `error.html`.
 
-**Tests:** page tests assert on stable hooks (ids, `data-*` attributes) through `tests/html.py`; see `CLAUDE.md` UI conventions.
+**Tests:** page tests assert on stable hooks (ids, `data-*` attributes) through `tests/html.py`; see `AGENTS.md` UI conventions.
 
 **UI acceptance (the Verifier checks this on any UI change)**
 
@@ -240,3 +240,4 @@ Presentation only. Domain modules (`cashflow/forecast.py`, `cashflow/service.py`
 - Keep the lights on months (§9, §12): a month counts as complete only when it ends on or before both the last imported booking and the balance date. The dashboard and the Keep the lights on page learn from the same months, and the page shows the per-day figures (expected, lowest and highest month, months used) that the dashboard multiplies by the days from the balance date to payday.
 - Expected at payday (§9, overrides the "against 0" clause of the Forecast bullet above): expected = balance − due − expected Keep the lights on. At or above 0 the dashboard says "About X to spare"; below 0 but at or above the overdraft limit, "About X into your overdraft, Y before the limit" (Y = expected − limit); below the limit, "About Y past your overdraft limit".
 - Estimate date (§9, overrides "today" in the dashboard): every dashboard estimate is based on the balance's as-of date, the estimate date: the next payday is the first payday after it, the window is [estimate date + 1, payday − 1], and fixed costs and debt remainders are computed as of it; days to payday still count from today and are negative when the data predates that payday. The dashboard shows "Estimated from <date>", labels the runway marker "Balance on <date>", and when the payday has passed it says the data ends before it and links to Import.
+- Instructions (§1, §2, §5): the how-to-work rules and the Categorization workflow live in `AGENTS.md`; `CLAUDE.md` is the one-line `@AGENTS.md` import. The export's first line reads exactly `Categorization request: follow the Categorization workflow in AGENTS.md.`

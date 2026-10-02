@@ -25,7 +25,7 @@ def test_first_line_is_exact() -> None:
     request = build_categorization_request([])
 
     assert request.splitlines()[0] == HEADER
-    assert HEADER == "Categorization request: follow the Categorization workflow in CLAUDE.md."
+    assert HEADER == "Categorization request: follow the Categorization workflow in AGENTS.md."
 
 
 def test_empty_input_gives_header_only() -> None:

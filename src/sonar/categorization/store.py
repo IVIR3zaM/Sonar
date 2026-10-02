@@ -43,6 +43,7 @@ class Category:
     name: str
     type: str
     rule_count: int
+    debt: bool
 
 
 @dataclass(frozen=True)
@@ -102,13 +103,19 @@ def load_stored_taxonomy(conn: sqlite3.Connection) -> Taxonomy:
 
 
 def replace_taxonomy(conn: sqlite3.Connection, taxonomy: Taxonomy) -> None:
-    """Delete and rewrite both tables in one transaction (the CLI import path)."""
+    """Delete and rewrite both tables in one transaction (the CLI import path).
+
+    The TOML has no debt flag, so a category keeps the one it had when its
+    name survives and it is still `fixed`; every other category starts unflagged.
+    """
     with conn:
+        flagged = {row[0] for row in conn.execute("SELECT name FROM categories WHERE debt = 1")}
         conn.execute("DELETE FROM category_rules")
         conn.execute("DELETE FROM categories")
         category_ids = {
             name: conn.execute(
-                "INSERT INTO categories (name, type) VALUES (?, ?)", (name, category_type)
+                "INSERT INTO categories (name, type, debt) VALUES (?, ?, ?)",
+                (name, category_type, name in flagged and category_type == groups.FIXED),
             ).lastrowid
             for name, category_type in taxonomy.categories.items()
         }
@@ -123,29 +130,39 @@ def replace_taxonomy(conn: sqlite3.Connection, taxonomy: Taxonomy) -> None:
 def list_categories(conn: sqlite3.Connection) -> list[Category]:
     rows = conn.execute(
         """
-        SELECT c.id, c.name, c.type, COUNT(r.id)
+        SELECT c.id, c.name, c.type, COUNT(r.id), c.debt
         FROM categories c LEFT JOIN category_rules r ON r.category_id = c.id
         GROUP BY c.id ORDER BY c.id
         """
     ).fetchall()
-    return [Category(id=i, name=name, type=t, rule_count=n) for i, name, t, n in rows]
+    return [
+        Category(id=i, name=name, type=t, rule_count=n, debt=bool(debt))
+        for i, name, t, n, debt in rows
+    ]
 
 
-def add_category(conn: sqlite3.Connection, name: str, type: str) -> int:
-    _validate_category(name, type)
+def add_category(conn: sqlite3.Connection, name: str, type: str, debt: bool = False) -> int:
+    _validate_category(name, type, debt)
     with conn:
         _require_name_available(conn, name)
         return conn.execute(
-            "INSERT INTO categories (name, type) VALUES (?, ?)", (name, type)
+            "INSERT INTO categories (name, type, debt) VALUES (?, ?, ?)", (name, type, debt)
         ).lastrowid
 
 
-def update_category(conn: sqlite3.Connection, id: int, name: str, type: str) -> None:
-    _validate_category(name, type)
+def update_category(
+    conn: sqlite3.Connection, id: int, name: str, type: str, debt: bool | None = None
+) -> None:
+    """Rewrite one category; `debt=None` keeps the stored flag."""
     with conn:
-        old_name = _existing_category_name(conn, id)
+        old_name, stored_debt = _existing_category(conn, id)
+        debt = stored_debt if debt is None else debt
+        _validate_category(name, type, debt)
         _require_name_available(conn, name, exclude_id=id)
-        conn.execute("UPDATE categories SET name = ?, type = ? WHERE id = ?", (name, type, id))
+        conn.execute(
+            "UPDATE categories SET name = ?, type = ?, debt = ? WHERE id = ?",
+            (name, type, debt, id),
+        )
         if name != old_name:
             conn.execute(
                 "UPDATE transactions SET category = ? WHERE category = ?", (name, old_name)
@@ -253,11 +270,13 @@ def _move_rule(conn: sqlite3.Connection, id: int, new_position: int) -> None:
     conn.execute("UPDATE category_rules SET position = ? WHERE id = ?", (new_position, id))
 
 
-def _validate_category(name: str, type: str) -> None:
+def _validate_category(name: str, type: str, debt: bool) -> None:
     if not name or not name.strip():
         raise ValueError("category name must not be blank")
     if type not in groups.TYPES:
         raise ValueError(f"unknown category type {type!r}")
+    if debt and type != groups.FIXED:
+        raise ValueError("only fixed categories can be debt categories")
 
 
 def _require_name_available(
@@ -272,11 +291,15 @@ def _require_name_available(
         raise ValueError(f"category name {name!r} already exists")
 
 
-def _existing_category_name(conn: sqlite3.Connection, id: int) -> str:
-    row = conn.execute("SELECT name FROM categories WHERE id = ?", (id,)).fetchone()
+def _existing_category(conn: sqlite3.Connection, id: int) -> tuple[str, bool]:
+    row = conn.execute("SELECT name, debt FROM categories WHERE id = ?", (id,)).fetchone()
     if row is None:
         raise CategoryNotFound(id)
-    return row[0]
+    return row[0], bool(row[1])
+
+
+def _existing_category_name(conn: sqlite3.Connection, id: int) -> str:
+    return _existing_category(conn, id)[0]
 
 
 def _category_types(conn: sqlite3.Connection) -> dict[str, str]:

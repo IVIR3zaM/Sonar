@@ -241,3 +241,89 @@ def test_list_categories_reports_rule_counts():
     add_category(conn, "Fake Empty", "fixed")
     by_name = {c.name: c.rule_count for c in list_categories(conn)}
     assert by_name["Fake Empty"] == 0
+
+
+def test_add_category_stores_the_debt_flag_and_defaults_to_false():
+    conn = _connect_migrated()
+    add_category(conn, "Fake Loan", "fixed", debt=True)
+    add_category(conn, "Fake Rent", "fixed")
+
+    by_name = {c.name: c.debt for c in list_categories(conn)}
+
+    assert by_name["Fake Loan"] is True
+    assert by_name["Fake Rent"] is False
+
+
+def test_debt_flag_on_a_non_fixed_category_raises_and_leaves_the_table_unchanged():
+    conn = _connect_migrated()
+    before = list_categories(conn)
+
+    with pytest.raises(ValueError, match="debt"):
+        add_category(conn, "Fake Pets", "occasional", debt=True)
+
+    assert list_categories(conn) == before
+
+
+def test_update_category_keeps_the_flag_when_debt_is_none():
+    conn = _connect_migrated()
+    loans = next(c for c in list_categories(conn) if c.debt)
+
+    update_category(conn, loans.id, "Fake Credits", "fixed")
+
+    assert next(c for c in list_categories(conn) if c.id == loans.id).debt is True
+
+
+def test_update_category_sets_and_clears_the_flag():
+    conn = _connect_migrated()
+    housing = next(c for c in list_categories(conn) if c.name == "Housing")
+
+    update_category(conn, housing.id, "Housing", "fixed", debt=True)
+    assert next(c for c in list_categories(conn) if c.id == housing.id).debt is True
+
+    update_category(conn, housing.id, "Housing", "fixed", debt=False)
+    assert next(c for c in list_categories(conn) if c.id == housing.id).debt is False
+
+
+def test_regrouping_a_flagged_category_raises_unless_the_flag_is_cleared():
+    conn = _connect_migrated()
+    loans = next(c for c in list_categories(conn) if c.debt)
+
+    with pytest.raises(ValueError, match="debt"):
+        update_category(conn, loans.id, loans.name, "occasional")
+    with pytest.raises(ValueError, match="debt"):
+        update_category(conn, loans.id, loans.name, "occasional", debt=True)
+
+    update_category(conn, loans.id, loans.name, "occasional", debt=False)
+    updated = next(c for c in list_categories(conn) if c.id == loans.id)
+    assert (updated.type, updated.debt) == ("occasional", False)
+
+
+def test_replace_taxonomy_keeps_the_flag_of_a_surviving_fixed_category():
+    conn = _connect_migrated()
+    add_category(conn, "Fake Regrouped", "fixed", debt=True)
+    toml = """
+[[category]]
+name = "Loans & Installments"
+type = "fixed"
+
+[[category]]
+name = "Fake Regrouped"
+type = "occasional"
+
+[[category]]
+name = "Fake New"
+type = "fixed"
+
+[[category]]
+name = "Housing"
+type = "fixed"
+"""
+
+    replace_taxonomy(conn, parse_taxonomy(toml))
+
+    assert {c.name: c.debt for c in list_categories(conn)} == {
+        "Loans & Installments": True,
+        "Fake Regrouped": False,
+        "Fake New": False,
+        "Housing": False,
+    }

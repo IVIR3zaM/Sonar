@@ -278,3 +278,107 @@ def test_settings_and_uncategorized_link_to_categories(tmp_path):
 
     assert settings.select_one('a[href="/categories"]') is not None
     assert uncategorized.select_one('a[href="/categories"]') is not None
+
+
+def _row(page, category_id: int):
+    return page.select_one(f'[data-category-id="{category_id}"]')
+
+
+def test_only_the_seeded_loans_row_shows_the_debt_badge(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+    loans_id = _category_id(db_path, "Loans & Installments")
+
+    with TestClient(app) as client:
+        page = soup(client.get("/categories"))
+
+    flagged = [
+        row for row in page.select("[data-category-id]") if row.select_one("[data-field=debt]")
+    ]
+    assert [row["data-category-id"] for row in flagged] == [str(loans_id)]
+    assert text(flagged[0].select_one("[data-field=debt]")) == "Loans"
+
+
+def test_add_with_yes_shows_the_badge_and_default_is_no(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+
+    with TestClient(app) as client:
+        form = soup(client.get("/categories")).select_one("#add-category-form")
+        selected = form.select_one('select[name="debt"] option[selected]')
+        assert selected["value"] == "no"
+
+        client.post("/categories", data={"name": "Car loan", "group": "fixed", "debt": "yes"})
+        client.post("/categories", data={"name": "Rent", "group": "fixed"})
+        page = soup(client.get("/categories"))
+
+    assert _row(page, _category_id(db_path, "Car loan")).select_one("[data-field=debt]")
+    assert _row(page, _category_id(db_path, "Rent")).select_one("[data-field=debt]") is None
+
+
+def test_edit_form_prefills_the_current_debt_value(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+    loans_id = _category_id(db_path, "Loans & Installments")
+    housing_id = _category_id(db_path, "Housing")
+
+    with TestClient(app) as client:
+        page = soup(client.get("/categories"))
+
+    def selected(category_id: int) -> str:
+        option = _row(page, category_id).select_one('select[name="debt"] option[selected]')
+        return option["value"]
+
+    assert selected(loans_id) == "yes"
+    assert selected(housing_id) == "no"
+
+
+def test_edit_to_no_removes_the_badge(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+    loans_id = _category_id(db_path, "Loans & Installments")
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/categories/{loans_id}/edit",
+            data={"name": "Loans & Installments", "group": "fixed", "debt": "no"},
+            follow_redirects=False,
+        )
+        page = soup(client.get("/categories"))
+
+    assert response.status_code == 303
+    assert _row(page, loans_id).select_one("[data-field=debt]") is None
+
+
+def test_yes_on_a_non_fixed_group_is_a_400_that_keeps_the_entered_values(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/categories", data={"name": "Pets", "group": "occasional", "debt": "yes"}
+        )
+
+    assert response.status_code == 400
+    page = soup(response)
+    assert (
+        text(page.select_one("#form-error"))
+        == "Only Fixed payments categories can hold loans and installments."
+    )
+    form = page.select_one("#add-category-form")
+    assert form.select_one('input[name="name"]')["value"] == "Pets"
+    assert form.select_one('select[name="group"] option[selected]')["value"] == "occasional"
+    assert form.select_one('select[name="debt"] option[selected]')["value"] == "yes"
+    assert "Pets" not in _category_names(db_path)
+
+
+def test_edit_to_a_non_fixed_group_while_flagged_is_a_400_that_keeps_the_values(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+    loans_id = _category_id(db_path, "Loans & Installments")
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/categories/{loans_id}/edit",
+            data={"name": "Credits", "group": "occasional", "debt": "yes"},
+        )
+
+    assert response.status_code == 400
+    row = _row(soup(response), loans_id)
+    assert "can hold loans and installments" in text(row.select_one("#form-error"))
+    assert row.select_one('input[name="name"]')["value"] == "Credits"
+    assert row.select_one('select[name="debt"] option[selected]')["value"] == "yes"

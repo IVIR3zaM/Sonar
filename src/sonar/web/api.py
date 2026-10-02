@@ -16,7 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError, field_validator
 
 from sonar.categorization.export import group_uncategorized
 from sonar.categorization.service import (
@@ -58,6 +58,7 @@ def _numeric_as_text(value: object) -> object:
 class CategoryIn(_StrictModel):
     name: str | None = None
     group: str | None = None
+    debt: StrictBool | None = None
 
 
 class RuleIn(_StrictModel):
@@ -142,7 +143,9 @@ def build_api_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         conn = connect(db_path)
         try:
             try:
-                category_id = add_category(conn, today(), body.name or "", body.group or "")
+                category_id = add_category(
+                    conn, today(), body.name or "", body.group or "", bool(body.debt)
+                )
             except TaxonomyError as error:
                 return JSONResponse({"error": error.message, "field": error.field}, status_code=400)
             item = _category_item(conn, category_id)
@@ -159,7 +162,7 @@ def build_api_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         conn = connect(db_path)
         try:
             try:
-                update_category(conn, today(), id, body.name or "", body.group or "")
+                update_category(conn, today(), id, body.name or "", body.group or "", body.debt)
             except TaxonomyError as error:
                 return JSONResponse({"error": error.message, "field": error.field}, status_code=400)
             except CategoryNotFound as error:

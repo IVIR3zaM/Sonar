@@ -505,3 +505,37 @@ def test_move_rule_unknown_id_raises_rule_not_found(tmp_path):
             move_rule(conn, TODAY, 999_999, "1")
     finally:
         conn.close()
+
+
+def test_debt_flag_round_trips_through_the_service_and_is_kept_by_updates(tmp_path):
+    db_path = tmp_path / "t.db"
+    _fresh_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        loan_id = add_category(conn, TODAY, "Fake Loan", "fixed", debt=True)
+        assert next(c for c in list_categories(conn) if c.id == loan_id).debt is True
+
+        update_category(conn, TODAY, loan_id, "Fake Credit", "fixed")
+        assert next(c for c in list_categories(conn) if c.id == loan_id).debt is True
+
+        update_category(conn, TODAY, loan_id, "Fake Credit", "fixed", debt=False)
+        assert next(c for c in list_categories(conn) if c.id == loan_id).debt is False
+    finally:
+        conn.close()
+
+
+def test_debt_on_a_non_fixed_group_raises_a_friendly_error_on_field_debt(tmp_path):
+    db_path = tmp_path / "t.db"
+    _fresh_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        with pytest.raises(TaxonomyError) as error:
+            add_category(conn, TODAY, "Fake Pets", "occasional", debt=True)
+
+        assert error.value.field == "debt"
+        assert (
+            error.value.message == "Only Fixed payments categories can hold loans and installments."
+        )
+        assert "Fake Pets" not in {c.name for c in list_categories(conn)}
+    finally:
+        conn.close()

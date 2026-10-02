@@ -45,6 +45,7 @@
             <div class="flex min-w-0 flex-wrap items-center gap-2">
               <span data-field="name" class="break-words font-medium text-ink [overflow-wrap:anywhere]">{{ category.name }}</span>
               {{ badge(section.label, attrs={"data-field": "group"}) }}
+              {% if category.debt %}{{ badge("Loans", attrs={"data-field": "debt"}) }}{% endif %}
               <span data-field="rule_count" class="text-xs text-ink-muted">{{ category.rule_count }} rule{{ "s" if category.rule_count != 1 else "" }}</span>
             </div>
             <button type="button" data-drawer-toggle aria-controls="{{ drawer_id }}" aria-expanded="{{ 'true' if has_error else 'false' }}" aria-label="Edit {{ category.name }}"
@@ -58,6 +59,7 @@
               {{ form_error(row.edit_error) }}
               <div class="col-span-2">{{ field("name", "Name", value=(row.edit_error.fields.name if row.edit_error else category.name), id="edit-category-name-" ~ category.id, required=true) }}</div>
               <div class="col-span-2">{{ field("group", "Group", value=(row.edit_error.fields.group if row.edit_error else category.group), id="edit-category-group-" ~ category.id, options=group_options, required=true) }}</div>
+              <div class="col-span-2">{{ field("debt", "Loans and installments", value=(row.edit_error.fields.debt if row.edit_error and row.edit_error.fields.debt else ("yes" if category.debt else "no")), id="edit-category-debt-" ~ category.id, options=debt_options) }}</div>
               <div class="col-span-2">{{ button("Save", size="sm") }}</div>
             </form>
             <form method="post" action="/categories/{{ category.id }}/delete" class="mt-4"
@@ -91,6 +93,7 @@
         required=true,
         help="Fixed payments are forecast as they fall due. Keep the lights on is forecast from the 3-month daily average. Occasional payments are shown on Monthly but not forecast. Income and transfers are not spending."
       ) }}
+      {{ field("debt", "Loans and installments", value=(add_error.fields.debt if add_error else "no"), options=debt_options, help="Only Fixed payments categories can hold loans and installments.") }}
     </div>
     <div>{{ button("Add category") }}</div>
   </form>

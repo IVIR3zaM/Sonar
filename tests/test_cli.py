@@ -159,3 +159,35 @@ def test_import_categories_db_defaults_to_data_sonar_db(monkeypatch):
     main()
 
     assert calls == [(Path("cats.toml"), Path("data/sonar.db"))]
+
+
+def test_import_categories_keeps_the_flag_of_a_surviving_fixed_category(tmp_path):
+    db_path = tmp_path / "t.db"
+    toml_path = tmp_path / "categories.toml"
+    toml_path.write_text(
+        """
+[[category]]
+name = "Loans & Installments"
+type = "fixed"
+
+[[category]]
+name = "Fake Regrouped"
+type = "occasional"
+
+[[category]]
+name = "Fake New"
+type = "fixed"
+""",
+        encoding="utf-8",
+    )
+    conn = sqlite3.connect(db_path)
+    apply_migrations(conn, MIGRATIONS_DIR)
+    conn.execute("INSERT INTO categories (name, type, debt) VALUES ('Fake Regrouped', 'fixed', 1)")
+    conn.commit()
+    conn.close()
+    import_categories(toml_path, db_path)
+
+    conn = sqlite3.connect(db_path)
+    flags = dict(conn.execute("SELECT name, debt FROM categories").fetchall())
+    conn.close()
+    assert flags == {"Loans & Installments": 1, "Fake Regrouped": 0, "Fake New": 0}

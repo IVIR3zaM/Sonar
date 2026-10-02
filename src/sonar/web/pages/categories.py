@@ -54,6 +54,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             for group in GROUP_ORDER
         ]
         group_options = [(group, GROUP_LABELS[group]) for group in GROUP_ORDER]
+        debt_options = [("no", "No"), ("yes", "Yes")]
         rule_rows = [
             {
                 "rule": rule,
@@ -69,6 +70,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             {
                 "sections": sections,
                 "group_options": group_options,
+                "debt_options": debt_options,
                 "add_error": errors.get("add"),
                 "rule_rows": rule_rows,
                 "rule_count": len(rule_rows),
@@ -85,17 +87,23 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
 
     @router.post("/categories")
     async def add_category_route(
-        request: Request, name: str = Form(...), group: str = Form(...)
+        request: Request,
+        name: str = Form(...),
+        group: str = Form(...),
+        debt: str = Form("no"),
     ) -> HTMLResponse:
         conn = connect(db_path)
         try:
-            add_category_service(conn, today(), name, group)
+            add_category_service(conn, today(), name, group, debt == "yes")
         except TaxonomyError as error:
             return _render_categories_page(
                 request,
                 status_code=400,
                 errors={
-                    "add": {"message": error.message, "fields": {"name": name, "group": group}}
+                    "add": {
+                        "message": error.message,
+                        "fields": {"name": name, "group": group, "debt": debt},
+                    }
                 },
             )
         finally:
@@ -104,11 +112,17 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
 
     @router.post("/categories/{id}/edit")
     async def edit_category_route(
-        request: Request, id: int, name: str = Form(...), group: str = Form(...)
+        request: Request,
+        id: int,
+        name: str = Form(...),
+        group: str = Form(...),
+        debt: str | None = Form(None),
     ) -> HTMLResponse:
         conn = connect(db_path)
         try:
-            update_category_service(conn, today(), id, name, group)
+            update_category_service(
+                conn, today(), id, name, group, None if debt is None else debt == "yes"
+            )
         except TaxonomyError as error:
             return _render_categories_page(
                 request,
@@ -117,7 +131,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                     "edit": {
                         "id": id,
                         "message": error.message,
-                        "fields": {"name": name, "group": group},
+                        "fields": {"name": name, "group": group, "debt": debt},
                     }
                 },
             )

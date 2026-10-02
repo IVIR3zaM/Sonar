@@ -42,7 +42,7 @@ def test_get_categories_lists_seed_categories_in_group_order(tmp_path):
     items = response.json()
     assert len(items) == 17
     for item in items:
-        assert {"id", "name", "group", "group_label", "rule_count"} == item.keys()
+        assert {"id", "name", "group", "group_label", "rule_count", "debt"} == item.keys()
     groups = [item["group"] for item in items]
     assert groups == sorted(groups, key=GROUP_ORDER.index)
 
@@ -225,3 +225,86 @@ def test_category_group_change_drops_its_detected_recurring_payment(tmp_path):
         page = soup(client.get("/recurring"))
         payments_card = page.select_one("#payments-card")
         assert payments_card is None or "Insurance" not in text(payments_card)
+
+
+def test_get_categories_flags_only_the_seeded_loans_category(tmp_path):
+    app, _ = _fresh_app(tmp_path)
+    with TestClient(app) as client:
+        items = client.get("/api/categories").json()
+
+    assert [item["name"] for item in items if item["debt"] is True] == ["Loans & Installments"]
+    assert all(isinstance(item["debt"], bool) for item in items)
+
+
+def test_post_category_with_and_without_debt(tmp_path):
+    app, _ = _fresh_app(tmp_path)
+    with TestClient(app) as client:
+        flagged = client.post(
+            "/api/categories", json={"name": "Car loan", "group": "fixed", "debt": True}
+        )
+        plain = client.post("/api/categories", json={"name": "Rent", "group": "fixed"})
+
+    assert flagged.status_code == 201
+    assert flagged.json()["debt"] is True
+    assert plain.status_code == 201
+    assert plain.json()["debt"] is False
+
+
+def test_put_category_without_debt_keeps_it_and_false_clears_it(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+    loans_id = _category_id(db_path, "Loans & Installments")
+    with TestClient(app) as client:
+        kept = client.put(f"/api/categories/{loans_id}", json={"name": "Credits", "group": "fixed"})
+        cleared = client.put(
+            f"/api/categories/{loans_id}",
+            json={"name": "Credits", "group": "fixed", "debt": False},
+        )
+        listed = client.get("/api/categories").json()
+
+    assert kept.status_code == 200
+    assert kept.json()["debt"] is True
+    assert cleared.json()["debt"] is False
+    assert [item["debt"] for item in listed if item["name"] == "Credits"] == [False]
+
+
+def test_debt_on_a_non_fixed_group_returns_400_with_field_debt(tmp_path):
+    app, _ = _fresh_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/categories", json={"name": "Pets", "group": "occasional", "debt": True}
+        )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "debt"
+    assert (
+        response.json()["error"]
+        == "Only Fixed payments categories can hold loans and installments."
+    )
+
+
+def test_moving_a_flagged_category_to_another_group_returns_400_with_field_debt(tmp_path):
+    app, db_path = _fresh_app(tmp_path)
+    loans_id = _category_id(db_path, "Loans & Installments")
+    with TestClient(app) as client:
+        moved = client.put(
+            f"/api/categories/{loans_id}", json={"name": "Loans", "group": "occasional"}
+        )
+        unflagged_move = client.put(
+            f"/api/categories/{loans_id}",
+            json={"name": "Loans", "group": "occasional", "debt": False},
+        )
+
+    assert moved.status_code == 400
+    assert moved.json()["field"] == "debt"
+    assert unflagged_move.status_code == 200
+    assert unflagged_move.json()["debt"] is False
+
+
+def test_non_boolean_debt_returns_422(tmp_path):
+    app, _ = _fresh_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/categories", json={"name": "Pets", "group": "fixed", "debt": "yes"}
+        )
+
+    assert response.status_code == 422

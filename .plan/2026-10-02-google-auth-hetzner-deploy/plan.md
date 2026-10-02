@@ -43,10 +43,10 @@ budgets: 2 tries per brief · 2 replans per node
 | N03 | allowed emails store and CLI | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | Google login and sessions | exec | N03 | opus/opus | 2 | 0 | DONE | |
 | N05 | API bearer token and auth docs | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | category debt flag | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
+| N06 | category debt flag | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | draft debts from recurring payments | exec | N06 | opus/opus | 0 | 0 | TODO | |
 | N08 | needs-details debts on the debts page | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
-| N09 | terraform deploy module | exec | N05 | opus/opus | 0 | 0 | TODO | |
+| N09 | terraform deploy module | exec | N05 | opus/opus | 1 | 0 | RUNNING | |
 | N10 | Google setup and deploy guide | exec | N09 | sonnet/sonnet | 0 | 0 | TODO | |
 | N11 | owner Google OAuth setup | gate | N10 | -/- | 0 | 0 | TODO | |
 | N12 | visual check | check | N08 | -/sonnet | 0 | 0 | TODO | |

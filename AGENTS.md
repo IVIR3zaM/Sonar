@@ -87,8 +87,8 @@ Endpoints (all under `/api`, `Content-Type: application/json`):
 | Method | Path | Body fields |
 |---|---|---|
 | GET | `/categories` | - |
-| POST | `/categories` | `name`, `group` |
-| PUT | `/categories/{id}` | `name`, `group` |
+| POST | `/categories` | `name`, `group`, `debt` |
+| PUT | `/categories/{id}` | `name`, `group`, `debt` |
 | DELETE | `/categories/{id}` | - |
 | GET | `/rules` | - |
 | POST | `/rules` | `category`, `counterparty`, `counterparty_regex`, `purpose`, `purpose_regex`, `sign`, `iban`, `creditor_id`, `min_amount`, `max_amount`, `position` |
@@ -104,6 +104,8 @@ The five `group` values, and what each means for the forecast:
 - `fixed`: recurring and hard to change (the dashboard's Fixed costs forecast).
 - `lights_on`: reducible but never zero -- groceries, transport, shopping (the Keep the lights on page).
 - `occasional`: one-off spending -- fees, education, donations, health, dining and similar.
+
+`debt: true` marks a `fixed` category as loans and installments; its recurring payments become draft debts on the Debts page.
 
 <!-- planzilla:begin -->
 ## Planzilla

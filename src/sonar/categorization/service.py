@@ -58,6 +58,7 @@ class CategoryView:
     group: str
     group_label: str
     rule_count: int
+    debt: bool
 
 
 @dataclass(frozen=True)
@@ -103,25 +104,35 @@ def list_categories(conn: sqlite3.Connection) -> list[CategoryView]:
             group=row.type,
             group_label=groups.LABELS[row.type],
             rule_count=row.rule_count,
+            debt=row.debt,
         )
         for row in rows
     ]
 
 
-def add_category(conn: sqlite3.Connection, today: date, name: str, group: str) -> int:
+def add_category(
+    conn: sqlite3.Connection, today: date, name: str, group: str, debt: bool = False
+) -> int:
     name = name.strip()
     try:
-        category_id = store.add_category(conn, name, group)
+        category_id = store.add_category(conn, name, group, debt)
     except ValueError as error:
         raise _category_error(error, name) from None
     reapply_stored_taxonomy(conn, today)
     return category_id
 
 
-def update_category(conn: sqlite3.Connection, today: date, id: int, name: str, group: str) -> None:
+def update_category(
+    conn: sqlite3.Connection,
+    today: date,
+    id: int,
+    name: str,
+    group: str,
+    debt: bool | None = None,
+) -> None:
     name = name.strip()
     try:
-        store.update_category(conn, id, name, group)
+        store.update_category(conn, id, name, group, debt)
     except ValueError as error:
         raise _category_error(error, name) from None
     reapply_stored_taxonomy(conn, today)
@@ -146,6 +157,10 @@ def _category_error(error: ValueError, name: str | None) -> TaxonomyError:
         return TaxonomyError(f'A category named "{name}" already exists.', "name")
     if "unknown category type" in text:
         return TaxonomyError(f"Group must be one of: {', '.join(GROUP_ORDER)}.", "group")
+    if "debt categories" in text:
+        return TaxonomyError(
+            "Only Fixed payments categories can hold loans and installments.", "debt"
+        )
     in_use = _CATEGORY_IN_USE.match(text)
     if in_use:
         return TaxonomyError(

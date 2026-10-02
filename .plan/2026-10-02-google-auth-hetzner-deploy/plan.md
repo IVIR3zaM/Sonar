@@ -49,7 +49,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N08 | needs-details debts on the debts page | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | terraform deploy module | exec | N05 | opus/opus | 1 | 1 | DONE | |
 | N10 | Google setup and deploy guide | exec | N08,N09 | sonnet/sonnet | 1 | 1 | DONE | |
-| N11 | owner Google OAuth setup | gate | N16 | -/- | 0 | 1 | TODO | |
+| N11 | owner Google OAuth setup | gate | N16 | -/- | 0 | 1 | DONE | local check passed; terraform.tfvars and terraform test deferred by owner |
 | N12 | HTTP check of changed pages | check | N08 | -/sonnet | 1 | 1 | DONE | |
 | N13 | owner deploy to the Gateway VM | gate | N15 | -/- | 0 | 0 | TODO | |
 | N14 | plan acceptance | check | N13 | -/opus | 0 | 0 | TODO | |

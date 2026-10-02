@@ -13,6 +13,7 @@ import uvicorn
 
 from sonar.auth import store as auth_store
 from sonar.auth.emails import normalize_email
+from sonar.auth.settings import AuthSettings, auth_settings
 from sonar.categorization.rules import load_taxonomy
 from sonar.categorization.store import reapply_rules, replace_taxonomy, uncategorized_count
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
@@ -21,7 +22,7 @@ from sonar.web.app import create_app
 
 
 def main() -> None:
-    """Start the Sonar web app on 127.0.0.1:8000, or run a CLI subcommand.
+    """Start the Sonar web app on 127.0.0.1 (SONAR_PORT, else 8000), or run a CLI subcommand.
 
     Only `sys.argv[1]` being literally a subcommand name (`import-categories`,
     `allow-email`, `revoke-email`, `list-emails`, `sync-emails`) is treated as
@@ -50,8 +51,29 @@ def main() -> None:
         args = _parse_sync_emails_args(argv[1:])
         sync_emails(args.emails, Path(args.db))
         return
-    app = create_app(_default_db_path())
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    serve()
+
+
+def serve() -> None:
+    """Run the web app; a partly configured Google sign-in refuses to start (SPEC §13 Sign-in)."""
+    app = create_app(_default_db_path(), auth=_auth_settings())
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=int(os.environ.get("SONAR_PORT") or "8000"),
+        # Behind a reverse proxy on the same host, trust its X-Forwarded-* so
+        # redirects and cookies see the public https scheme.
+        proxy_headers=True,
+        forwarded_allow_ips="127.0.0.1",
+    )
+
+
+def _auth_settings() -> AuthSettings | None:
+    try:
+        return auth_settings(os.environ)
+    except ValueError as error:
+        print(error)
+        raise SystemExit(1) from None
 
 
 def _default_db_path() -> Path:

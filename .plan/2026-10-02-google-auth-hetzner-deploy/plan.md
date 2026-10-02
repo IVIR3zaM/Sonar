@@ -41,7 +41,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N01 | preflight | check | - | -/sonnet | 1 | 0 | DONE | |
 | N02 | AGENTS.md as the single instruction source | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
 | N03 | allowed emails store and CLI | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | Google login and sessions | exec | N03 | opus/opus | 0 | 0 | TODO | |
+| N04 | Google login and sessions | exec | N03 | opus/opus | 2 | 0 | DONE | |
 | N05 | API bearer token and auth docs | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | category debt flag | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | draft debts from recurring payments | exec | N06 | opus/opus | 0 | 0 | TODO | |

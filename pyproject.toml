@@ -15,13 +15,15 @@ dependencies = [
     "uvicorn",
     "jinja2",
     "python-multipart",
+    "authlib>=1.8.0",
+    "itsdangerous>=2.2.0",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "ruff",
-    "httpx",
     "pytailwindcss",
     "beautifulsoup4",
 ]

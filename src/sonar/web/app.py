@@ -13,16 +13,20 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
+from sonar.auth.settings import AuthSettings
 from sonar.categorization.groups import LABELS as GROUP_LABELS
 from sonar.categorization.groups import TRANSFER
 from sonar.categorization.service import CategoryNotFound, RuleNotFound, reapply_stored_taxonomy
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.debts.store import DebtNotFound
 from sonar.recurring.store import PaymentNotFound
-from sonar.web import charts
+from sonar.web import access, charts
 from sonar.web.api import build_api_router
 from sonar.web.display import cadence, days_until, display_date, eur
+from sonar.web.pages import auth as auth_pages
 from sonar.web.pages import (
     categories,
     dashboard,
@@ -77,6 +81,8 @@ templates.env.globals["charts"] = charts
 def create_app(
     db_path: Path = Path("data/sonar.db"),
     today: Callable[[], date] = date.today,
+    auth: AuthSettings | None = None,
+    google: auth_pages.GoogleClient | None = None,
 ) -> FastAPI:
     """Build the Sonar FastAPI app, migrating `db_path` on startup.
 
@@ -85,6 +91,10 @@ def create_app(
     the Categories page or the API takes effect without restarting the app.
     `today` defaults to the real clock; tests pin it so recurring-payment
     detection is deterministic.
+
+    With `auth`, every page and API call needs a Google sign-in (SPEC §13
+    Sign-in); `google` defaults to authlib's client, tests pass a fake.
+    Without it no session or sign-in route exists at all.
     """
 
     @asynccontextmanager
@@ -109,6 +119,19 @@ def create_app(
     app.include_router(debts.build_router(db_path, today, templates))
     app.include_router(settings.build_router(db_path, today, templates))
     app.include_router(categories.build_router(db_path, today, templates))
+    if auth is not None:
+        google = google or auth_pages.google_client(auth)
+        app.include_router(auth_pages.build_router(auth, google, templates))
+        # Added last means outermost: the session must wrap the gate that reads it.
+        app.add_middleware(BaseHTTPMiddleware, dispatch=access.sign_in_gate(db_path, templates))
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=auth.session_secret,
+            session_cookie=access.SESSION_COOKIE,
+            max_age=access.SESSION_MAX_AGE,
+            same_site="lax",
+            https_only=auth.secure_cookies,
+        )
 
     @app.exception_handler(PaymentNotFound)
     async def payment_not_found_handler(request: Request, exc: PaymentNotFound) -> HTMLResponse:

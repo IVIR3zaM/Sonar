@@ -11,6 +11,7 @@
   "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
   "close": '<path d="M18 6 6 18M6 6l12 12"/>',
   "moon": '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  "sign-out": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
   "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>',
 } -%}
 {%- set nav_items = [
@@ -24,6 +25,10 @@
   ("/settings", "Settings", "settings"),
 ] -%}
 {%- set path = request.url.path if request else "" -%}
+{#- Set by the sign-in gate (web/access.py); undefined when sign-in is off. -#}
+{%- set signed_in_email = request.state.signed_in_email if request and request.state is defined else none -%}
+{#- A child sets `bare` for pages shown signed out (sign-in, not allowed): no
+    nav and no badge hx-get, which would only bounce to the sign-in page. -#}
 {%- macro icon(name, class="size-5 shrink-0") -%}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="{{ class }}" aria-hidden="true">{{ icons[name]|safe }}</svg>
 {%- endmacro -%}
@@ -55,6 +60,7 @@
 <body class="min-h-dvh">
   <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-control focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow">Skip to content</a>
 
+  {%- if not bare %}
   <header class="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur lg:hidden">
     {{ brand() }}
     <button id="nav-open" type="button" aria-controls="nav-drawer" aria-label="Open menu"
@@ -102,6 +108,14 @@
         </nav>
 
         <div class="border-t border-line p-3">
+          {%- if signed_in_email %}
+          <p id="signed-in-email" class="truncate px-3 pt-1 pb-2 text-xs text-ink-muted">{{ signed_in_email }}</p>
+          <a id="sign-out" href="/auth/logout"
+             class="flex w-full items-center gap-3 rounded-control px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+            {{ icon("sign-out") }}
+            <span>Sign out</span>
+          </a>
+          {%- endif %}
           <button id="theme-toggle" type="button"
                   onclick="var dark = document.documentElement.classList.toggle('dark'); try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch (e) {}"
                   class="flex w-full items-center gap-3 rounded-control px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
@@ -113,13 +127,19 @@
         </div>
       </div>
     </dialog>
+    {%- endif %}
 
     {#- min-w-0 lets the column shrink below its content; bare tables (not yet in
         a scroll wrapper) scroll on their own so 375px never scrolls sideways. #}
     <div class="min-w-0 flex-1 [&_:not(.overflow-x-auto)>table]:block [&_:not(.overflow-x-auto)>table]:max-w-full [&_:not(.overflow-x-auto)>table]:overflow-x-auto [&_textarea]:max-w-full">
       {#- No scroll anchoring: an htmx swap of <main> briefly holds old and new
           content together, and anchoring would follow the old copy down. #}
+      {%- if bare %}
+      <main id="main" class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-8 px-4 py-10">
+        <div class="flex justify-center">{{ brand() }}</div>
+      {%- else %}
       <main id="main" class="mx-auto max-w-6xl px-4 py-6 [overflow-anchor:none] sm:px-6 lg:px-10 lg:py-10">
+      {%- endif %}
         {% block content %}{% endblock %}
       </main>
     </div>

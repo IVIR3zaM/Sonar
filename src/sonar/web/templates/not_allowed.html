@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/button.html" import button %}
+{% set bare = true %}
+
+{% block content %}
+{% call card(title="Not allowed", id="not-allowed") %}
+<div class="flex flex-col gap-4">
+  <p class="text-sm text-ink-muted">
+    {%- if email %}
+    <span class="font-medium text-ink">{{ email }}</span> is not allowed to use Sonar.
+    {%- else %}
+    That Google account has no verified email, so it cannot use Sonar.
+    {%- endif %}
+    Ask the owner for access, or sign in with another account.
+  </p>
+  {{ button("Sign out", variant="secondary", href="/auth/logout", id="sign-out") }}
+</div>
+{% endcall %}
+{% endblock %}

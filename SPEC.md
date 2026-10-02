@@ -6,7 +6,7 @@ What the app does. It is the source of truth for behavior. How we work (the grap
 
 A local web app for our household. It imports bank exports, categorizes transactions, detects fixed costs, tracks installments and loans, and forecasts whether we'll get through to the next salary day.
 
-- Runs locally only (bind 127.0.0.1). No auth for now.
+- Binds 127.0.0.1; optional Google sign-in (§13 Sign-in).
 - Data comes in by file upload for now. A live bank connection (Enable Banking or FinTS) may come later. Don't build it, but don't design anything that blocks it.
 
 ## 1. How we work
@@ -242,3 +242,4 @@ Presentation only. Domain modules (`cashflow/forecast.py`, `cashflow/service.py`
 - Estimate date (§9, overrides "today" in the dashboard): every dashboard estimate is based on the balance's as-of date, the estimate date: the next payday is the first payday after it, the window is [estimate date + 1, payday − 1], and fixed costs and debt remainders are computed as of it; days to payday still count from today and are negative when the data predates that payday. The dashboard shows "Estimated from <date>", labels the runway marker "Balance on <date>", and when the payday has passed it says the data ends before it and links to Import.
 - Instructions (§1, §2, §5): the how-to-work rules and the Categorization workflow live in `AGENTS.md`; `CLAUDE.md` is the one-line `@AGENTS.md` import. The export's first line reads exactly `Categorization request: follow the Categorization workflow in AGENTS.md.`
 - Access list (§0, §3): the DB holds the allowed sign-in emails (trimmed, lowercased, exactly one @), managed only by `sonar allow-email EMAIL`, `revoke-email EMAIL`, `list-emails` and `sync-emails EMAIL...` (replaces the list, needs at least one); every `sonar` command reads its DB from `--db`, else `SONAR_DB_PATH`, else `data/sonar.db`.
+- Sign-in (§0, §3): when SONAR_GOOGLE_CLIENT_ID, SONAR_GOOGLE_CLIENT_SECRET, SONAR_SESSION_SECRET and SONAR_BASE_URL are all set, every page and API call needs a Google sign-in with a verified email on the access list, checked on every request; signed out, pages go to /auth/login and the API answers 401; a listed-out email gets a not-allowed page (API 403); none set = no sign-in; some set = `sonar` refuses to start. The server port is SONAR_PORT, else 8000.

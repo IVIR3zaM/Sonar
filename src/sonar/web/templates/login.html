@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/button.html" import button %}
+{% set bare = true %}
+
+{% block content %}
+{% call card(title="Sign in", id="login", subtitle="Sonar is private. Sign in with an allowed Google account.") %}
+<div class="flex flex-col gap-4">
+  {%- if error %}
+  <div id="login-error" role="alert" class="rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ error }}</div>
+  {%- endif %}
+  {{ button("Sign in with Google", href="/auth/google", id="google-sign-in") }}
+</div>
+{% endcall %}
+{% endblock %}

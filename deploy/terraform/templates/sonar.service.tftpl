@@ -1,0 +1,17 @@
+[Unit]
+Description=Sonar household finance dashboard
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/var/lib/sonar
+
+[Service]
+User=sonar
+Group=sonar
+WorkingDirectory=/opt/sonar
+EnvironmentFile=/etc/sonar/sonar.env
+ExecStart=/opt/sonar/.venv/bin/sonar
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -10,3 +10,7 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 .coverage
+# Terraform: real variables and state hold secrets.
+deploy/terraform/terraform.tfvars
+**/.terraform/
+*.tfstate*

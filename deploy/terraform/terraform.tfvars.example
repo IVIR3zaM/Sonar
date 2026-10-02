@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+hcloud_token         = "replace-with-hetzner-api-token"
+cloudflare_api_token = "replace-with-cloudflare-api-token"
+cloudflare_zone_id   = "replace-with-cloudflare-zone-id"
+sonar_hostname       = "sonar.example.com"
+google_client_id     = "replace-with-client-id.apps.googleusercontent.com"
+google_client_secret = "replace-with-google-client-secret"
+allowed_emails       = ["owner@example.com"]
+sonar_git_ref        = "0000000000000000000000000000000000000000"
+
+# Optional, shown with their defaults:
+# sonar_repo_url        = "https://github.com/IVIR3zaM/Sonar.git"
+# uv_version            = "0.8.17"
+# volume_size           = 10
+# server_label_selector = "project=gateway"
+# ssh_private_key_path  = "~/.ssh/id_ed25519"

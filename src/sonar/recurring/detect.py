@@ -1,19 +1,21 @@
-"""Detect recurring outgoing payments in categorized transactions (SPEC §6 Detection).
+"""Detect recurring payments in categorized transactions (SPEC §6 Detection).
 
-Pure functions only: rows and `today` are passed in, the store decides what to
-keep. Each detected payment gets a stable key so later runs update it instead of
-creating a duplicate.
+`detect_recurring` finds outgoing payments; `detect_income` finds recurring
+credits in income categories, minus the salary (SPEC §13 Recurring income).
+Both share one grouping and detection path. Pure functions only: rows and
+`today` are passed in, the store decides what to keep. Each detected payment
+gets a stable key so later runs update it instead of creating a duplicate.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
 from statistics import median_low
 
-from sonar.categorization.groups import EXCLUDED_FROM_RECURRENCE
+from sonar.categorization.groups import EXCLUDED_FROM_RECURRENCE, INCOME
 from sonar.importing.dedup import normalize_text
 from sonar.recurring import schedule
 from sonar.recurring.schedule import TOLERANCE, SchedulePeriod, add_months
@@ -23,6 +25,9 @@ from sonar.transactions import ParsedTransaction
 MIN_PAYMENTS = {1: 3, 2: 3, 3: 3, 6: 2, 12: 2}
 EXCLUDED_TYPES = EXCLUDED_FROM_RECURRENCE
 NAME_LENGTH = 40
+# Days from the salary day within which an income series is the salary itself.
+SALARY_DAY_DISTANCE = 7
+DAYS_IN_MONTH_CYCLE = 31
 
 Row = tuple[ParsedTransaction, str | None]
 
@@ -40,13 +45,38 @@ class DetectedPayment:
 def detect_recurring(
     rows: Iterable[Row], category_types: dict[str, str], today: date
 ) -> list[DetectedPayment]:
+    def is_outgoing(tx: ParsedTransaction, category: str | None) -> bool:
+        return tx.amount_cents < 0 and category_types.get(category or "") not in EXCLUDED_TYPES
+
+    return _detect_series(rows, is_outgoing, today)
+
+
+def detect_income(
+    rows: Iterable[Row], category_types: dict[str, str], salary_day: int, today: date
+) -> list[DetectedPayment]:
+    def is_income_credit(tx: ParsedTransaction, category: str | None) -> bool:
+        return tx.amount_cents > 0 and category_types.get(category or "") == INCOME
+
+    series = _detect_series(rows, is_income_credit, today)
+    return [p for p in series if not _is_salary(p.schedule.day, salary_day)]
+
+
+def _is_salary(typical_day: int, salary_day: int) -> bool:
+    # Days wrap at the month end: day 2 is close to day 28 of the month before.
+    gap = abs(typical_day - salary_day)
+    return min(gap, DAYS_IN_MONTH_CYCLE - gap) <= SALARY_DAY_DISTANCE
+
+
+def _detect_series(
+    rows: Iterable[Row], keep: Callable[[ParsedTransaction, str | None], bool], today: date
+) -> list[DetectedPayment]:
     rows = list(rows)
     if not rows:
         return []
     latest_booking = max(tx.booking_date for tx, _ in rows)
     groups: dict[str, list[Row]] = defaultdict(list)
     for tx, category in rows:
-        if tx.amount_cents < 0 and category_types.get(category or "") not in EXCLUDED_TYPES:
+        if keep(tx, category):
             groups[payment_key(tx)].append((tx, category))
     detected = (_detect_group(key, group, latest_booking, today) for key, group in groups.items())
     return sorted((p for p in detected if p is not None), key=lambda p: p.key)

@@ -1,0 +1,6 @@
+== C1 gh variable list -R IVIR3zaM/Gateway --env production --json name --jq '.[].name' | grep -qx SSH_PUBLIC_KEY
+exit 0
+== C2 gh run list -R IVIR3zaM/Gateway --branch main --limit 1 --json conclusion --jq '.[0].conclusion' | grep -qx success
+exit 0
+== C3 for r in Sonar Kita; do gh run list -R IVIR3zaM/$r --workflow ci.yml --event workflow_dispatch --limit 1 --json conclusion --jq '.[0].conclusion' | grep -qx success || exit 1; done
+exit 0

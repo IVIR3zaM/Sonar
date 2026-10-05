@@ -36,6 +36,7 @@ budgets: 2 tries per brief · 2 replans per node
 - D25 Every CI and documented local terraform plan/apply uses `-lock-timeout=10m`, so a local and a CI run of the same project queue on the R2 lock instead of failing | confirmed
 - D26 Gateway on runners: `local_env.tf` falls back to `https://ipv4.icanhazip.com` instead of `ifconfig.me`, which can answer IPv6. It picks the public key with a conditional instead of `coalesce`, which evaluates `file(...pub)` eagerly, so a runner with TF_VAR_ssh_public_key set never reads `~/.ssh` | confirmed
 - D27 Gateway's dispatch has a boolean input `replace_server` (default false) that applies with `-replace=random_id.server_suffix -replace=hcloud_server.v2ray` (a new suffix avoids a name clash under create_before_destroy). N16 uses it to force the blue/green replacement, and it stays as a recovery tool | confirmed
+- D28 Owner IP in public logs: a CI plan replaces the SSH rule's source from the owner's last local IP to the runner's, so the plan diff prints the owner's home IPv4 in the public Actions log of all three repos (Gateway `firewall.tf:39`, Sonar `deploy/terraform/main.tf:122`, Kita `../Kita/deploy/terraform/main.tf:76`). Fix: wrap those `source_ips` in `sensitive()`, so the plan shows `(sensitive value)` for the firewall rules; Gateway in N10, Kita in N08 (or a fix node if N08 is done), Sonar in N07 | proposed · recommend: hide it with sensitive() in all three · alt: accept the leak
 
 ## Graph
 
@@ -44,13 +45,13 @@ budgets: 2 tries per brief · 2 replans per node
 | N01 | preflight | check | - | -/sonnet | 1 | 0 | DONE | |
 | N02 | owner commits Kita and Gateway WIP | gate | N01 | -/- | 0 | 0 | DONE | |
 | N03 | detect recurring income | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | forecast inflows before payday | exec | N03 | sonnet/sonnet | 0 | 0 | BRIEFING | |
+| N04 | forecast inflows before payday | exec | N03 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | income before payday card | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | Sonar terraform: R2 backend and SSH firewall | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 0 | 0 | BRIEFING | |
-| N08 | Kita terraform: R2 backend and install lock wait | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
+| N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 1 | 0 | RUNNING | |
+| N08 | Kita terraform: R2 backend and install lock wait | exec | N02 | sonnet/sonnet | 1 | 0 | RETRY | fail C2 |
 | N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 0 | 0 | TODO | |
-| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02 | opus/opus | 0 | 0 | TODO | |
+| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02 | opus/opus | 0 | 0 | WAITING | ask: D28 |
 | N11 | Gateway CI workflow, app redeploys and guide | exec | N07,N10 | opus/sonnet | 0 | 0 | TODO | |
 | N12 | visual check of the dashboard | gate | N05 | -/sonnet | 0 | 0 | TODO | |
 | N13 | owner R2, state migrations and drift check | gate | N06,N08,N10 | -/- | 0 | 0 | TODO | |

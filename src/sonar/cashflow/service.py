@@ -21,6 +21,7 @@ from sonar.categorization import groups
 from sonar.categorization.store import transactions_with_category, uncategorized_count
 from sonar.debts import model
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
+from sonar.recurring.detect import Row, detect_income
 from sonar.recurring.store import list_payments
 from sonar.transactions import ParsedTransaction
 
@@ -36,6 +37,9 @@ class Dashboard:
     overdraft_limit_cents: int
     due: list[DueItem]
     due_total_cents: int
+    # Recurring income expected before payday, named by category (SPEC §13).
+    inflows: list[DueItem]
+    inflow_total_cents: int
     window_days: int | None
     lights_on_categories: tuple[str, ...]
     occasional_categories: tuple[str, ...]
@@ -43,7 +47,7 @@ class Dashboard:
     # The same months' figures for a single day: what `lights_on` multiplies
     # by `window_days`, and what the Keep the lights on page shows.
     lights_on_daily: LightsOnForecast | None
-    # Balance - due - expected lights-on spending: the margin (or, negative,
+    # Balance + inflows - due - expected lights-on spending: the margin (or, negative,
     # the shortfall) against 0 at payday.
     expected_cents: int | None
     projection: Projection | None
@@ -78,6 +82,8 @@ def load_dashboard(
         overdraft_limit_cents=settings.overdraft_limit_cents,
         due=[],
         due_total_cents=0,
+        inflows=[],
+        inflow_total_cents=0,
         window_days=None,
         lights_on_categories=_names_of_type(category_types, groups.LIGHTS_ON),
         occasional_categories=_names_of_type(category_types, groups.OCCASIONAL),
@@ -105,6 +111,8 @@ def load_dashboard(
     window_days = (end - start).days + 1
     due = forecast.fixed_due(sources, start, end)
     due_total = sum(item.amount_cents for item in due)
+    inflows = _inflows(rows, category_types, settings.salary_day, estimate_date, start, end)
+    inflow_total = sum(item.amount_cents for item in inflows)
     until = lights_on.last_known_day(rows, balance.as_of)
     months = (
         []
@@ -113,7 +121,7 @@ def load_dashboard(
     )
     lights = lights_on.lights_on_forecast(months, window_days)
     lights_range = None if lights is None else (lights.low_cents, lights.high_cents)
-    projection = forecast.project(balance.amount_cents, due_total, lights_range)
+    projection = forecast.project(balance.amount_cents, due_total, lights_range, inflow_total)
     lights_expected = 0 if lights is None else lights.expected_cents
     return replace(
         board,
@@ -121,10 +129,12 @@ def load_dashboard(
         days_to_payday=(next_payday - today).days,
         due=due,
         due_total_cents=due_total,
+        inflows=inflows,
+        inflow_total_cents=inflow_total,
         window_days=window_days,
         lights_on=lights,
         lights_on_daily=lights_on.lights_on_forecast(months, 1),
-        expected_cents=balance.amount_cents - due_total - lights_expected,
+        expected_cents=balance.amount_cents + inflow_total - due_total - lights_expected,
         projection=projection,
         light=forecast.traffic_light(projection, settings.overdraft_limit_cents),
     )
@@ -132,6 +142,26 @@ def load_dashboard(
 
 def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[str, ...]:
     return tuple(sorted(name for name, type_ in category_types.items() if type_ == category_type))
+
+
+def _inflows(
+    rows: list[Row],
+    category_types: dict[str, str],
+    salary_day: int,
+    estimate_date: date,
+    start: date,
+    end: date,
+) -> list[DueItem]:
+    """Recurring income still expected within [start, end], named by category.
+
+    Same occurrence and already-booked rule as the fixed payments, so one
+    income series is treated exactly like one fixed source.
+    """
+    series = detect_income(rows, category_types, salary_day, estimate_date)
+    sources = tuple(
+        FixedSource(p.category or p.name, (p.schedule,), p.last_paid_date) for p in series
+    )
+    return forecast.fixed_due(sources, start, end)
 
 
 def _fixed_sources(

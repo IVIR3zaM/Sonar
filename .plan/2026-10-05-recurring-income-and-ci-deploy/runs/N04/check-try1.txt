@@ -1,0 +1,35 @@
+== C1 uv run pytest -q tests/cashflow -k "inflow or income"
+exit 0
+...........                                                              [100%]
+11 passed, 122 deselected in 0.19s
+== C3 git diff --quiet HEAD -- src/sonar/web src/sonar/migrations src/sonar/recurring
+exit 0
+== C5 uv run pytest -q -x && uv run ruff check .
+exit 0
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 27%]
+........................................................................ [ 34%]
+........................................................................ [ 41%]
+........................................................................ [ 48%]
+........................................................................ [ 55%]
+........................................................................ [ 62%]
+........................................................................ [ 69%]
+........................................................................ [ 76%]
+........................................................................ [ 83%]
+........................................................................ [ 90%]
+........................................................................ [ 97%]
+......................                                                   [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1030 passed, 2 warnings in 20.04s
+All checks passed!

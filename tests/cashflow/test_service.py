@@ -22,7 +22,13 @@ from sonar.recurring.store import add_manual
 
 TODAY = date(2026, 9, 10)
 PAYDAY = date(2026, 9, 25)
-CATEGORY_TYPES = {"Groceries": "lights_on", "Dining": "occasional", "Rent": "fixed"}
+CATEGORY_TYPES = {
+    "Groceries": "lights_on",
+    "Dining": "occasional",
+    "Rent": "fixed",
+    "Child benefit": "income",
+    "Salary": "income",
+}
 
 
 @pytest.fixture
@@ -462,3 +468,125 @@ def test_lights_on_learns_only_from_months_the_bookings_fully_cover(
     assert board.lights_on.months_used[-1].end == date(2026, 3, 31)
     assert board.lights_on_daily is not None
     assert board.lights_on_daily.months_used == board.lights_on.months_used
+
+
+def _income(
+    conn: sqlite3.Connection,
+    dates: list[str],
+    amount_cents: int = 25_000,
+    *,
+    category: str = "Child benefit",
+) -> None:
+    for booking_date in dates:
+        _insert_tx(
+            conn,
+            booking_date,
+            amount_cents,
+            counterparty="Family Benefits Office",
+            category=category,
+        )
+
+
+def test_income_inside_the_window_raises_projection_and_expected_and_is_listed(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _income(conn, ["2026-06-15", "2026-07-15"], 20_000)
+    _income(conn, ["2026-08-15"], 25_000)
+    _monthly(conn, "Gym", 20, 3_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.inflows == [DueItem("Child benefit", date(2026, 9, 15), 25_000)]
+    assert board.inflow_total_cents == 25_000
+    assert board.projection == Projection(122_000, 122_000)
+    assert board.expected_cents == 122_000
+
+
+def test_income_adds_to_the_projection_range_and_expected_with_lights_on_history(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000, as_of=date(2026, 9, 10))
+    for month, cents in ((6, -3_000), (7, -6_000), (8, -9_000)):
+        _insert_tx(conn, f"2026-{month:02d}-10", cents, category="Groceries")
+    without = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+    assert without.projection is not None and without.expected_cents is not None
+
+    _income(conn, ["2026-06-15", "2026-07-15", "2026-08-15"])
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.projection == Projection(
+        without.projection.worst_cents + 25_000, without.projection.best_cents + 25_000
+    )
+    assert board.expected_cents == without.expected_cents + 25_000
+
+
+def test_income_series_due_on_or_after_payday_adds_nothing(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    # Every second month on the 5th: next due 2026-10-05.
+    _income(conn, ["2026-04-05", "2026-06-05", "2026-08-05"])
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.inflows, board.inflow_total_cents) == ([], 0)
+    assert board.projection == Projection(100_000, 100_000)
+
+
+def test_income_already_booked_within_seven_days_adds_nothing(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _income(conn, ["2026-06-15", "2026-07-15", "2026-08-15", "2026-09-10"])
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.inflows, board.inflow_total_cents) == ([], 0)
+    assert board.projection == Projection(100_000, 100_000)
+
+
+def test_salary_series_is_never_an_inflow(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    # Typical day 20 is within 7 days of salary day 26, and due inside the window.
+    _income(conn, ["2026-06-20", "2026-07-20", "2026-08-20"], 300_000, category="Salary")
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.inflows, board.inflow_total_cents) == ([], 0)
+    assert board.projection == Projection(100_000, 100_000)
+
+
+def test_without_income_series_there_are_no_inflows(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _insert_tx(conn, "2026-09-01", 5_000, category="Child benefit")
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.inflows, board.inflow_total_cents) == ([], 0)
+
+
+def test_inflows_are_empty_without_salary_day_or_balance(conn: sqlite3.Connection) -> None:
+    _income(conn, ["2026-06-15", "2026-07-15", "2026-08-15"])
+    set_manual_balance(conn, TODAY, 100_000, TODAY)
+
+    no_salary_day = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (no_salary_day.inflows, no_salary_day.inflow_total_cents) == ([], 0)
+
+    conn.execute("DELETE FROM balances")
+    save_settings(conn, 26, -50_000)
+
+    no_balance = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (no_balance.inflows, no_balance.inflow_total_cents) == ([], 0)
+
+
+def test_income_leaves_due_and_fixed_costs_unchanged(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _monthly(conn, "Rent", 20, 50_000)
+    before = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    _income(conn, ["2026-06-15", "2026-07-15", "2026-08-15"])
+    after = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert after.inflow_total_cents == 25_000
+    assert after.due == before.due
+    assert after.due_total_cents == before.due_total_cents
+    assert after.fixed_costs == before.fixed_costs

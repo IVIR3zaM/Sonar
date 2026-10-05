@@ -152,6 +152,14 @@ def test_project_with_variable_range():
     assert project(100000, 30000, (40000, 60000)) == Projection(10000, 30000)
 
 
+def test_project_raises_both_ends_by_the_inflow_total_without_a_variable_range():
+    assert project(100000, 30000, None, inflow_cents=20000) == Projection(90000, 90000)
+
+
+def test_project_raises_both_ends_by_the_inflow_total_with_a_variable_range():
+    assert project(100000, 30000, (40000, 60000), inflow_cents=20000) == Projection(30000, 50000)
+
+
 @pytest.mark.parametrize(
     "worst,best,limit,expected",
     [

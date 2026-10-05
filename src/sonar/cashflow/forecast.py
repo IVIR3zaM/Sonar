@@ -74,14 +74,21 @@ def fixed_due(sources: tuple[FixedSource, ...], start: date, end: date) -> list[
     return sorted(items, key=lambda item: (item.due_date, item.name))
 
 
-def project(balance_cents: int, fixed_cents: int, variable: tuple[int, int] | None) -> Projection:
-    """Balance range after fixed payments and a (low, high) variable spending range."""
+def project(
+    balance_cents: int,
+    fixed_cents: int,
+    variable: tuple[int, int] | None,
+    inflow_cents: int = 0,
+) -> Projection:
+    """Balance range after fixed payments, a (low, high) variable range and expected inflows."""
+    # Inflows are expected recurring income, so they lift both ends alike.
+    known = balance_cents + inflow_cents - fixed_cents
     if variable is None:
         # Too little history for a variable range: show what is known rather
         # than invent a guess, so the range collapses to a single value.
-        return Projection(balance_cents - fixed_cents, balance_cents - fixed_cents)
+        return Projection(known, known)
     low, high = variable
-    return Projection(balance_cents - fixed_cents - high, balance_cents - fixed_cents - low)
+    return Projection(known - high, known - low)
 
 
 def traffic_light(p: Projection, limit_cents: int) -> Literal["green", "yellow", "red"]:

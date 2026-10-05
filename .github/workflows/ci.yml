@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit SHA to test and deploy
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      # Python comes from .python-version.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.8.17"
+
+      - run: uv sync --locked
+      - run: uv run pytest -q
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  deploy:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: production
+    # Deploys queue instead of cancelling: an apply cut short can leave the R2 lock held.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: deploy/terraform
+    env:
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      # The wrapper would echo terraform's stdout into the step outputs and logs.
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.5"
+          terraform_wrapper: false
+
+      # The VM clones by full SHA, so a branch or tag input still deploys one exact commit.
+      - name: Resolve the commit to deploy
+        run: echo "TF_VAR_sonar_git_ref=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # Logs are public. The secret mask covers the whole JSON list only, and the SSH provisioner logs the VM IP.
+      - name: Mask emails and the Gateway VM IP
+        env:
+          ALLOWED_EMAILS: ${{ secrets.ALLOWED_EMAILS }}
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          emails="$(jq -r '.[]' <<<"$ALLOWED_EMAILS")"
+          while IFS= read -r email; do
+            if [ -n "$email" ]; then echo "::add-mask::$email"; fi
+          done <<<"$emails"
+          servers="$(curl -fsS -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            'https://api.hetzner.cloud/v1/servers?label_selector=project%3Dgateway')"
+          ips="$(jq -r '.servers[].public_net.ipv4.ip // empty' <<<"$servers")"
+          while IFS= read -r ip; do
+            if [ -n "$ip" ]; then echo "::add-mask::$ip"; fi
+          done <<<"$ips"
+
+      - name: Write the backend config and SSH key
+        env:
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          {
+            echo "bucket    = \"$R2_BUCKET\""
+            echo "endpoints = { s3 = \"https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com\" }"
+          } > backend.hcl
+          key="$RUNNER_TEMP/sonar_deploy_key"
+          (umask 077 && printf '%s\n' "$SSH_PRIVATE_KEY" > "$key")
+          chmod 600 "$key"
+          echo "TF_VAR_ssh_private_key_path=$key" >> "$GITHUB_ENV"
+
+      - name: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      # An empty state means the backend is wrong or the state was never migrated; an apply would then create a
+      # second data volume next to the protected one.
+      - name: Check the state is not empty
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          state="$(terraform state list)"
+          if [ -z "$state" ]; then
+            echo "::error::Terraform state is empty: state not migrated to R2 or wrong backend. Refusing to apply."
+            exit 1
+          fi
+
+      - name: terraform apply
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_sonar_hostname: ${{ secrets.SONAR_HOSTNAME }}
+          TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+          TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          TF_VAR_allowed_emails: ${{ secrets.ALLOWED_EMAILS }}
+        run: terraform apply -input=false -auto-approve -lock-timeout=10m

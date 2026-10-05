@@ -1,0 +1,39 @@
+== C1 cd ../Gateway/hetzner/terraform && export ASDF_TERRAFORM_VERSION=1.16.5 && terraform fmt -check $(git ls-files '*.tf') && terraform init -backend=false -input=false >/dev/null && terraform validate
+exit 0
+[32m[1mSuccess![0m The configuration is valid.
+[0m
+== C2 cd ../Gateway/hetzner/terraform && f=providers.tf && grep -q 'backend "s3"' $f && grep -q 'gateway/terraform.tfstate' $f && grep -Eq 'use_lockfile += true' $f && grep -Eq 'region += "auto"' $f && grep -Eq 'use_path_style += true' $f && test "$(grep -Ec 'skip_[a-z0-9_]+ += true' $f)" -eq 5 && grep -q '>= 1.10' $f && ! grep -Eq '^\s*(bucket|endpoints|access_key|secret_key)' $f
+exit 0
+== C3 cd ../Gateway && grep -qx 'terraform 1.16.5' .tool-versions && ! git check-ignore -q hetzner/terraform/.terraform.lock.hcl && git check-ignore -q hetzner/terraform/backend.hcl && ! git check-ignore -q hetzner/terraform/backend.hcl.example && grep -q 'r2.cloudflarestorage.com' hetzner/terraform/backend.hcl.example && for v in 4.52.7 3.6.0 2.9.0 3.3.0 3.9.0 4.3.0 1.64.0; do grep -q "version     = \"$v\"" hetzner/terraform/.terraform.lock.hcl || exit 1; done
+exit 0
+== C4 cd ../Gateway/hetzner/terraform && grep -q 'sensitive(local.effective_ssh_allow_cidrs)' firewall.tf && grep -q 'ipv4.icanhazip.com' local_env.tf && ! grep -q 'ifconfig.me' local_env.tf && ! grep -q 'coalesce(var.ssh_public_key' local_env.tf && test "$(grep -c 'sensitive(' outputs.tf)" -ge 2 && grep -q 'output "server_id"' outputs.tf && test "$(grep -c 'sensitive *= true' variables.tf)" -ge 5
+exit 0
+== C6 uv run pytest -q -x && uv run ruff check .
+exit 0
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 27%]
+........................................................................ [ 34%]
+........................................................................ [ 41%]
+........................................................................ [ 48%]
+........................................................................ [ 55%]
+........................................................................ [ 62%]
+........................................................................ [ 69%]
+........................................................................ [ 76%]
+........................................................................ [ 83%]
+........................................................................ [ 90%]
+........................................................................ [ 97%]
+...........................                                              [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1035 passed, 2 warnings in 19.13s
+All checks passed!

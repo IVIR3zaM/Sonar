@@ -51,7 +51,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 1 | 1 | DONE | |
 | N08 | Kita terraform: R2 backend and install lock wait | exec | N02 | sonnet/sonnet | 1 | 1 | DONE | |
 | N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 1 | 1 | DONE | |
-| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02,N08 | opus/opus | 2 | 0 | VERIFYING | owner left auto mode; rerun |
+| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02,N08 | opus/opus | 2 | 0 | DONE | |
 | N11 | Gateway CI workflow, app redeploys and guide | exec | N07,N10 | opus/sonnet | 0 | 0 | TODO | |
 | N12 | visual check of the dashboard | gate | N05 | -/sonnet | 0 | 0 | TODO | |
 | N13 | owner R2, state migrations and drift check | gate | N06,N08,N10,N18,N19 | -/- | 0 | 0 | TODO | |
@@ -59,5 +59,5 @@ budgets: 2 tries per brief · 2 replans per node
 | N15 | owner first CI deploys of the apps | gate | N12,N14 | -/- | 0 | 0 | TODO | |
 | N16 | owner Gateway replacement and coexistence | gate | N15 | -/- | 0 | 0 | TODO | |
 | N17 | plan acceptance | check | N16 | -/opus | 0 | 0 | TODO | |
-| N18 | Kita terraform: hide SSH source in plans | exec | N08,N09 | haiku/sonnet | 0 | 0 | TODO | |
+| N18 | Kita terraform: hide SSH source in plans | exec | N08,N09 | haiku/sonnet | 1 | 0 | RUNNING | |
 | N19 | Sonar terraform: hide SSH source in plans | exec | N07 | haiku/sonnet | 1 | 0 | DONE | |

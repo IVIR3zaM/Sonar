@@ -1,0 +1,6 @@
+== C1 test -z "$(git -C ../Kita status --porcelain)"
+exit 0
+== C2 test -z "$(git -C ../Gateway status --porcelain -- hetzner)"
+exit 0
+== C3 git -C ../Kita ls-files --error-unmatch deploy/terraform/.terraform.lock.hcl deploy/terraform/main.tf >/dev/null && git -C ../Kita grep -q kita_ssh -- deploy/terraform/main.tf
+exit 0

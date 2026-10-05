@@ -1,0 +1,310 @@
+== C1 cd ../Kita/deploy/terraform && export ASDF_TERRAFORM_VERSION=1.16.5 && terraform fmt -check $(git ls-files '*.tf') && terraform init -backend=false -input=false >/dev/null && terraform validate
+exit 3
+main.tf
+== C2 cd ../Kita/deploy/terraform && grep -Eq 'source_ips += sensitive\(local\.ssh_allow_cidrs\)' main.tf && ! grep -Eq 'source_ips += local\.ssh_allow_cidrs' main.tf
+exit 0
+== C4 cd ../Kita && node --test
+exit 0
+TAP version 13
+# Subtest: worked example: 1800 allowance, Mon 08:00-13:40 complete, Tue started 08:20 -> Tue ends 14:25, Wed-Fri 08:00-14:05
+ok 1 - worked example: 1800 allowance, Mon 08:00-13:40 complete, Tue started 08:20 -> Tue ends 14:25, Wed-Fri 08:00-14:05
+  ---
+  duration_ms: 2.085209
+  type: 'test'
+  ...
+# Subtest: 30h from 08:00 with no actuals gives 08:00-14:00 on all five days
+ok 2 - 30h from 08:00 with no actuals gives 08:00-14:00 on all five days
+  ---
+  duration_ms: 0.216958
+  type: 'test'
+  ...
+# Subtest: leftover 5-minute steps go one each to the earliest remaining days
+ok 3 - leftover 5-minute steps go one each to the earliest remaining days
+  ---
+  duration_ms: 0.265834
+  type: 'test'
+  ...
+# Subtest: leftover never exceeds the remaining budget when it is not a multiple of 5
+ok 4 - leftover never exceeds the remaining budget when it is not a multiple of 5
+  ---
+  duration_ms: 0.147666
+  type: 'test'
+  ...
+# Subtest: a noKita day raises the other days share and ignores stored actuals
+ok 5 - a noKita day raises the other days share and ignores stored actuals
+  ---
+  duration_ms: 0.306125
+  type: 'test'
+  ...
+# Subtest: a share past 17:00 ends at closing and the rest moves to the other days
+ok 6 - a share past 17:00 ends at closing and the rest moves to the other days
+  ---
+  duration_ms: 0.122375
+  type: 'test'
+  ...
+# Subtest: late drop-off today plus a noKita day: today ends at closing, the rest goes to the other days
+ok 7 - late drop-off today plus a noKita day: today ends at closing, the rest goes to the other days
+  ---
+  duration_ms: 0.185542
+  type: 'test'
+  ...
+# Subtest: what does not fit before closing on any day is reported as unused
+ok 8 - what does not fit before closing on any day is reported as unused
+  ---
+  duration_ms: 0.729459
+  type: 'test'
+  ...
+# Subtest: actuals above the allowance give share 0, overAllowance and nothing unused
+ok 9 - actuals above the allowance give share 0, overAllowance and nothing unused
+  ---
+  duration_ms: 0.442
+  type: 'test'
+  ...
+# Subtest: planWeek does not mutate its input
+ok 10 - planWeek does not mutate its input
+  ---
+  duration_ms: 1.154541
+  type: 'test'
+  ...
+# Subtest: German and English have identical key sets
+ok 11 - German and English have identical key sets
+  ---
+  duration_ms: 1.897291
+  type: 'test'
+  ...
+# Subtest: supported languages are de and en, default de
+ok 12 - supported languages are de and en, default de
+  ---
+  duration_ms: 0.850875
+  type: 'test'
+  ...
+# Subtest: unknown language falls back to German
+ok 13 - unknown language falls back to German
+  ---
+  duration_ms: 0.161583
+  type: 'test'
+  ...
+# Subtest: {name} placeholders are filled
+ok 14 - {name} placeholders are filled
+  ---
+  duration_ms: 0.167833
+  type: 'test'
+  ...
+# Subtest: unfilled placeholders stay and unknown key returns the key
+ok 15 - unfilled placeholders stay and unknown key returns the key
+  ---
+  duration_ms: 0.222542
+  type: 'test'
+  ...
+# Subtest: every weekday has a name in both languages
+ok 16 - every weekday has a name in both languages
+  ---
+  duration_ms: 0.069667
+  type: 'test'
+  ...
+# Subtest: the closing-time warning string is gone
+ok 17 - the closing-time warning string is gone
+  ---
+  duration_ms: 0.116583
+  type: 'test'
+  ...
+# Subtest: required UI keys exist in both languages
+ok 18 - required UI keys exist in both languages
+  ---
+  duration_ms: 0.070875
+  type: 'test'
+  ...
+# Subtest: parseTime converts HH:MM to minutes
+ok 19 - parseTime converts HH:MM to minutes
+  ---
+  duration_ms: 0.579125
+  type: 'test'
+  ...
+# Subtest: formatTime converts minutes to HH:MM
+ok 20 - formatTime converts minutes to HH:MM
+  ---
+  duration_ms: 0.153083
+  type: 'test'
+  ...
+# Subtest: roundTo5 rounds to the nearest 5 minutes
+ok 21 - roundTo5 rounds to the nearest 5 minutes
+  ---
+  duration_ms: 0.073708
+  type: 'test'
+  ...
+# Subtest: stepTime moves by 5 minutes and clamps to 00:00..23:55
+ok 22 - stepTime moves by 5 minutes and clamps to 00:00..23:55
+  ---
+  duration_ms: 0.140083
+  type: 'test'
+  ...
+# Subtest: hoursToMinutes converts hours to minutes rounded to 5
+ok 23 - hoursToMinutes converts hours to minutes rounded to 5
+  ---
+  duration_ms: 0.229125
+  type: 'test'
+  ...
+# Subtest: minutesToHours converts minutes to hours with at most 2 decimals
+ok 24 - minutesToHours converts minutes to hours with at most 2 decimals
+  ---
+  duration_ms: 0.075542
+  type: 'test'
+  ...
+# Subtest: parseHours reads typed hours (also with a comma) and rejects bad input
+ok 25 - parseHours reads typed hours (also with a comma) and rejects bad input
+  ---
+  duration_ms: 0.142583
+  type: 'test'
+  ...
+# Subtest: defaults are 30 h, 07:00-17:00, 08:00
+ok 26 - defaults are 30 h, 07:00-17:00, 08:00
+  ---
+  duration_ms: 0.938792
+  type: 'test'
+  ...
+# Subtest: worked example maps to bar segments as percent of opening hours
+ok 27 - worked example maps to bar segments as percent of opening hours
+  ---
+  duration_ms: 9.320666
+  type: 'test'
+  ...
+# Subtest: a noKita day yields one whole-bar noKita segment
+ok 28 - a noKita day yields one whole-bar noKita segment
+  ---
+  duration_ms: 0.3815
+  type: 'test'
+  ...
+# Subtest: header shows used (complete days) vs allowance in German by default
+ok 29 - header shows used (complete days) vs allowance in German by default
+  ---
+  duration_ms: 0.222417
+  type: 'test'
+  ...
+# Subtest: fresh week: all five days planned 08:00-14:00
+ok 30 - fresh week: all five days planned 08:00-14:00
+  ---
+  duration_ms: 0.16075
+  type: 'test'
+  ...
+# Subtest: over limit warns; time that does not fit is shown as unused, with no closing warning
+ok 31 - over limit warns; time that does not fit is shown as unused, with no closing warning
+  ---
+  duration_ms: 0.831542
+  type: 'test'
+  ...
+# Subtest: now buttons: today only, rounded to 5, hidden on weekends and other weeks
+ok 32 - now buttons: today only, rounded to 5, hidden on weekends and other weeks
+  ---
+  duration_ms: 0.476167
+  type: 'test'
+  ...
+# Subtest: controls: start steps from planned start, end disabled without start, today expanded
+ok 33 - controls: start steps from planned start, end disabled without start, today expanded
+  ---
+  duration_ms: 0.413875
+  type: 'test'
+  ...
+# Subtest: navigation: next stops at the current week
+ok 34 - navigation: next stops at the current week
+  ---
+  duration_ms: 0.483917
+  type: 'test'
+  ...
+# Subtest: settings expose the allowance as plain hours and no hint
+ok 35 - settings expose the allowance as plain hours and no hint
+  ---
+  duration_ms: 0.879792
+  type: 'test'
+  ...
+# Subtest: weekKey gives the ISO week of a date
+ok 36 - weekKey gives the ISO week of a date
+  ---
+  duration_ms: 0.668417
+  type: 'test'
+  ...
+# Subtest: weekDates lists Mon-Fri of a key
+ok 37 - weekDates lists Mon-Fri of a key
+  ---
+  duration_ms: 7.407959
+  type: 'test'
+  ...
+# Subtest: shiftWeek moves by whole weeks across year ends
+ok 38 - shiftWeek moves by whole weeks across year ends
+  ---
+  duration_ms: 0.1075
+  type: 'test'
+  ...
+# Subtest: compareWeeks orders keys
+ok 39 - compareWeeks orders keys
+  ---
+  duration_ms: 0.17175
+  type: 'test'
+  ...
+# Subtest: createWeek builds 5 days from settings
+ok 40 - createWeek builds 5 days from settings
+  ---
+  duration_ms: 0.12925
+  type: 'test'
+  ...
+# Subtest: applySettings copies allowance and hours, plannedStart only from today on
+ok 41 - applySettings copies allowance and hours, plannedStart only from today on
+  ---
+  duration_ms: 0.188416
+  type: 'test'
+  ...
+# Subtest: setActualStart sets and clears without mutating
+ok 42 - setActualStart sets and clears without mutating
+  ---
+  duration_ms: 0.152459
+  type: 'test'
+  ...
+# Subtest: setActualEnd sets, clears and clamps to the day start
+ok 43 - setActualEnd sets, clears and clamps to the day start
+  ---
+  duration_ms: 0.089416
+  type: 'test'
+  ...
+# Subtest: toggleNoKita flips the flag without mutating
+ok 44 - toggleNoKita flips the flag without mutating
+  ---
+  duration_ms: 0.324583
+  type: 'test'
+  ...
+1..44
+# tests 44
+# suites 0
+# pass 44
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 120.316375
+== C5 uv run pytest -q -x && uv run ruff check .
+exit 0
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 27%]
+........................................................................ [ 34%]
+........................................................................ [ 41%]
+........................................................................ [ 48%]
+........................................................................ [ 55%]
+........................................................................ [ 62%]
+........................................................................ [ 69%]
+........................................................................ [ 76%]
+........................................................................ [ 83%]
+........................................................................ [ 90%]
+........................................................................ [ 97%]
+...........................                                              [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1035 passed, 2 warnings in 18.94s
+All checks passed!

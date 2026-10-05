@@ -1,0 +1,6 @@
+== C1 for d in ../Gateway/hetzner/terraform deploy/terraform ../Kita/deploy/terraform; do test ! -e "$d/terraform.tfstate" && test ! -e "$d/terraform.tfstate.backup" || exit 1; done
+exit 0
+== C2 git -C ../Gateway check-ignore -q hetzner/terraform/backend.hcl && git check-ignore -q deploy/terraform/backend.hcl && git -C ../Kita check-ignore -q deploy/terraform/backend.hcl
+exit 0
+== C3 for f in ../Gateway/hetzner/terraform/backend.hcl deploy/terraform/backend.hcl ../Kita/deploy/terraform/backend.hcl; do test -n "$(find "$f" -perm 600)" && grep -Eq '^access_key' "$f" && grep -Eq '^secret_key' "$f" || exit 1; done
+exit 0

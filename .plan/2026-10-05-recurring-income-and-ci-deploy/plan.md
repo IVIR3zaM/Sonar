@@ -55,7 +55,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02,N08 | opus/opus | 2 | 0 | DONE | |
 | N11 | Gateway CI workflow, app redeploys and guide | exec | N07,N10 | opus/sonnet | 2 | 1 | DONE | |
 | N12 | visual check of the dashboard | gate | N05 | -/sonnet | 0 | 0 | DONE | |
-| N13 | owner R2, state migrations and drift check | gate | N06,N08,N10,N18,N19,N20,N21,N22 | -/- | 0 | 1 | TODO | |
+| N13 | owner R2, state migrations and drift check | gate | N06,N08,N10,N18,N19,N20,N21,N22 | -/- | 0 | 2 | DONE | |
 | N14 | owner GitHub environments, secrets and PAT | gate | N07,N09,N11,N13 | -/- | 0 | 0 | TODO | |
 | N15 | owner first CI deploys of the apps | gate | N12,N14 | -/- | 0 | 0 | TODO | |
 | N16 | owner Gateway replacement and coexistence | gate | N15 | -/- | 0 | 0 | TODO | |

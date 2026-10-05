@@ -50,8 +50,8 @@ budgets: 2 tries per brief · 2 replans per node
 | N06 | Sonar terraform: R2 backend and SSH firewall | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 1 | 1 | DONE | |
 | N08 | Kita terraform: R2 backend and install lock wait | exec | N02 | sonnet/sonnet | 1 | 1 | DONE | |
-| N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 2 | 0 | RUNNING | owner allowed Kita ci.yml write; rerun |
-| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02,N08 | opus/opus | 1 | 0 | RUNNING | |
+| N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 1 | 1 | DONE | |
+| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02,N08 | opus/opus | 2 | 0 | VERIFYING | owner left auto mode; rerun |
 | N11 | Gateway CI workflow, app redeploys and guide | exec | N07,N10 | opus/sonnet | 0 | 0 | TODO | |
 | N12 | visual check of the dashboard | gate | N05 | -/sonnet | 0 | 0 | TODO | |
 | N13 | owner R2, state migrations and drift check | gate | N06,N08,N10,N18,N19 | -/- | 0 | 0 | TODO | |

@@ -60,10 +60,11 @@ budgets: 2 tries per brief · 2 replans per node
 | N14 | owner GitHub environments, secrets and PAT | gate | N07,N09,N11,N13 | -/- | 0 | 0 | DONE | |
 | N15 | owner first CI deploys of the apps | gate | N12,N14 | -/- | 0 | 0 | DONE | |
 | N16 | owner Gateway replacement and coexistence | gate | N15,N23 | -/- | 0 | 1 | DONE | |
-| N17 | plan acceptance | check | N16 | -/opus | 0 | 0 | TODO | |
+| N17 | plan acceptance | check | N24 | -/opus | 0 | 1 | TODO | |
 | N18 | Kita terraform: hide SSH source in plans | exec | N08,N09 | haiku/sonnet | 2 | 0 | DONE | |
 | N19 | Sonar terraform: hide SSH source in plans | exec | N07 | haiku/sonnet | 1 | 0 | DONE | |
 | N20 | Sonar: R2 keys in backend.hcl docs | exec | N19 | haiku/sonnet | 2 | 0 | DONE | |
 | N21 | Kita: R2 keys in backend.hcl docs | exec | N18 | haiku/sonnet | 1 | 0 | DONE | |
 | N22 | Gateway: R2 keys in backend.hcl docs | exec | N11 | haiku/sonnet | 1 | 0 | DONE | |
 | N23 | Gateway: stable SSH key in state | exec | N22 | sonnet/sonnet | 1 | 0 | DONE | |
+| N24 | redact owner identity from run outputs | exec | N16 | sonnet/sonnet | 1 | 0 | DONE | |

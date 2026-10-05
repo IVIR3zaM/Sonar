@@ -14,3 +14,4 @@ sonar_git_ref        = "0000000000000000000000000000000000000000"
 # volume_size           = 10
 # server_label_selector = "project=gateway"
 # ssh_private_key_path  = "~/.ssh/id_ed25519"
+# ssh_allow_cidrs       = []

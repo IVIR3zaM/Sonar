@@ -90,3 +90,9 @@ variable "ssh_private_key_path" {
   type        = string
   default     = "~/.ssh/id_ed25519"
 }
+
+variable "ssh_allow_cidrs" {
+  description = "CIDRs allowed to SSH to the Gateway VM for the deploy. Default: this machine's public IPv4, detected on every plan."
+  type        = list(string)
+  default     = []
+}

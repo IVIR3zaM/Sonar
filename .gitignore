@@ -13,5 +13,6 @@ __pycache__/
 .coverage
 # Terraform: real variables and state hold secrets.
 deploy/terraform/terraform.tfvars
+deploy/terraform/backend.hcl
 **/.terraform/
 *.tfstate*

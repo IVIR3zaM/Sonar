@@ -1,0 +1,8 @@
+== C1 for n in HCLOUD_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID SONAR_HOSTNAME GOOGLE_CLIENT_SECRET ALLOWED_EMAILS SSH_PRIVATE_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do gh secret list -R IVIR3zaM/Sonar --env production --json name --jq '.[].name' | grep -qx "$n" || exit 1; done
+exit 0
+== C2 for n in HCLOUD_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID KITA_HOSTNAME SSH_PRIVATE_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do gh secret list -R IVIR3zaM/Kita --env production --json name --jq '.[].name' | grep -qx "$n" || exit 1; done
+exit 0
+== C3 for n in HCLOUD_TOKEN CLOUDFLARE_API_TOKEN DOMAIN SUBDOMAIN WS_PATH SSH_PRIVATE_KEY DISPATCH_TOKEN R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do gh secret list -R IVIR3zaM/Gateway --env production --json name --jq '.[].name' | grep -qx "$n" || exit 1; done
+exit 0
+== C4 for r in Sonar Kita Gateway; do for n in R2_ACCOUNT_ID R2_BUCKET; do gh variable list -R IVIR3zaM/$r --env production --json name --jq '.[].name' | grep -qx "$n" || exit 1; done; done
+exit 0

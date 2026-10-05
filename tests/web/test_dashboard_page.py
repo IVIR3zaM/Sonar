@@ -39,12 +39,29 @@ category = "Groceries"
 counterparty = "Fake Market"
 """
 
+INCOME_TOML = """
+[[category]]
+name = "Child benefit"
+type = "income"
+
+[[rule]]
+category = "Child benefit"
+counterparty = "Family Benefits Office"
+"""
+
 
 def _today() -> date:
     return TODAY
 
 
-def _insert_debit(db_path: Path, *, fingerprint: str, booking_date: str, amount_cents: int) -> None:
+def _insert_debit(
+    db_path: Path,
+    *,
+    fingerprint: str,
+    booking_date: str,
+    amount_cents: int,
+    counterparty: str = "Fake Market",
+) -> None:
     conn = sqlite3.connect(db_path)
     try:
         apply_migrations(conn, MIGRATIONS_DIR)
@@ -55,11 +72,11 @@ def _insert_debit(db_path: Path, *, fingerprint: str, booking_date: str, amount_
                 counterparty, purpose, iban, mandate_ref, creditor_id, raw_row,
                 fingerprint, occurrence, category
             ) VALUES (
-                'test', 'acc', ?, ?, ?, 'EUR', 'Fake Market', '', NULL, NULL, NULL,
+                'test', 'acc', ?, ?, ?, 'EUR', ?, '', NULL, NULL, NULL,
                 'raw', ?, 1, NULL
             )
             """,
-            (booking_date, booking_date, amount_cents, fingerprint),
+            (booking_date, booking_date, amount_cents, counterparty, fingerprint),
         )
         conn.commit()
     finally:
@@ -557,3 +574,71 @@ def test_passed_payday_shows_a_stale_data_notice(tmp_path):
     days = page.select_one("#days-to-payday")
     assert int(days["data-days"]) < 0
     assert text(days) == "5 days ago"
+
+
+def _insert_benefits(db_path: Path) -> None:
+    for month, amount_cents in ((6, 20_000), (7, 20_000), (8, 25_000)):
+        _insert_debit(
+            db_path,
+            fingerprint=f"b{month}",
+            booking_date=f"2026-{month:02d}-15",
+            amount_cents=amount_cents,
+            counterparty="Family Benefits Office",
+        )
+
+
+def _dashboard(db_path: Path, *, balance: bool = True, salary_day: bool = True):
+    with TestClient(create_app(db_path, today=_today)) as client:
+        if salary_day:
+            client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        if balance:
+            client.post("/settings/balance", data={"amount": "100.00", "as_of": "2026-09-10"})
+        return soup(client.get("/"))
+
+
+def test_income_card_lists_each_inflow_and_the_total_after_the_hero(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, INCOME_TOML)
+    _insert_benefits(db_path)
+
+    page = _dashboard(db_path)
+
+    card = page.select_one("#income-card")
+    assert records(card.select_one("#inflows")) == [
+        {"category": "Child benefit", "date": "2026-09-15", "amount": 25_000}
+    ]
+    assert cents(card.select_one("#inflow-total")) == 25_000
+    ids = [el.get("id") for el in page.select("#hero, #income-card, #due-card, #lights-on-card")]
+    assert ids == ["hero", "income-card", "due-card", "lights-on-card"]
+
+
+def test_income_raises_the_hero_projection_by_the_inflow_total(tmp_path):
+    without_path = tmp_path / "without.db"
+    seed(without_path, INCOME_TOML)
+    with_path = tmp_path / "with.db"
+    seed(with_path, INCOME_TOML)
+    _insert_benefits(with_path)
+
+    without_worst, without_best = _projection(_dashboard(without_path))
+    page = _dashboard(with_path)
+
+    assert _projection(page) == (without_worst + 25_000, without_best + 25_000)
+    assert _runway(page) == _projection(page)
+
+
+def test_income_card_is_absent_without_an_income_series(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, INCOME_TOML)
+
+    assert _dashboard(db_path).select_one("#income-card") is None
+
+
+@pytest.mark.parametrize("setting", ["balance", "salary_day"])
+def test_income_card_is_absent_without_salary_day_or_balance(tmp_path, setting):
+    db_path = tmp_path / "t.db"
+    seed(db_path, INCOME_TOML)
+    _insert_benefits(db_path)
+
+    page = _dashboard(db_path, **{setting: False})
+
+    assert page.select_one("#income-card") is None

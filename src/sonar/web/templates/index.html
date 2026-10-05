@@ -105,6 +105,28 @@
   {% endif %}
   </div>
 
+  {% if dashboard.inflows %}
+  <div class="min-w-0 lg:col-span-2">
+    {% call card(title="Income before payday", subtitle="Expected credits", id="income-card") %}
+      {{ stat("Expected", value=amount(dashboard.inflow_total_cents, colored=false), id="inflow-total") }}
+      <div class="{{ table_wrap }} mt-4">
+        <table id="inflows" class="{{ table }}">
+          <thead><tr><th class="{{ th }}">Category</th><th class="{{ th }}">Date</th><th class="{{ th_num }}">Amount</th></tr></thead>
+          <tbody>
+          {% for item in dashboard.inflows %}
+            <tr data-row class="{{ tr }}">
+              <td class="{{ td }}" data-field="category">{{ item.name }}</td>
+              <td class="{{ td }}" data-field="date">{{ date(item.due_date) }}</td>
+              <td class="{{ td_num }}" data-field="amount">{{ amount(item.amount_cents, colored=false) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endcall %}
+  </div>
+  {% endif %}
+
   {% call card(title="1 · Fixed payments due before payday", subtitle="Still expected", id="due-card") %}
     {{ stat("Expected", value=amount(dashboard.due_total_cents, colored=false), id="due-total") }}
     {% if dashboard.due %}

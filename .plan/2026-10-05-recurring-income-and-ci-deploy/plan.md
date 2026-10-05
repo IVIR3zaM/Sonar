@@ -46,9 +46,9 @@ budgets: 2 tries per brief · 2 replans per node
 | N02 | owner commits Kita and Gateway WIP | gate | N01 | -/- | 0 | 0 | DONE | |
 | N03 | detect recurring income | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | forecast inflows before payday | exec | N03 | sonnet/sonnet | 1 | 0 | DONE | |
-| N05 | income before payday card | exec | N04 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N05 | income before payday card | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | Sonar terraform: R2 backend and SSH firewall | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 1 | 0 | RUNNING | |
+| N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 1 | 0 | RETRY | fail C1 |
 | N08 | Kita terraform: R2 backend and install lock wait | exec | N02 | sonnet/sonnet | 1 | 1 | DONE | |
 | N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 0 | 0 | TODO | |
 | N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02 | opus/opus | 0 | 0 | WAITING | ask: D28 |

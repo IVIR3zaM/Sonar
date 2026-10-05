@@ -1,0 +1,39 @@
+== C1 cd ../Gateway && f=hetzner/terraform/backend.hcl.example; grep -Eq '^access_key += "replace-with-' $f && grep -Eq '^secret_key += "replace-with-' $f && grep -Eq '^bucket +=' $f && grep -Eq '^endpoints +=' $f && grep -q 'chmod 600' $f
+exit 0
+== C2 cd ../Gateway && f=hetzner/README.md; ! grep -Eq '^ *export AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)' $f && ! grep -q 'credentials exported' $f && grep -q 'chmod 600 backend.hcl' $f && grep -q 'terraform init -reconfigure -backend-config=backend.hcl' $f && grep -q 'AWS_PROFILE' $f && grep -q '\.terraform/' $f && grep -q 'R2_SECRET_ACCESS_KEY' $f
+exit 0
+== C3 cd ../Gateway && ! grep -q 'access_key' .github/workflows/hetzner.yml && git check-ignore -q hetzner/terraform/backend.hcl && git check-ignore -q hetzner/terraform/.terraform
+exit 0
+== C5 cd ../Gateway/hetzner/terraform && export ASDF_TERRAFORM_VERSION=1.16.5 && terraform init -backend=false -input=false >/dev/null && terraform validate
+exit 0
+[32m[1mSuccess![0m The configuration is valid.
+[0m
+== C6 uv run pytest -q -x && uv run ruff check .
+exit 0
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+........................................................................ [ 27%]
+........................................................................ [ 34%]
+........................................................................ [ 41%]
+........................................................................ [ 48%]
+........................................................................ [ 55%]
+........................................................................ [ 62%]
+........................................................................ [ 69%]
+........................................................................ [ 76%]
+........................................................................ [ 83%]
+........................................................................ [ 90%]
+........................................................................ [ 97%]
+...........................                                              [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1035 passed, 2 warnings in 19.62s
+All checks passed!

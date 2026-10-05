@@ -62,6 +62,6 @@ budgets: 2 tries per brief · 2 replans per node
 | N17 | plan acceptance | check | N16 | -/opus | 0 | 0 | TODO | |
 | N18 | Kita terraform: hide SSH source in plans | exec | N08,N09 | haiku/sonnet | 2 | 0 | DONE | |
 | N19 | Sonar terraform: hide SSH source in plans | exec | N07 | haiku/sonnet | 1 | 0 | DONE | |
-| N20 | Sonar: R2 keys in backend.hcl docs | exec | N19 | haiku/sonnet | 1 | 0 | VERIFYING | |
+| N20 | Sonar: R2 keys in backend.hcl docs | exec | N19 | haiku/sonnet | 2 | 0 | RUNNING | fail C4 |
 | N21 | Kita: R2 keys in backend.hcl docs | exec | N18 | haiku/sonnet | 1 | 0 | DONE | |
-| N22 | Gateway: R2 keys in backend.hcl docs | exec | N11 | haiku/sonnet | 1 | 0 | RUNNING | |
+| N22 | Gateway: R2 keys in backend.hcl docs | exec | N11 | haiku/sonnet | 1 | 0 | DONE | |

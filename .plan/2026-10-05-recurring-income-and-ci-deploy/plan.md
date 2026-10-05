@@ -1,5 +1,5 @@
 # Recurring income and CI deploys for the Gateway VM
-status: RUNNING
+status: DONE
 created: 2026-10-05 · updated: 2026-10-05
 goal: The payday forecast counts recurring non-salary income in its own dashboard card; Gateway, Sonar and Kita deploy side by side on the Gateway VM from local runs or GitHub Actions, with state in R2.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -60,7 +60,7 @@ budgets: 2 tries per brief · 2 replans per node
 | N14 | owner GitHub environments, secrets and PAT | gate | N07,N09,N11,N13 | -/- | 0 | 0 | DONE | |
 | N15 | owner first CI deploys of the apps | gate | N12,N14 | -/- | 0 | 0 | DONE | |
 | N16 | owner Gateway replacement and coexistence | gate | N15,N23 | -/- | 0 | 1 | DONE | |
-| N17 | plan acceptance | check | N24 | -/opus | 0 | 1 | TODO | |
+| N17 | plan acceptance | check | N24 | -/opus | 1 | 1 | DONE | |
 | N18 | Kita terraform: hide SSH source in plans | exec | N08,N09 | haiku/sonnet | 2 | 0 | DONE | |
 | N19 | Sonar terraform: hide SSH source in plans | exec | N07 | haiku/sonnet | 1 | 0 | DONE | |
 | N20 | Sonar: R2 keys in backend.hcl docs | exec | N19 | haiku/sonnet | 2 | 0 | DONE | |

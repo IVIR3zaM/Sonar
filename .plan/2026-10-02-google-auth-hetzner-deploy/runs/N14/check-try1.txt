@@ -1,0 +1,46 @@
+== C1 uv run pytest -q && uv run ruff check . && uv run ruff format --check .
+exit 0
+   Building sonar @ file:///Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar
+      Built sonar @ file:///Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar
+Uninstalled 1 package in 1ms
+Installed 1 package in 1ms
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 21%]
+........................................................................ [ 28%]
+........................................................................ [ 35%]
+........................................................................ [ 43%]
+........................................................................ [ 50%]
+........................................................................ [ 57%]
+........................................................................ [ 64%]
+........................................................................ [ 71%]
+........................................................................ [ 78%]
+........................................................................ [ 86%]
+........................................................................ [ 93%]
+...................................................................      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/mohammadrezamaghoul/github/IVIR3zaM/Sonar/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1003 passed, 2 warnings in 19.91s
+All checks passed!
+250 files already formatted
+== C2 cd deploy/terraform && export CHECKPOINT_DISABLE=1 && terraform fmt -check main.tf variables.tf outputs.tf versions.tf && terraform validate -no-color
+exit 0
+Success! The configuration is valid.
+
+== C3 test -z "$(git ls-files | grep -E '(^|/)(terraform\.tfvars|[^/]*\.tfstate[^/]*|\.env)$')" && ! git grep -nE 'GOCSPX-|[0-9]{6,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com'
+exit 0
+== C4 D=$(mktemp -d) && TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$D/s.css" --minify && cmp "$D/s.css" src/sonar/web/static/sonar.css; R=$?; rm -rf "$D"; exit $R
+exit 0
+≈ tailwindcss v4.3.3
+
+Done in 86ms
+== C11 test -z "$(git status --porcelain --untracked-files=no -- . ':!.plan')" && ! lsof -iTCP:8002 -sTCP:LISTEN
+exit 0

@@ -1,3 +1,7 @@
-# Copy to backend.hcl (gitignored) and use it with: terraform init -backend-config=backend.hcl
+# Copy to backend.hcl (gitignored), fill in the access and secret keys below, chmod 600 it, and use it with:
+# terraform init -backend-config=backend.hcl
+# The keys in backend.hcl take precedence over AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE and ~/.aws.
 bucket    = "replace-with-r2-bucket-name"
 endpoints = { s3 = "https://replace-with-account-id.r2.cloudflarestorage.com" }
+access_key = "replace-with-r2-access-key-id"
+secret_key = "replace-with-r2-secret-access-key"

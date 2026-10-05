@@ -20,27 +20,30 @@ Terraform (in `deploy/terraform`) looks up the Gateway VM, creates a protected d
 Gateway, Sonar and Kita share one private R2 bucket and one R2 API token (Object Read & Write on that bucket). Each project has its own key; Sonar's is `sonar/terraform.tfstate` (set in `versions.tf`). Terraform locks the state with a lock file next to it in the bucket.
 
 1. In Cloudflare, create the private bucket once (or reuse the one Gateway already uses) and an R2 API token scoped to it. Note the account ID, the bucket name, and the token's access key ID and secret access key.
-2. Create the backend config (gitignored) and fill in the bucket and account ID:
+2. Create the backend config (gitignored), fill in the bucket, account ID and R2 credentials, then restrict it:
 
    ```bash
    cd deploy/terraform
    cp backend.hcl.example backend.hcl
+   # Edit backend.hcl: fill in bucket, account ID, access_key and secret_key
+   chmod 600 backend.hcl
    ```
 
-3. Export the R2 credentials in every shell that runs terraform. They never go in a file in the repository:
+3. The R2 credentials in `backend.hcl` take precedence over any `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` variables or `AWS_PROFILE` in your shell, so nothing is exported. This means other AWS profiles and `~/.aws` stay untouched, and Sonar's terraform never touches your other AWS accounts.
+
+4. One time only, if you already have a terraform root from an earlier deploy, reinitialize it:
 
    ```bash
-   export AWS_ACCESS_KEY_ID=<r2-access-key-id>
-   export AWS_SECRET_ACCESS_KEY=<r2-secret-access-key>
+   terraform init -reconfigure -backend-config=backend.hcl
    ```
 
-4. One time only, if you already have a local `terraform.tfstate` from an earlier deploy, move it into R2:
+   If you also have a local `terraform.tfstate` from before the R2 backend was set up, pass `-migrate-state` instead of `-reconfigure`:
 
    ```bash
    terraform init -migrate-state -backend-config=backend.hcl
    ```
 
-   Answer yes to copy the state. Afterwards `terraform state list` must show the volume, its attachment, the DNS record and the install; then keep the old local state files only as a private backup. On a first-ever deploy there is nothing to migrate: run `terraform init -backend-config=backend.hcl`.
+   Answer yes to move the state to R2. Afterwards `terraform state list` must show the volume, its attachment, the DNS record and the install; then keep the old local state files only as a private backup. On a first-ever deploy, just run `terraform init -backend-config=backend.hcl`.
 
 ## 1. Google OAuth setup
 
@@ -136,7 +139,7 @@ If the line is missing, Sonar's install stops with an error that names `deploy/R
    | `ssh_private_key_path` | Private key that logs in as root on the Gateway VM. | `~/.ssh/id_ed25519` |
    | `ssh_allow_cidrs` | CIDRs the `sonar-ssh` firewall opens port 22 to. Empty means this machine's public IPv4, detected on every plan. | `[]` |
 
-4. With the R2 credentials exported, apply:
+4. With `backend.hcl` filled in, apply:
 
    ```bash
    cd deploy/terraform
@@ -266,5 +269,5 @@ Sonar shares the Gateway VM with Gateway and Kita, and the bucket with both.
 - **Access list:** `allowed_emails` (in `terraform.tfvars` locally, the `ALLOWED_EMAILS` secret in CI) is authoritative. Every apply replaces the access list with exactly those emails, so removing one locks it out on its next request. Keep the two in sync, and add the person as a Google test user too while the app is in Testing.
 - **Gateway redeploy:** if redeploying Gateway replaces the VM, Gateway's workflow dispatches Sonar's deploy; if it doesn't, run `gh workflow run ci.yml -f ref=main`. The data survives on the volume, which is reattached and remounted.
 - **Never destroy the volume.** It has `prevent_destroy` and Hetzner delete protection, because the SQLite database lives on it.
-- **Secrets:** state lives in R2, not on your machine, and holds secrets; keep the bucket private. `terraform.tfvars` and `backend.hcl` are gitignored; never commit them, the R2 credentials or the SSH key.
+- **Secrets:** state lives in R2, not on your machine, and holds secrets; keep the bucket private. `backend.hcl` holds your R2 credentials; terraform copies them into the gitignored `.terraform/` directory and into any saved `-out` plan files. Never share `.terraform/`, plan files, `terraform.tfvars`, or your SSH key. All four are gitignored; never commit them.
 - **Logs:** `ssh root@<server_ipv4> journalctl -u sonar`.

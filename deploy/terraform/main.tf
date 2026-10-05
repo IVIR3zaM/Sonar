@@ -116,10 +116,11 @@ resource "hcloud_firewall" "sonar_ssh" {
   name = "sonar-ssh"
 
   rule {
-    direction   = "in"
-    protocol    = "tcp"
-    port        = "22"
-    source_ips  = local.ssh_allow_cidrs
+    direction = "in"
+    protocol  = "tcp"
+    port      = "22"
+    # Hide SSH source from CI logs to avoid exposing the owner's home IPv4.
+    source_ips  = sensitive(local.ssh_allow_cidrs)
     description = "SSH for Sonar deploys"
   }
 

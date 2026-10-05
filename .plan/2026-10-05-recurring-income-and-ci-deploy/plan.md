@@ -36,7 +36,7 @@ budgets: 2 tries per brief · 2 replans per node
 - D25 Every CI and documented local terraform plan/apply uses `-lock-timeout=10m`, so a local and a CI run of the same project queue on the R2 lock instead of failing | confirmed
 - D26 Gateway on runners: `local_env.tf` falls back to `https://ipv4.icanhazip.com` instead of `ifconfig.me`, which can answer IPv6. It picks the public key with a conditional instead of `coalesce`, which evaluates `file(...pub)` eagerly, so a runner with TF_VAR_ssh_public_key set never reads `~/.ssh` | confirmed
 - D27 Gateway's dispatch has a boolean input `replace_server` (default false) that applies with `-replace=random_id.server_suffix -replace=hcloud_server.v2ray` (a new suffix avoids a name clash under create_before_destroy). N16 uses it to force the blue/green replacement, and it stays as a recovery tool | confirmed
-- D28 Owner IP in public logs: a CI plan replaces the SSH rule's source from the owner's last local IP to the runner's, so the plan diff prints the owner's home IPv4 in the public Actions log of all three repos (Gateway `firewall.tf:39`, Sonar `deploy/terraform/main.tf:122`, Kita `../Kita/deploy/terraform/main.tf:76`). Fix: wrap those `source_ips` in `sensitive()`, so the plan shows `(sensitive value)` for the firewall rules; Gateway in N10, Kita in N08 (or a fix node if N08 is done), Sonar in N07 | proposed · recommend: hide it with sensitive() in all three · alt: accept the leak
+- D28 Owner IP in public logs: a CI plan replaces the SSH rule's source from the owner's last local IP to the runner's, so the plan diff would print the owner's home IPv4 in the public Actions log of all three repos (Gateway `firewall.tf:39`, Sonar `deploy/terraform/main.tf:122`, Kita `../Kita/deploy/terraform/main.tf:76`). Fix: wrap those `source_ips` in `sensitive()`, so the plan hides the firewall's rule blocks; Gateway in N10, Kita in N18, Sonar in N19 (N07 and N08 are done) | confirmed
 
 ## Graph
 
@@ -50,12 +50,14 @@ budgets: 2 tries per brief · 2 replans per node
 | N06 | Sonar terraform: R2 backend and SSH firewall | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | Sonar CI workflow and deploy guide | exec | N06 | opus/sonnet | 1 | 1 | DONE | |
 | N08 | Kita terraform: R2 backend and install lock wait | exec | N02 | sonnet/sonnet | 1 | 1 | DONE | |
-| N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 0 | 0 | TODO | |
-| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02 | opus/opus | 0 | 0 | WAITING | ask: D28 |
+| N09 | Kita CI workflow and deploy guide | exec | N07,N08 | sonnet/sonnet | 2 | 0 | RUNNING | owner allowed Kita ci.yml write; rerun |
+| N10 | Gateway terraform: R2 backend, runner-safe and quiet | exec | N02,N08 | opus/opus | 1 | 0 | RUNNING | |
 | N11 | Gateway CI workflow, app redeploys and guide | exec | N07,N10 | opus/sonnet | 0 | 0 | TODO | |
 | N12 | visual check of the dashboard | gate | N05 | -/sonnet | 0 | 0 | TODO | |
-| N13 | owner R2, state migrations and drift check | gate | N06,N08,N10 | -/- | 0 | 0 | TODO | |
+| N13 | owner R2, state migrations and drift check | gate | N06,N08,N10,N18,N19 | -/- | 0 | 0 | TODO | |
 | N14 | owner GitHub environments, secrets and PAT | gate | N07,N09,N11,N13 | -/- | 0 | 0 | TODO | |
 | N15 | owner first CI deploys of the apps | gate | N12,N14 | -/- | 0 | 0 | TODO | |
 | N16 | owner Gateway replacement and coexistence | gate | N15 | -/- | 0 | 0 | TODO | |
 | N17 | plan acceptance | check | N16 | -/opus | 0 | 0 | TODO | |
+| N18 | Kita terraform: hide SSH source in plans | exec | N08,N09 | haiku/sonnet | 0 | 0 | TODO | |
+| N19 | Sonar terraform: hide SSH source in plans | exec | N07 | haiku/sonnet | 1 | 0 | DONE | |

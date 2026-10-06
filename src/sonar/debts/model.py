@@ -18,7 +18,7 @@ from sonar.recurring.detect import payment_key
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.transactions import ParsedTransaction
 
-MATCH_FIELDS = frozenset({"counterparty", "mandate"})
+MATCH_FIELDS = frozenset({"counterparty", "mandate", "purpose"})
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,8 @@ def matches(tx: ParsedTransaction, rule: MatchRule) -> bool:
         return False
     if rule.field == "counterparty":
         return normalize_text(rule.value) in normalize_text(tx.counterparty)
+    if rule.field == "purpose":
+        return normalize_text(rule.value) in normalize_text(tx.purpose)
     # mandate: None never matches an exact ref, however it is spelled.
     return tx.mandate_ref == rule.value.strip()
 
@@ -220,4 +222,12 @@ def linked_keys(debt: Installment | Loan, txs: Iterable[ParsedTransaction]) -> f
     Detection groups the whole transaction history (SPEC §6), so a debt links
     to a recurring payment through the same key regardless of date range.
     """
-    return frozenset(payment_key(tx) for tx in txs if matches(tx, debt.match))
+    txs = list(txs)
+    keys = {payment_key(tx) for tx in txs if matches(tx, debt.match)}
+    if debt.match.field == "purpose":
+        # A creditor mandate groups other subscriptions under the same key, so a
+        # key that also holds a debit this rule does not match is never linked.
+        keys -= {
+            payment_key(tx) for tx in txs if tx.amount_cents < 0 and not matches(tx, debt.match)
+        }
+    return frozenset(keys)

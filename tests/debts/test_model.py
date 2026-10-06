@@ -20,6 +20,7 @@ def _tx(
     counterparty: str = "Sofa Store",
     mandate_ref: str | None = None,
     creditor_id: str | None = None,
+    purpose: str = "",
 ) -> ParsedTransaction:
     return ParsedTransaction(
         account="DE00 0000 0000 0000 0000 00",
@@ -28,7 +29,7 @@ def _tx(
         amount_cents=amount_cents,
         currency="EUR",
         counterparty=counterparty,
-        purpose="",
+        purpose=purpose,
         raw_row="",
         mandate_ref=mandate_ref,
         creditor_id=creditor_id,
@@ -45,6 +46,7 @@ def _tx(
         ("counterparty", ""),  # blank value
         ("counterparty", "   "),  # whitespace-only value
         ("mandate", ""),
+        ("purpose", " "),
     ],
 )
 def test_match_rule_rejects_invalid_field_or_value(field: str, value: str) -> None:
@@ -61,6 +63,29 @@ def test_matches_counterparty_is_case_and_space_insensitive_substring() -> None:
 def test_matches_counterparty_credit_never_matches() -> None:
     rule = MatchRule("counterparty", "sofa store")
     tx = _tx(10000, counterparty="Sofa Store")
+    assert not matches(tx, rule)
+
+
+ORDER = "305-7936467-3301953"
+
+
+def test_matches_purpose_picks_the_debit_with_that_order_number() -> None:
+    rule = MatchRule("purpose", ORDER)
+    mine = _tx(-10000, mandate_ref="M-1", purpose=f"AMZN Ratenzahlung {ORDER}")
+    other = _tx(-10000, mandate_ref="M-1", purpose="AMZN Ratenzahlung 111-2222222-3333333")
+    assert matches(mine, rule)
+    assert not matches(other, rule)
+
+
+def test_matches_purpose_is_case_and_space_insensitive() -> None:
+    rule = MatchRule("purpose", "  rate   ABC-1 ")
+    tx = _tx(-10000, purpose="Ratenzahlung  Rate abc-1 Mai")
+    assert matches(tx, rule)
+
+
+def test_matches_purpose_credit_never_matches() -> None:
+    rule = MatchRule("purpose", ORDER)
+    tx = _tx(10000, purpose=f"Refund {ORDER}")
     assert not matches(tx, rule)
 
 
@@ -321,3 +346,25 @@ def test_linked_keys_counterparty_name_match() -> None:
 def test_linked_keys_no_matches_is_empty() -> None:
     inst = _installment()
     assert linked_keys(inst, []) == frozenset()
+
+
+def test_linked_keys_purpose_omits_a_key_shared_with_a_non_matching_debit() -> None:
+    inst = _installment()
+    inst = Installment(**{**inst.__dict__, "match": MatchRule("purpose", ORDER)})
+    txs = [
+        _tx(-10000, mandate_ref="M-1", creditor_id="CRED", purpose=f"Rate {ORDER}"),
+        _tx(-10000, mandate_ref="M-1", creditor_id="CRED", purpose="Rate 111-2222222-3333333"),
+    ]
+    assert linked_keys(inst, txs) == frozenset()
+
+
+def test_linked_keys_purpose_keeps_a_key_whose_debits_all_match() -> None:
+    inst = _installment()
+    inst = Installment(**{**inst.__dict__, "match": MatchRule("purpose", ORDER)})
+    txs = [
+        _tx(-10000, date(2026, 1, 5), mandate_ref="M-1", creditor_id="CRED", purpose=ORDER),
+        _tx(-10000, date(2026, 2, 5), mandate_ref="M-1", creditor_id="CRED", purpose=ORDER),
+        # A credit on the same key is ignored.
+        _tx(5000, date(2026, 3, 5), mandate_ref="M-1", creditor_id="CRED", purpose="Refund"),
+    ]
+    assert linked_keys(inst, txs) == frozenset({"mandate:CRED/M-1"})

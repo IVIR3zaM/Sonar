@@ -31,6 +31,7 @@ def _insert_tx(
     fingerprint: str,
     booking_date: str,
     counterparty: str = "",
+    purpose: str = "",
     mandate_ref: str | None = None,
     creditor_id: str | None = None,
     amount_cents: int = -10_000,
@@ -44,7 +45,7 @@ def _insert_tx(
             fingerprint, occurrence, category
         ) VALUES (
             'test', 'acc', ?, ?, ?, 'EUR',
-            ?, '', NULL, ?, ?, 'raw', ?, 1, NULL
+            ?, ?, NULL, ?, ?, 'raw', ?, 1, NULL
         )
         """,
         (
@@ -52,6 +53,7 @@ def _insert_tx(
             booking_date,
             amount_cents,
             counterparty,
+            purpose,
             mandate_ref,
             creditor_id,
             fingerprint,
@@ -179,4 +181,31 @@ def test_debt_with_no_matching_transactions_has_empty_links_and_zero_paid(
     [view] = debt_overview(conn, TODAY)
 
     assert view.status.paid_cents == 0
+    assert view.linked_payments == ()
+
+
+def test_purpose_debt_counts_only_its_debit_and_skips_the_shared_key(
+    conn: sqlite3.Connection,
+) -> None:
+    _insert_tx(
+        conn, fingerprint="a", booking_date="2026-07-30", mandate_ref="M-1", purpose="Rate 111"
+    )
+    _insert_tx(
+        conn, fingerprint="b", booking_date="2026-07-30", mandate_ref="M-1", purpose="Rate 222"
+    )
+    _insert_recurring(conn, detection_key="mandate:/M-1", name="Shared Mandate")
+    debt = Installment(
+        name="Order 111",
+        total_cents=120_000,
+        rate_cents=10_000,
+        interval_months=1,
+        first_payment_date=date(2026, 1, 5),
+        payments_count=12,
+        match=MatchRule("purpose", "Rate 111"),
+    )
+    add_debt(conn, debt)
+
+    [view] = debt_overview(conn, TODAY)
+
+    assert view.status.paid_cents == 10_000
     assert view.linked_payments == ()

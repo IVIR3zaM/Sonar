@@ -1,9 +1,10 @@
 """Cumulative payoff steps: pay the smallest debts first and see what monthly fixed cost is freed.
 
 Freed is one amount per month: the sum of the included debts' rates, whatever
-their interval. Only the fixed totals are ranges, because fixed payments are not
-all monthly: a quarterly or yearly payment makes some months heavier, so the
-total has a minimum and a maximum over the horizon.
+their interval. The fixed totals are ranges because not every payment is
+monthly: a quarterly or yearly payment only falls due in some months. The
+minimum counts the monthly payments alone, the maximum counts every payment at
+full amount, so paying off a non-monthly debt lowers the maximum only.
 """
 
 from collections.abc import Sequence
@@ -21,9 +22,6 @@ class LadderDebt:
     rate_cents: int
     interval_months: int
     end_date: date | None
-    months: tuple[
-        int, ...
-    ]  # this debt's own fixed payments per month, aligned with the base series
 
 
 @dataclass(frozen=True)
@@ -39,35 +37,27 @@ class PayoffStep:
 
 
 def payoff_ladder(
-    debts: Sequence[LadderDebt], fixed_months: Sequence[int]
+    debts: Sequence[LadderDebt], now_min_cents: int, now_max_cents: int
 ) -> tuple[PayoffStep, ...]:
-    for debt in debts:
-        if len(debt.months) != len(fixed_months):
-            raise ValueError(
-                f"{debt.name}: {len(debt.months)} months, expected {len(fixed_months)}"
-            )
     ordered = sorted(
         (d for d in debts if d.remaining_cents > 0),
         key=lambda d: (d.remaining_cents, d.name, d.id),
     )
-    if not ordered:
-        return ()
-
-    before_min, before_max = min(fixed_months), max(fixed_months)
     steps = []
     for k in range(1, len(ordered) + 1):
         included = tuple(ordered[:k])
-        after = [fixed - sum(d.months[m] for d in included) for m, fixed in enumerate(fixed_months)]
+        freed = sum(d.rate_cents for d in included)
+        freed_monthly = sum(d.rate_cents for d in included if d.interval_months <= 1)
         steps.append(
             PayoffStep(
                 number=k,
                 pay_now_cents=sum(d.remaining_cents for d in included),
                 debts=included,
-                before_min_cents=before_min,
-                before_max_cents=before_max,
-                after_min_cents=min(after),
-                after_max_cents=max(after),
-                freed_cents=sum(d.rate_cents for d in included),
+                before_min_cents=now_min_cents,
+                before_max_cents=now_max_cents,
+                after_min_cents=now_min_cents - freed_monthly,
+                after_max_cents=now_max_cents - freed,
+                freed_cents=freed,
             )
         )
     return tuple(steps)

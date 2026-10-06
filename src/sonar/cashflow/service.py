@@ -31,7 +31,6 @@ from sonar.debts import model
 from sonar.debts.model import Installment
 from sonar.debts.payoff import LadderDebt, PayoffStep, payoff_ladder
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
-from sonar.recurring import schedule
 from sonar.recurring.detect import Row, detect_income
 from sonar.recurring.store import list_payments
 from sonar.transactions import ParsedTransaction
@@ -73,34 +72,29 @@ class Dashboard:
 class Payoff:
     estimate_date: date
     steps: tuple[PayoffStep, ...]
-    # The fixed-cost series' own range, kept for the page when there are no steps.
+    # The fixed payments' own range, kept for the page when there are no steps.
     before_min_cents: int
     before_max_cents: int
 
 
 def load_payoff(conn: sqlite3.Connection, today: date) -> Payoff:
-    """The payoff ladder over the 12 full months after the estimate date.
+    """The payoff ladder over the fixed payments current at the estimate date.
 
-    Each open debt's months come from the same month totals as the dashboard
-    chart, so a payment is counted exactly as it is there. The window starts at
-    the next month because the estimate month is partial and would drag every
-    minimum down.
+    The range comes from the same rows as the dashboard's Fixed costs table, so
+    "now" reads the same on both pages.
     """
     balance = current_balance(conn)
     estimate_date = today if balance is None else balance.as_of
     txs = [tx for tx, _ in transactions_with_category(conn)]
-    window_start = schedule.add_months(estimate_date.replace(day=1), 1, 1)
     views = debt_overview(conn, estimate_date)
-    base = [
-        m.total_cents for m in forecast.month_totals(_fixed_sources(conn, views, txs), window_start)
-    ]
+    rows = forecast.fixed_costs(_fixed_sources(conn, views, txs), estimate_date).rows
+    now_min, now_max = forecast.fixed_range(rows)
     open_views = [view for view in views if not view.status.paid_off]
-    ladder = payoff_ladder([_ladder_debt(view, txs, window_start) for view in open_views], base)
-    return Payoff(estimate_date, ladder, min(base), max(base))
+    ladder = payoff_ladder([_ladder_debt(view) for view in open_views], now_min, now_max)
+    return Payoff(estimate_date, ladder, now_min, now_max)
 
 
-def _ladder_debt(view: DebtView, txs: list[ParsedTransaction], window_start: date) -> LadderDebt:
-    months = forecast.month_totals((_debt_source(view, txs),), window_start)
+def _ladder_debt(view: DebtView) -> LadderDebt:
     debt, status = view.debt, view.status
     if isinstance(debt, Installment):
         kind: Literal["installment", "loan"] = "installment"
@@ -115,7 +109,6 @@ def _ladder_debt(view: DebtView, txs: list[ParsedTransaction], window_start: dat
         rate_cents=debt.rate_cents,
         interval_months=interval_months,
         end_date=end_date,
-        months=tuple(m.total_cents for m in months),
     )
 
 

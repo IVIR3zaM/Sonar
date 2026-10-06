@@ -659,10 +659,6 @@ def test_load_monthly_flags_salary_months_once_a_salary_day_is_set(conn):
     assert load_monthly(conn, CATEGORY_TYPES, TODAY, None).salary_months is True
 
 
-def _fixed_totals(conn: sqlite3.Connection, today: date = TODAY) -> list[int]:
-    return [m.total_cents for m in load_dashboard(conn, CATEGORY_TYPES, today).fixed_costs.months]
-
-
 def _loan(name: str, mandate: str, balance_cents: int = 100_000) -> Loan:
     return Loan(
         name=name,
@@ -682,42 +678,43 @@ def test_payoff_frees_the_installment_rate_from_the_dashboard_fixed_costs(
 
     payoff = load_payoff(conn, TODAY)
 
-    totals = _fixed_totals(conn, date(2026, 10, 1))
     (step,) = payoff.steps
     assert payoff.estimate_date == TODAY
-    assert payoff.before_min_cents == min(totals)
-    assert payoff.before_max_cents == max(totals)
-    assert (step.before_min_cents, step.before_max_cents) == (min(totals), max(totals))
+    assert (payoff.before_min_cents, payoff.before_max_cents) == (60_000, 60_000)
+    assert (step.before_min_cents, step.before_max_cents) == (60_000, 60_000)
+    assert (step.after_min_cents, step.after_max_cents) == (50_000, 50_000)
     assert step.freed_cents == 10_000
     assert step.pay_now_cents == 120_000
     assert [d.name for d in step.debts] == ["Sofa"]
     assert step.debts[0].kind == "installment"
-    assert step.debts[0].months == (10_000,) * 12
 
 
-def test_payoff_counts_the_twelve_full_months_after_a_mid_month_balance_date(
+def test_payoff_counts_a_quarterly_fixed_row_in_the_maximum_only(
+    conn: sqlite3.Connection,
+) -> None:
+    _monthly(conn, "Rent", 1, 50_000)
+    add_manual(conn, "Insurance", None, SchedulePeriod(date(2026, 1, 1), None, 30_000, 3, 20))
+    add_debt(conn, _installment("Sofa", "M-1", first_payment_date=date(2026, 10, 15)))
+
+    payoff = load_payoff(conn, TODAY)
+
+    (step,) = payoff.steps
+    assert (step.before_min_cents, step.before_max_cents) == (60_000, 90_000)
+    assert (step.after_min_cents, step.after_max_cents) == (50_000, 80_000)
+    assert step.freed_cents == 10_000
+
+
+def test_payoff_reads_the_fixed_rows_at_the_balance_date_not_today(
     conn: sqlite3.Connection,
 ) -> None:
     _insert_import_balance(conn, "2026-09-23", 100_000)
     _monthly(conn, "Rent", 1, 50_000)
-    add_debt(
-        conn,
-        _installment(
-            "Sofa",
-            "M-1",
-            rate_cents=20_000,
-            first_payment_date=date(2026, 10, 1),
-            payments_count=14,
-            total_cents=280_000,
-        ),
-    )
+    add_manual(conn, "Gym", None, SchedulePeriod(date(2026, 1, 1), date(2026, 9, 30), 7_000, 1, 25))
 
-    payoff = load_payoff(conn, date(2026, 9, 28))
+    payoff = load_payoff(conn, date(2026, 10, 5))
 
-    (step,) = payoff.steps
-    assert step.before_min_cents == 70_000
-    assert step.freed_cents == 20_000
-    assert step.debts[0].months == (20_000,) * 12
+    assert payoff.estimate_date == date(2026, 9, 23)
+    assert (payoff.before_min_cents, payoff.before_max_cents) == (57_000, 57_000)
 
 
 def test_payoff_without_debts_has_no_steps_but_the_before_range(

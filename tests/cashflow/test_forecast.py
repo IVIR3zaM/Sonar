@@ -10,6 +10,7 @@ from sonar.cashflow.forecast import (
     Projection,
     fixed_costs,
     fixed_due,
+    fixed_range,
     project,
     traffic_light,
 )
@@ -87,6 +88,20 @@ def test_fixed_costs_omits_a_source_that_ended_before_today():
     assert costs.rows == ()
     assert costs.months == _months(*[0] * 12)
     assert costs.monthly_equivalent_cents == 0
+
+
+def test_fixed_range_takes_the_minimum_from_monthly_rows_and_the_maximum_from_all():
+    rows = (
+        FixedCostRow("Rent", 1, 1, 100000, date(2026, 10, 1)),
+        FixedCostRow("Gym", 5, 1, 3000, date(2026, 10, 5)),
+        FixedCostRow("Water", 15, 3, 24000, date(2026, 11, 15)),
+    )
+
+    assert fixed_range(rows) == (103000, 127000)
+
+
+def test_fixed_range_of_no_rows_is_zero():
+    assert fixed_range(()) == (0, 0)
 
 
 def test_fixed_costs_monthly_equivalent_rounds_half_up():

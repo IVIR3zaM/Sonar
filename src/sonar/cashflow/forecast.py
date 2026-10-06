@@ -6,6 +6,7 @@ Feeds the dashboard (SPEC §9). Pure functions only: `today` is always passed in
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
@@ -115,6 +116,16 @@ def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
         rows=tuple(sorted(rows, key=lambda r: (r.day, r.name))),
         months=months,
     )
+
+
+def fixed_range(rows: Sequence[FixedCostRow]) -> tuple[int, int]:
+    """Fixed payments per month as (min, max) over the current rows.
+
+    A month with only the monthly payments is the lightest; a month where every
+    payment falls due (quarterly, yearly ones too) is the heaviest.
+    """
+    low = sum(row.amount_cents for row in rows if row.interval_months <= 1)
+    return low, sum(row.amount_cents for row in rows)
 
 
 def month_totals(sources: tuple[FixedSource, ...], today: date) -> tuple[MonthTotal, ...]:

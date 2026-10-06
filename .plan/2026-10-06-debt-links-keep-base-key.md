@@ -1,5 +1,5 @@
 # Debt links keep the base key
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: A debt still links the owner's recurring payment stored under a mandate's unsplit key after that mandate splits into same-day series, so the dashboard never counts it twice; and the JSON API can dismiss a recurring payment.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -35,7 +35,7 @@ Definition of done: a test where a mandate-matched debt's mandate also carries u
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | debts link the base key of split debits | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N02 | recurring dismiss JSON API | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | recurring dismiss JSON API | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 debts link the base key of split debits
 Do: Make `linked_keys` (`src/sonar/debts/model.py:219`) also return the base `payment_key` of every matching debit, with the purpose exclusion applied to base keys too, and make `draft_prefill` (`src/sonar/debts/drafts.py:44`) also pick debits whose base key equals the payment's key. Append one sentence to the SPEC §13 "Same-day series" bullet saying so.
@@ -69,5 +69,12 @@ Done when:
 exec: DONE · 1130 passed
 - linked_keys returns split and base keys per matching debit (purpose exclusion on both); draft_prefill reads debits by split or base key; SPEC §13 sentence appended
 - tests added in test_store_overview, test_model, test_drafts
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-06
+exec: DONE · 1134 passed
+- Added POST /api/recurring/{id}/dismiss in api.py reusing store dismiss and _recurring_item; 404 on PaymentNotFound
+- 4 tests added; AGENTS.md table row and SPEC §13 clause appended
 check: PASS 2/2
 verify: PASS

@@ -55,6 +55,7 @@ from sonar.debts.store import (
 from sonar.recurring.store import (
     PaymentNotFound,
     RecurringPayment,
+    dismiss,
     get_payment,
     list_payments,
     update_details,
@@ -532,6 +533,19 @@ def build_api_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
                 body.description if "description" in body.model_fields_set else current.description
             )
             update_details(conn, id, name, description)
+            item = _recurring_item(get_payment(conn, id))
+        finally:
+            conn.close()
+        return JSONResponse(item)
+
+    @router.post("/recurring/{id}/dismiss")
+    async def dismiss_recurring(id: int) -> JSONResponse:
+        conn = connect(db_path)
+        try:
+            try:
+                dismiss(conn, id)
+            except PaymentNotFound:
+                return JSONResponse({"error": f"No such recurring payment: {id}"}, status_code=404)
             item = _recurring_item(get_payment(conn, id))
         finally:
             conn.close()

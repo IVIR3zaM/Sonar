@@ -99,6 +99,7 @@ Endpoints (all under `/api`, `Content-Type: application/json`):
 | GET | `/uncategorized` | - |
 | GET | `/recurring` | - |
 | PUT | `/recurring/{id}` | `name`, `description` |
+| POST | `/recurring/{id}/dismiss` | - |
 | GET | `/debts` | - |
 | POST | `/debts` | `kind` plus the installment or loan fields above; `match_field` is `counterparty`, `mandate` or `purpose` |
 | DELETE | `/debts/{id}` | - |

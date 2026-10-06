@@ -201,3 +201,56 @@ def test_with_sign_in_on_the_right_bearer_reaches_put_and_a_wrong_one_gets_401(t
     assert right.json()["description"] == "Tap"
     assert wrong.status_code == 401
     assert _stored(db_path, payment_id).description == "Tap"
+
+
+def test_post_dismiss_marks_the_payment_dismissed_and_get_lists_it(tmp_path):
+    app, db_path = _app(tmp_path)
+    payment_id = _add(db_path, "Water", amount_cents=4500, day=5)
+    with TestClient(app) as client:
+        response = client.post(f"/api/recurring/{payment_id}/dismiss")
+        listed = client.get("/api/recurring")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == payment_id
+    assert response.json()["name"] == "Water"
+    assert response.json()["amount_cents"] == 4500
+    assert response.json()["status"] == "dismissed"
+    assert [(item["id"], item["status"]) for item in listed.json()] == [(payment_id, "dismissed")]
+
+
+def test_post_dismiss_on_a_dismissed_payment_answers_200_unchanged(tmp_path):
+    app, db_path = _app(tmp_path)
+    payment_id = _add(db_path, "Water")
+    with TestClient(app) as client:
+        first = client.post(f"/api/recurring/{payment_id}/dismiss")
+        again = client.post(f"/api/recurring/{payment_id}/dismiss")
+
+    assert again.status_code == 200
+    assert again.json() == first.json()
+
+
+def test_post_dismiss_unknown_id_answers_404(tmp_path):
+    app, _ = _app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post("/api/recurring/999/dismiss")
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "No such recurring payment: 999"}
+
+
+def test_with_sign_in_on_the_right_bearer_reaches_dismiss_and_a_wrong_one_gets_401(tmp_path):
+    app, db_path = _app(tmp_path, auth=AUTH)
+    kept = _add(db_path, "Water", day=5)
+    gone = _add(db_path, "Gym", day=9)
+    with TestClient(app, follow_redirects=False) as client:
+        wrong = client.post(
+            f"/api/recurring/{kept}/dismiss", headers={"Authorization": "Bearer wrong"}
+        )
+        right = client.post(
+            f"/api/recurring/{gone}/dismiss", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+
+    assert wrong.status_code == 401
+    assert _stored(db_path, kept).status == "active"
+    assert right.status_code == 200
+    assert right.json()["status"] == "dismissed"

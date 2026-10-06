@@ -21,7 +21,7 @@ uv run sonar import-categories data/categories.toml  # One-off: load the owner's
 ## Layout
 
 - `src/sonar/<feature>/`: one package per feature (`importing`, `categorization`, `recurring`, `debts`, `cashflow`). Pure logic has a domain name (`detect.py`, `forecast.py`); `store.py` is the only DB access; `service.py` coordinates several stores.
-- `src/sonar/web/`: `app.py` wires only; `pages/` has one router per page; `api.py`; `templates/` (`components/` holds the macros); `static/`
+- `src/sonar/web/`: `app.py` wires only; `pages/` has one router per page; `api/` (one module per area); `templates/` (`components/` holds the macros); `static/`
 - `src/sonar/importing/importers/`: one module per bank format (NAME, detect, parse, optional parse_balance), registered in IMPORTERS; a new source = one importer module + fixture tests
 - `src/sonar/`: top level holds only `__main__`, `db`, `money`, `transactions`, `migrations/`
 - `tests/`: follows `src/sonar/`'s layout (`tests/<feature>/`, `tests/web/`); `tests/html.py` holds the page-test helpers

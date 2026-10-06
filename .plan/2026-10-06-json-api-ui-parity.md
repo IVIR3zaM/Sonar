@@ -39,7 +39,7 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
-| N02 | split api into a package | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | split api into a package | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | recurring writes, restore and item | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -250,3 +250,11 @@ Done when:
 
 ### N01 try 1 · 2026-10-06
 check: PASS 4/4
+
+### N02 try 1 · 2026-10-06
+exec: DONE · 1134 passed
+- web/api.py split into web/api/ (__init__, _common, categories, recurring, debts); bodies moved unchanged
+- each module exposes build_router(db_path, today); __init__ includes them in original route order under /api
+- AGENTS.md Layout line now says api/ (one module per area)
+check: PASS 3/3
+verify: PASS

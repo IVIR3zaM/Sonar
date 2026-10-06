@@ -243,6 +243,19 @@ def test_split_series_prefill_starts_at_the_first_lone_small_debit():
     assert prefill.first_payment_date == date(2026, 1, 1)
 
 
+def test_bare_key_payment_on_a_split_group_prefills_from_the_earliest_debit():
+    txs = [_mandate_tx_amount(date(2025, 12, 5), -30_000)]
+    for booking_date in (date(2026, 1, 5), date(2026, 4, 5)):
+        txs.append(_mandate_tx_amount(booking_date, -30_000))
+        txs.append(_mandate_tx_amount(booking_date, -5_000))
+
+    prefill = draft_prefill(_payment(MANDATE_KEY), txs)
+
+    assert prefill is not None
+    assert prefill.first_payment_date == date(2025, 12, 5)
+    assert prefill.match == MatchRule("mandate", "M-1")
+
+
 def _mandate_tx_amount(booking_date: date, amount_cents: int) -> ParsedTransaction:
     return _tx(
         booking_date,

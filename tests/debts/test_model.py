@@ -394,7 +394,7 @@ def _split_day_txs(smaller_purpose: str = "") -> list[ParsedTransaction]:
     return txs
 
 
-def test_linked_keys_mandate_on_a_split_group_returns_both_series_keys() -> None:
+def test_linked_keys_mandate_on_a_split_group_returns_both_series_keys_and_the_base_key() -> None:
     debt = Loan(
         name="Car loan",
         balance_cents=500000,
@@ -404,7 +404,7 @@ def test_linked_keys_mandate_on_a_split_group_returns_both_series_keys() -> None
         match=MatchRule("mandate", "M-1"),
     )
     assert linked_keys(debt, _split_day_txs()) == frozenset(
-        {"mandate:CRED/M-1#1", "mandate:CRED/M-1#2"}
+        {"mandate:CRED/M-1#1", "mandate:CRED/M-1#2", "mandate:CRED/M-1"}
     )
 
 
@@ -414,3 +414,10 @@ def test_linked_keys_purpose_only_in_the_smaller_charges_links_the_second_series
     assert linked_keys(inst, _split_day_txs(smaller_purpose=ORDER)) == frozenset(
         {"mandate:CRED/M-1#2"}
     )
+
+
+def test_linked_keys_purpose_omits_the_base_key_of_a_group_with_non_matching_debits() -> None:
+    inst = _installment()
+    inst = Installment(**{**inst.__dict__, "match": MatchRule("purpose", ORDER)})
+    keys = linked_keys(inst, _split_day_txs(smaller_purpose=ORDER))
+    assert "mandate:CRED/M-1" not in keys

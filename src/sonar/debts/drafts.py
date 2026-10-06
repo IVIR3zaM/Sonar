@@ -13,7 +13,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from sonar.debts.model import MatchRule
-from sonar.recurring.detect import series_keys
+from sonar.recurring.detect import payment_key, series_keys
 from sonar.transactions import ParsedTransaction
 
 if TYPE_CHECKING:
@@ -49,7 +49,8 @@ def draft_prefill(
         (
             tx
             for tx, key in series_keys(tx for tx in txs if tx.amount_cents < 0)
-            if key == payment.detection_key
+            # A payment kept under the unsplit key reads every debit of its group.
+            if payment.detection_key in (key, payment_key(tx))
         ),
         key=lambda tx: tx.booking_date,
     )

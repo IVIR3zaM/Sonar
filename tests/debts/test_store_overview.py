@@ -147,6 +147,25 @@ def test_detected_payment_with_matching_key_is_linked(conn: sqlite3.Connection) 
     assert [p.name for p in view.linked_payments] == ["Car Loan Payment"]
 
 
+def test_payment_kept_under_the_unsplit_key_stays_linked(conn: sqlite3.Connection) -> None:
+    # The mandate also carries purchases, one on a monthly debit's day, so detection
+    # splits the group into "#1", "#2"; a payment kept under the bare key must still link.
+    for i, booking_date in enumerate(["2026-06-05", "2026-07-05", "2026-08-05"]):
+        _insert_tx(conn, fingerprint=f"d{i}", booking_date=booking_date, mandate_ref="M-1")
+    _insert_tx(
+        conn, fingerprint="p1", booking_date="2026-07-05", mandate_ref="M-1", amount_cents=-2_500
+    )
+    _insert_tx(
+        conn, fingerprint="p2", booking_date="2026-07-20", mandate_ref="M-1", amount_cents=-4_000
+    )
+    _insert_recurring(conn, detection_key="mandate:/M-1", name="Car Loan Payment")
+    add_debt(conn, _loan())
+
+    [view] = debt_overview(conn, TODAY)
+
+    assert [p.name for p in view.linked_payments] == ["Car Loan Payment"]
+
+
 def test_dismissed_payment_with_matching_key_is_not_linked(conn: sqlite3.Connection) -> None:
     _insert_tx(conn, fingerprint="m1", booking_date="2026-07-30", mandate_ref="M-1")
     _insert_recurring(

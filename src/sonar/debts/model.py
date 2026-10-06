@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from sonar.debts import amortization
 from sonar.importing.dedup import normalize_text
 from sonar.recurring import schedule
-from sonar.recurring.detect import series_keys
+from sonar.recurring.detect import payment_key, series_keys
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.transactions import ParsedTransaction
 
@@ -222,11 +222,15 @@ def linked_keys(debt: Installment | Loan, txs: Iterable[ParsedTransaction]) -> f
     Detection groups the whole transaction history (SPEC §6), so a debt links
     to a recurring payment through the same key regardless of date range.
     """
-    # Split keys (one per same-day charge) are what detection stores for a shared mandate.
-    keyed = series_keys(tx for tx in txs if tx.amount_cents < 0)
-    keys = {key for tx, key in keyed if matches(tx, debt.match)}
+    # Split keys (one per same-day charge) are what detection stores for a shared
+    # mandate; the unsplit key is linked too so a payment kept under it stays linked.
+    keyed = [
+        (tx, key, payment_key(tx))
+        for tx, key in series_keys(tx for tx in txs if tx.amount_cents < 0)
+    ]
+    keys = {k for tx, key, base in keyed if matches(tx, debt.match) for k in (key, base)}
     if debt.match.field == "purpose":
         # A creditor mandate groups other subscriptions under the same key, so a
         # key that also holds a debit this rule does not match is never linked.
-        keys -= {key for tx, key in keyed if not matches(tx, debt.match)}
+        keys -= {k for tx, key, base in keyed if not matches(tx, debt.match) for k in (key, base)}
     return frozenset(keys)

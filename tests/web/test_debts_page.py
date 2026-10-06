@@ -84,6 +84,48 @@ def _debt_id(db_path: Path, name: str) -> int:
         conn.close()
 
 
+def test_add_forms_offer_purpose_as_a_match_field(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/debts"))
+
+    for form in ("#add-installment", "#add-loan"):
+        options = [o["value"] for o in page.select(f"{form} select[name=match_field] option")]
+        assert options == ["counterparty", "mandate", "purpose"]
+
+
+def test_installment_form_stores_a_purpose_match(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        response = client.post(
+            "/debts/installments",
+            follow_redirects=False,
+            data={
+                "name": "Order",
+                "total": "1200.00",
+                "rate": "100.00",
+                "interval_months": "1",
+                "first_payment_date": "2026-01-05",
+                "payments_count": "12",
+                "match_field": "purpose",
+                "match_value": "ORD-1",
+            },
+        )
+
+    assert response.status_code == 303
+    conn = sqlite3.connect(db_path)
+    try:
+        [stored] = list_debts(conn)
+    finally:
+        conn.close()
+    assert stored.debt.match.field == "purpose"
+    assert stored.debt.match.value == "ORD-1"
+
+
 def test_debts_page_shows_installments_loans_and_total(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path)

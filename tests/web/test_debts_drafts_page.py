@@ -138,6 +138,16 @@ def test_forms_are_prefilled_from_the_draft(db_path):
     assert loan.select_one("select[name=match_field] option[selected]")["value"] == "mandate"
 
 
+def test_draft_forms_offer_purpose_as_a_match_field(db_path):
+    with _client(db_path) as client:
+        page = soup(client.get("/debts"))
+
+    draft_id = _draft_id(page)
+    for form in (f"#complete-installment-{draft_id}", f"#complete-loan-{draft_id}"):
+        options = [o["value"] for o in page.select(f"{form} select[name=match_field] option")]
+        assert options == ["counterparty", "mandate", "purpose"]
+
+
 def test_field_ids_are_unique_in_the_drafts_section(db_path):
     with _client(db_path) as client:
         page = soup(client.get("/debts"))

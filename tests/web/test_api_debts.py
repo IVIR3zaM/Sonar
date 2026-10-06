@@ -74,16 +74,23 @@ def _today() -> date:
     return TODAY
 
 
-def _insert_tx(conn: sqlite3.Connection, tag: str, booked: str, counterparty: str, mandate=None):
+def _insert_tx(
+    conn: sqlite3.Connection,
+    tag: str,
+    booked: str,
+    counterparty: str,
+    mandate=None,
+    purpose: str = "",
+):
     conn.execute(
         """
         INSERT INTO transactions (
             source, account, booking_date, value_date, amount_cents, currency,
             counterparty, purpose, iban, mandate_ref, creditor_id, raw_row,
             fingerprint, occurrence, category
-        ) VALUES ('test', 'acc', ?, ?, -10000, 'EUR', ?, '', NULL, ?, NULL, 'raw', ?, 1, NULL)
+        ) VALUES ('test', 'acc', ?, ?, -10000, 'EUR', ?, ?, NULL, ?, NULL, 'raw', ?, 1, NULL)
         """,
-        (booked, booked, counterparty, mandate, tag),
+        (booked, booked, counterparty, purpose, mandate, tag),
     )
 
 
@@ -169,6 +176,34 @@ def test_post_installment_then_get_lists_it_with_every_key_and_status(db_path):
         "paid_off": False,
         "linked_payment_ids": item["linked_payment_ids"],
     }
+
+
+def test_purpose_debt_counts_only_debits_whose_purpose_holds_the_text(db_path):
+    conn = sqlite3.connect(db_path)
+    try:
+        _insert_tx(conn, "ord1", "2026-08-01", "Shop", "M-9", "Order ORD-1 rate")
+        _insert_tx(conn, "ord2", "2026-08-02", "Shop", "M-9", "Order ORD-2 rate")
+        conn.commit()
+    finally:
+        conn.close()
+    body = {**INSTALLMENT, "match_field": "purpose", "match_value": "ord-1"}
+
+    with _client(db_path) as client:
+        posted = client.post("/api/debts", json=body)
+        [item] = client.get("/api/debts").json()
+
+    assert posted.status_code == 201
+    assert item["match_field"] == "purpose"
+    assert item["paid_cents"] == 10_000
+    assert item["linked_payment_ids"] == []
+
+
+def test_iban_match_field_is_still_a_400(db_path):
+    with _client(db_path) as client:
+        response = client.post("/api/debts", json={**INSTALLMENT, "match_field": "iban"})
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "match_field"
 
 
 def test_get_lists_both_kinds_with_the_other_kinds_fields_null(db_path):

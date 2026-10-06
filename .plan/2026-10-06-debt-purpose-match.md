@@ -1,5 +1,5 @@
 # Debt purpose match
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: A debt can be matched to its bank payments by text in the payment purpose, so one installment plan on a shared creditor mandate counts only its own debits.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -38,7 +38,7 @@ Definition of done: the plan `verify` passes; a smoke run on a temp DB shows an 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | purpose match in model and schema | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N02 | purpose option on page, API and docs | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | purpose option on page, API and docs | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 purpose match in model and schema
 Do: Add `purpose` as a debt match field in the pure model, guard its linking so a shared payment key is never linked, and add a migration that lets the `debts` table store it while keeping every existing row and id.
@@ -79,5 +79,12 @@ Done when:
 exec: DONE · 1109 passed
 - purpose match field in model.py, linked_keys drops keys shared with non-matching debits for purpose rules
 - migration 0011 rebuilds debts with purpose allowed, ids and rows kept; tests added in test_model, test_0011, test_store_overview
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-06
+exec: DONE · 1114 passed
+- Purpose contains option and help text in debts.html; page, drafts and API tests
+- SPEC §13 bullet and AGENTS.md POST /debts row; smoke covered by API test (TestClient, temp DB)
 check: PASS 2/2
 verify: PASS

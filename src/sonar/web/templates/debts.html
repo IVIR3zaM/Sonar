@@ -7,7 +7,7 @@
 {% from "components/amount.html" import amount, date %}
 {% from "components/empty.html" import empty %}
 
-{% set match_options = [("counterparty", "Counterparty"), ("mandate", "Mandate")] %}
+{% set match_options = [("counterparty", "Counterparty"), ("mandate", "Mandate"), ("purpose", "Purpose contains")] %}
 {% set grid = "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" %}
 {% set dt = "text-xs text-ink-muted" %}
 {% set dd = "font-medium text-ink tabular-nums" %}
@@ -69,7 +69,7 @@
       {{ field("interest", "Interest % (optional)", id=fid ~ "interest", value=v.interest or '', help="e.g. 6.00% - leave empty for a linear payoff") }}
       {% endif %}
       {{ field("match_field", "Match on", id=fid ~ "match_field", value=v.match_field if error else p.match.field, options=match_options) }}
-      {{ field("match_value", "Match value", id=fid ~ "match_value", value=v.match_value if error else p.match.value, required=true, help="Counterparty text or SEPA mandate reference") }}
+      {{ field("match_value", "Match value", id=fid ~ "match_value", value=v.match_value if error else p.match.value, required=true, help="Counterparty text, SEPA mandate reference or purpose text") }}
       <div>{{ button("Complete as " ~ kind) }}</div>
     </form>
   </div>
@@ -165,7 +165,7 @@
       {{ field("first_payment_date", "First payment", type="date", value=v.first_payment_date or '', required=true) }}
       {{ field("payments_count", "Number of payments", type="number", value=v.payments_count or '', required=true, attrs={"min": 1}) }}
       {{ field("match_field", "Match on", value=v.match_field or '', options=match_options) }}
-      {{ field("match_value", "Match value", value=v.match_value or '', required=true, help="Counterparty text or SEPA mandate reference") }}
+      {{ field("match_value", "Match value", value=v.match_value or '', required=true, help="Counterparty text, SEPA mandate reference or purpose text") }}
       <div class="sm:col-span-2">{{ button("Add installment") }}</div>
     </form>
   </div>
@@ -221,7 +221,7 @@
       {{ field("rate", "Monthly rate", value=v.rate or '', required=true, help="Amount paid each month") }}
       {{ field("interest", "Interest % (optional)", value=v.interest or '', help="e.g. 6.00% - leave empty for a linear payoff") }}
       {{ field("match_field", "Match on", value=v.match_field or '', options=match_options) }}
-      {{ field("match_value", "Match value", value=v.match_value or '', required=true, help="Counterparty text or SEPA mandate reference") }}
+      {{ field("match_value", "Match value", value=v.match_value or '', required=true, help="Counterparty text, SEPA mandate reference or purpose text") }}
       <div class="sm:col-span-2">{{ button("Add loan") }}</div>
     </form>
   </div>

@@ -42,7 +42,7 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 | N02 | split api into a package | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | recurring writes, restore and item | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 1 | 0 | VERIFYING | |
-| N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 1 | 0 | RUNNING | |
+| N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | monthly and transactions API | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 0 | 0 | TODO | |
@@ -280,3 +280,10 @@ exec: DONE · 1204 passed
 
 ### N04 try 1 · 2026-10-06
 check: PASS 2/2
+
+### N05 try 1 · 2026-10-06
+check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-10-06
+verify: PASS

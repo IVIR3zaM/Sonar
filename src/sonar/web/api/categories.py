@@ -1,4 +1,4 @@
-"""Categories, rules and uncategorized endpoints (SPEC §5, §13).
+"""Categories, rules, uncategorized and reapply endpoints (SPEC §5, §13).
 
 Every endpoint reads or writes through `categorization.service`, so validation,
 regex and amount parsing exist in exactly one place (shared with the
@@ -28,6 +28,7 @@ from sonar.categorization.service import (
     list_categories,
     list_rules,
     move_rule,
+    reapply_stored_taxonomy,
     update_category,
     update_rule,
 )
@@ -226,6 +227,15 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         finally:
             conn.close()
         return JSONResponse({"rules": rules, "uncategorized": count})
+
+    @router.post("/reapply")
+    async def reapply() -> JSONResponse:
+        conn = connect(db_path)
+        try:
+            count = reapply_stored_taxonomy(conn, today())
+        finally:
+            conn.close()
+        return JSONResponse({"uncategorized": count})
 
     @router.get("/uncategorized")
     async def get_uncategorized() -> JSONResponse:

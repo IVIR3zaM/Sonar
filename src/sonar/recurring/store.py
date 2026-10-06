@@ -26,6 +26,10 @@ class PaymentNotFound(LookupError):
     """Raised by edit/dismiss/pause/resume when `id` has no matching row."""
 
 
+class NotDismissed(ValueError):
+    """Raised by restore when the payment is not dismissed, so there is nothing to restore."""
+
+
 @dataclass(frozen=True)
 class RecurringPayment:
     id: int
@@ -156,6 +160,15 @@ def dismiss(conn: sqlite3.Connection, id: int) -> None:
     with conn:
         _require_exists(conn, id)
         conn.execute("UPDATE recurring_payments SET status = 'dismissed' WHERE id = ?", (id,))
+
+
+def restore(conn: sqlite3.Connection, id: int) -> None:
+    with conn:
+        _require_exists(conn, id)
+        row = conn.execute("SELECT status FROM recurring_payments WHERE id = ?", (id,)).fetchone()
+        if row[0] != "dismissed":
+            raise NotDismissed(id)
+        conn.execute("UPDATE recurring_payments SET status = 'active' WHERE id = ?", (id,))
 
 
 def pause_payment(conn: sqlite3.Connection, id: int, last_date: date) -> None:

@@ -8,12 +8,14 @@ import pytest
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.recurring.schedule import SchedulePeriod, occurrences
 from sonar.recurring.store import (
+    NotDismissed,
     PaymentNotFound,
     add_manual,
     dismiss,
     edit_payment,
     list_payments,
     pause_payment,
+    restore,
     resume_payment,
 )
 
@@ -122,3 +124,32 @@ def test_dismissed_payment_hidden_unless_included(conn: sqlite3.Connection) -> N
     [dismissed] = list_payments(conn, include_dismissed=True)
     assert dismissed.status == "dismissed"
     assert dismissed.id == payment_id
+
+
+def test_restore_makes_a_dismissed_payment_active_and_listed_again(
+    conn: sqlite3.Connection,
+) -> None:
+    period = SchedulePeriod(
+        starts_on=date(2026, 1, 1), until=None, amount_cents=500, interval_months=1, day=1
+    )
+    payment_id = add_manual(conn, "Streaming", None, period)
+    dismiss(conn, payment_id)
+
+    restore(conn, payment_id)
+
+    assert [p.id for p in list_payments(conn)] == [payment_id]
+
+
+def test_restore_raises_not_dismissed_for_an_active_payment(conn: sqlite3.Connection) -> None:
+    period = SchedulePeriod(
+        starts_on=date(2026, 1, 1), until=None, amount_cents=500, interval_months=1, day=1
+    )
+    payment_id = add_manual(conn, "Streaming", None, period)
+
+    with pytest.raises(NotDismissed):
+        restore(conn, payment_id)
+
+
+def test_restore_unknown_id_raises_payment_not_found(conn: sqlite3.Connection) -> None:
+    with pytest.raises(PaymentNotFound):
+        restore(conn, 999)

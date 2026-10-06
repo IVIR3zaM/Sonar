@@ -40,9 +40,9 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
 | N02 | split api into a package | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | recurring writes, restore and item | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
-| N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
-| N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
+| N03 | recurring writes, restore and item | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
+| N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 1 | 0 | RUNNING | |
 | N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | monthly and transactions API | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 0 | 0 | TODO | |
@@ -258,3 +258,25 @@ exec: DONE · 1134 passed
 - AGENTS.md Layout line now says api/ (one module per area)
 check: PASS 3/3
 verify: PASS
+
+### N03 try 1 · 2026-10-06
+exec: DONE · 1204 passed
+- recurring API: item gains page figures and debt_id; POST add, PUT schedule edit, pause, resume, restore; store.restore and NotDismissed
+- null schedule keys in PUT count as missing; old PUT unknown-key test now uses a different key since amount_cents is valid
+check: PASS 2/2
+
+### N04 try 1 · 2026-10-06
+exec: DONE · 1204 passed
+- Added GET /api/debts/drafts, POST /api/debts/drafts/{id}, PUT /api/debts/{id} in web/api/debts.py; update_debt in debts/store.py
+- Validate body before DB; DraftNotFound -> 404; tests in test_store, test_api_debt_drafts, test_api_debts
+
+### N03 try 1 · 2026-10-06
+verify: PASS
+
+### N05 try 1 · 2026-10-06
+exec: DONE · 1204 passed
+- Added web/api/settings.py (GET/PUT /api/settings, POST /api/settings/balance) and POST /api/reapply in categories.py; router included
+- Missing balance keys answer 400 with the field; domain ValueErrors map to field by needle; tests in test_api_settings.py and test_api_reapply.py
+
+### N04 try 1 · 2026-10-06
+check: PASS 2/2

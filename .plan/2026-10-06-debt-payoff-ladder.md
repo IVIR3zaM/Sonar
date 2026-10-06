@@ -45,8 +45,9 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N05 | payoff page and nav | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | step slider script | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
-| N08 | visual check of payoff | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
+| N08 | visual check of payoff | gate | N10 | -/sonnet | 0 | 1 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
+| N10 | full-width step cards | exec | N06,N07 | haiku/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work. The untouched tree passes verify, the Tailwind build runs, the repo is writable for the per-node commits, and `samples/` has a file for the visual gate.
@@ -165,11 +166,24 @@ Done when:
 - C1 [review] `git diff SPEC.md` adds exactly one bullet at the end of §13 and changes nothing else. The bullet covers D1, D2, D4, D5, D6, D7 and D9.
 - C2 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
+## N10 full-width step cards
+Do: Make every step card on `/payoff` span the full content width, so its debts table shows all six columns and the three figures sit on one line at desktop. The script shows one step at a time, so the cards stack in a single column at every width.
+Context: The step cards sit in `<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">` (`src/sonar/web/templates/payoff.html:62`). At 1280px `xl:grid-cols-2` applies, and with JS only one card is visible, so it fills one grid column and its table scrolls. Replace that wrapper's classes with a single-column stack (`grid grid-cols-1 gap-4`); change nothing else in the template, `payoff.js` or the card macro (`components/card.html:7`).
+  D6 still holds: without JS every step card is rendered and reads top to bottom. AGENTS.md: pure CSS classes need no test, so there is no new test; rebuild `sonar.css` with the AGENTS.md Setup command and commit it.
+Read: `src/sonar/web/templates/payoff.html:60-95`
+Write: `src/sonar/web/templates/payoff.html`, `src/sonar/web/static/sonar.css`
+Test first: -
+Done when:
+- C1 [cmd] `! grep -n 'xl:grid-cols-2' src/sonar/web/templates/payoff.html`
+- C2 [review] `git diff src/sonar/web/templates/payoff.html` changes only the step cards' wrapper classes to a single column; no hook, id, `data-*` attribute or other markup changes.
+- C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/payoff-check.css" --minify && cmp -s "$TMPDIR/payoff-check.css" src/sonar/web/static/sonar.css`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N08 visual check of payoff
 Do: Check `/payoff` in the browser pane at desktop and 375px, light and dark, following the config `visual_recipe` on a temp DB.
-Context: After the recipe's import and settings, add four anonymized debts to the temp app through `POST /api/debts` (AGENTS.md table): small, mid and large monthly installments, and one installment with `interval_months: 3`, so that min and max differ. Use made-up names and match values; write none to a tracked file. Also open `/payoff` on a second fresh temp DB for the empty state. Defects go back to N05 or N06 as a replan.
+Context: After the recipe's import and settings, add four anonymized debts to the temp app through `POST /api/debts` (AGENTS.md table): small, mid and large monthly installments, and one installment with `interval_months: 3`, so that min and max differ. Use made-up names and match values; write none to a tracked file. Also open `/payoff` on a second fresh temp DB for the empty state. Defects go back to N10, N05 or N06 as a replan.
 Done when:
-- C1 [visual] Desktop, light and dark: "Payoff" sits right after "Installments and loans" in the nav and is current. Above the slider are the pay-now total, freed min–max and fixed-after min–max; below it is the included debts table with kind, name, remaining, rate, every and end date.
+- C1 [visual] Desktop 1280px, light and dark: "Payoff" sits right after "Installments and loans" in the nav and is current. Above the slider are the pay-now total, freed min–max and fixed-after min–max; below it is the included debts table with kind, name, remaining, rate, every and end date. The shown step card spans the full content width, its three figures sit on one line without wrapping, and its table shows all six columns with no scroll inside the card.
 - C2 [visual] The tick labels sit on a log scale, left to right ascending, and none overlap or leave the card. Dragging the slider snaps to a step and switches the shown figures and table with no network request (read_network_requests). The arrow keys move one step.
 - C3 [visual] 375px, light and dark: no page-level horizontal scroll, the debts table fits or scrolls inside its card, and the slider and labels are readable and usable.
 - C4 [visual] The empty DB shows the empty state with a link to `/debts` and no slider.
@@ -241,4 +255,20 @@ exec: DONE · 1269 passed
 - Added the Payoff ladder bullet at the end of SPEC §13
 - Bullet says ascending by remaining amount (D1)
 check: PASS 1/1
+verify: PASS
+
+### N08 try 1 · 2026-10-06
+human: Desktop 1280px light: the step card shrinks to about a third of the content width, so the included debts table is clipped (Ends column cut, horizontal scroll inside the card) and 'Fixed costs after' wraps; the step card must span the full content width so the table fits at desktop. Everything else passed: nav order and current, empty state with /debts link, log-scale ticks ascending without overlap, drag and arrow/Home/End snap with no network request, 375-524px dark no page scroll and table scrolls inside its card.
+
+### N08 replan 1 · 2026-10-06
+plan: REPLANNED +N10
+- Cause: step cards wrapper uses xl:grid-cols-2 (payoff.html:62); with JS showing one card it fills one column at 1280px, clipping the debts table
+- Added N10 (haiku/sonnet, deps N06,N07): single-column step cards, rebuild sonar.css; N08 now depends on N10
+- N08 C1 now also requires the step card at full width, figures on one line and all six table columns without scroll
+
+### N10 try 1 · 2026-10-06
+exec: DONE · 1269 passed
+- payoff.html step-card wrapper now grid grid-cols-1 gap-4
+- sonar.css rebuilt; identical (xl:grid-cols-2 still used elsewhere)
+check: PASS 3/3
 verify: PASS

@@ -21,6 +21,7 @@ NAV = [
     ("/uncategorized", "Uncategorized"),
     ("/recurring", "Fixed payments"),
     ("/debts", "Installments and loans"),
+    ("/payoff", "Payoff"),
     ("/settings", "Settings"),
 ]
 

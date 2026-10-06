@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/badge.html" import badge %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/empty.html" import empty %}
+
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set table = "w-full text-left text-sm" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set th_num = th ~ " text-right" %}
+{% set tr = "border-t border-line" %}
+{% set td = "py-2 pr-4 text-ink last:pr-0" %}
+{% set td_num = td ~ " text-right" %}
+{% set dt = "text-xs text-ink-muted" %}
+{% set dd = "font-medium text-ink tabular-nums" %}
+
+{#- A min-max range of cents, or one amount when both ends are equal. The
+   wrapper carries both ends so a script can read them without parsing text. #}
+{% macro range(min_cents, max_cents, attrs={}) -%}
+<span data-min-cents="{{ min_cents }}" data-max-cents="{{ max_cents }}"{{ attrs|xmlattr }}>
+  {{- amount(min_cents, colored=false) -}}
+  {%- if min_cents != max_cents %} – {{ amount(max_cents, colored=false) }}{% endif -%}
+</span>
+{%- endmacro %}
+
+{% block content %}
+<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight text-ink">Payoff</h1>
+    <p class="mt-1 text-sm text-ink-muted">
+      What your monthly fixed costs shrink to when the smallest debts are paid off now.
+      Estimated as of {{ date(payoff.estimate_date, id="payoff-as-of") }}.
+    </p>
+  </div>
+  {% if payoff.steps %}
+  {{ stat("Fixed costs now", value=range(payoff.before_min_cents, payoff.before_max_cents), id="payoff-fixed-now") }}
+  {% endif %}
+</header>
+
+{% if not payoff.steps %}
+{% call empty("No debts to pay off", message="Add an installment or a loan to see what paying it off would free.", id="payoff-empty") %}
+  <a href="/debts" class="text-sm font-medium text-accent hover:underline">Installments and loans</a>
+{% endcall %}
+{% else %}
+{%- set translate = {"start": "", "center": "-translate-x-1/2", "end": "-translate-x-full"} %}
+{%- set labelled = ticks|map(attribute="row")|reject("none")|list %}
+{%- set rows = (labelled|max + 1) if labelled else 1 %}
+<div id="payoff-slider-block" hidden class="mb-8">
+  <input type="range" id="payoff-slider" min="0" max="1000" step="1" value="0" aria-label="Debts to pay off now" class="w-full accent-accent">
+  <div aria-hidden="true" class="relative mt-1 text-xs text-ink-muted {{ ['h-4', 'h-8', 'h-12'][rows - 1] }}">
+    {%- for tick in ticks %}
+    <span data-tick="{{ loop.index }}" data-cents="{{ tick.cents }}" data-position="{{ tick.position }}"
+          style="left: {{ tick.percent }}%"
+          class="absolute whitespace-nowrap tabular-nums data-selected:font-semibold data-selected:text-ink {{ ['top-0', 'top-4', 'top-8'][tick.row] if tick.row is not none else 'top-0' }} {{ translate[tick.align] }}">
+      {{- tick.cents|eur if tick.row is not none else "·" -}}
+    </span>
+    {%- endfor %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+  {% for step in payoff.steps %}
+  {% call card(title="Step " ~ step.number, attrs={"data-step": step.number, "data-position": ticks[loop.index0].position}) %}
+    <dl class="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+      <div><dt class="{{ dt }}">Pay off now</dt><dd class="{{ dd }}">{{ amount(step.pay_now_cents, colored=false, attrs={"data-part": "pay-now"}) }}</dd></div>
+      <div><dt class="{{ dt }}">Freed per month</dt><dd class="{{ dd }}">{{ range(step.freed_min_cents, step.freed_max_cents, attrs={"data-part": "freed"}) }}</dd></div>
+      <div><dt class="{{ dt }}">Fixed costs after</dt><dd class="{{ dd }}">{{ range(step.after_min_cents, step.after_max_cents, attrs={"data-part": "fixed-after"}) }}</dd></div>
+    </dl>
+    <div class="{{ table_wrap }} mt-4">
+      <table id="payoff-step-{{ step.number }}-debts" class="{{ table }}">
+        <thead><tr>
+          <th class="{{ th }}">Kind</th><th class="{{ th }}">Name</th>
+          <th class="{{ th_num }}">Remaining</th><th class="{{ th_num }}">Rate</th>
+          <th class="{{ th }}">Every</th><th class="{{ th }}">Ends</th>
+        </tr></thead>
+        <tbody>
+        {% for debt in step.debts %}
+          <tr data-debt="{{ debt.id }}" data-kind="{{ debt.kind }}" class="{{ tr }}">
+            <td class="{{ td }}">{{ badge(debt.kind, tone="accent") }}</td>
+            <td class="{{ td }}">{{ debt.name }}</td>
+            <td class="{{ td_num }}">{{ amount(debt.remaining_cents, colored=false) }}</td>
+            <td class="{{ td_num }}">{{ amount(debt.rate_cents, colored=false) }}</td>
+            <td class="{{ td }}">{{ debt.interval_months }} month(s)</td>
+            <td class="{{ td }}">{% if debt.end_date %}{{ date(debt.end_date) }}{% else %}–{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -34,6 +34,7 @@ from sonar.web.pages import (
     import_,
     lights_on,
     monthly,
+    payoff,
     recurring,
     settings,
     uncategorized,
@@ -117,6 +118,7 @@ def create_app(
     app.include_router(import_.build_router(db_path, today, templates))
     app.include_router(recurring.build_router(db_path, today, templates))
     app.include_router(debts.build_router(db_path, today, templates))
+    app.include_router(payoff.build_router(db_path, today, templates))
     app.include_router(settings.build_router(db_path, today, templates))
     app.include_router(categories.build_router(db_path, today, templates))
     if auth is not None:

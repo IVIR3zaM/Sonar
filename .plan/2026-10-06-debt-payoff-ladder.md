@@ -1,5 +1,5 @@
 # Debt payoff ladder page
-status: RUNNING
+status: WAITING
 created: 2026-10-06 · updated: 2026-10-06
 goal: A /payoff page shows, step by step from the smallest open debt up, how much paying now would free of the monthly fixed payments.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -44,7 +44,7 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N03 | payoff loader | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | payoff page and nav | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | step slider script | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | RUNNING | |
+| N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 | N08 | visual check of payoff | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 
@@ -230,4 +230,15 @@ exec: DONE · 1269 passed
 - Added static/payoff.js step picker (47 lines) and deferred script tag at the end of payoff.html's steps branch
 - Tests: payoff.js served and mentions payoff-slider; page with steps loads it deferred, empty page does not; sonar.css unchanged
 check: PASS 4/4
+verify: PASS
+
+### N07 try 1 · 2026-10-06
+exec: DONE · 1269 tests passed
+- Added Payoff ladder bullet to SPEC §13
+- Covers D1 (debts by amount), D2 (cumulative total and freed), D4 (slider), D5/D6/D9 (payoff.js), D7 (display)
+- No real names, all tests and lint pass
+exec: DONE · 1269 passed
+- Added the Payoff ladder bullet at the end of SPEC §13
+- Bullet says ascending by remaining amount (D1)
+check: PASS 1/1
 verify: PASS

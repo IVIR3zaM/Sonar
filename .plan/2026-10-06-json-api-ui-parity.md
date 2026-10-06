@@ -1,5 +1,5 @@
 # JSON API parity with the pages
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: Every read and write a Sonar page offers (except file import) is also available as a JSON endpoint under the bearer-protected /api, reusing the page's own functions.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -46,7 +46,7 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 | N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | monthly and transactions API | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 1 | 0 | DONE | |
-| N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
+| N09 | plan acceptance | check | N08 | -/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point. Plan 2026-10-06-debt-links-keep-base-key is done, so `POST /api/recurring/{id}/dismiss` exists, and the untouched tree passes the plan verify. The repo is writable for the per-node commits.
@@ -305,4 +305,8 @@ verify: PASS
 
 ### N08 try 1 · 2026-10-06
 check: PASS 2/2
+verify: PASS
+
+### N09 try 1 · 2026-10-06
+check: PASS 1/1
 verify: PASS

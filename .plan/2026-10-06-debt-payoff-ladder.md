@@ -1,5 +1,5 @@
 # Debt payoff ladder page
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: A /payoff page shows, step by step from the smallest open debt up, how much paying now would free of the monthly fixed payments.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -46,7 +46,7 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N06 | step slider script | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 | N08 | visual check of payoff | gate | N11,N12 | -/sonnet | 0 | 2 | DONE | |
-| N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
+| N09 | plan acceptance | check | N08 | -/sonnet | 1 | 0 | DONE | |
 | N10 | full-width step cards | exec | N06,N07 | haiku/sonnet | 1 | 0 | DONE | |
 | N11 | full-month window and exact freed | exec | N12 | sonnet/sonnet | 1 | 2 | DONE | |
 | N12 | readable payoff ticks | exec | N10 | sonnet/sonnet | 1 | 1 | DONE | |
@@ -381,4 +381,8 @@ exec: DONE · 1272 passed
 - load_payoff uses next-month window_start for base and per-debt month_totals; PayoffStep.freed_cents = sum of included rates; page/SPEC/tests updated
 - added rate_cents param to test_service _installment helper for the new window test
 check: PASS 4/4
+verify: PASS
+
+### N09 try 1 · 2026-10-06
+check: PASS 2/2
 verify: PASS

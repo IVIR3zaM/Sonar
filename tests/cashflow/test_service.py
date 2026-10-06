@@ -12,7 +12,7 @@ import pytest
 
 from sonar.cashflow.forecast import DueItem, Projection
 from sonar.cashflow.lights_on import CategoryExpected
-from sonar.cashflow.service import load_dashboard, load_lights_on
+from sonar.cashflow.service import load_dashboard, load_lights_on, load_monthly
 from sonar.cashflow.store import save_settings, set_manual_balance
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debts.model import Installment, Loan, MatchRule
@@ -617,3 +617,42 @@ def test_load_lights_on_flags_salary_months_once_a_salary_day_is_set(conn):
     save_settings(conn, 26, -50_000)
 
     assert load_lights_on(conn, CATEGORY_TYPES).salary_months is True
+
+
+def test_load_monthly_without_a_month_opens_the_latest_month_with_payments(conn):
+    _insert_tx(conn, "2026-06-10", -1000, category="Groceries")
+    _insert_tx(conn, "2026-07-10", -2000, category="Groceries")
+
+    view = load_monthly(conn, CATEGORY_TYPES, TODAY, None)
+
+    assert view.selected == date(2026, 7, 1)
+    assert view.months == [date(2026, 7, 1), date(2026, 6, 1)]
+    assert (view.older, view.newer) == (date(2026, 6, 1), None)
+    assert view.spending.spent_cents == -2000
+    assert view.salary_months is False
+
+
+def test_load_monthly_without_a_month_or_data_falls_back_to_the_clock_month(conn):
+    view = load_monthly(conn, CATEGORY_TYPES, TODAY, None)
+
+    assert view.selected == date(2026, 9, 1)
+    assert view.months == []
+    assert view.spending.payments == ()
+
+
+def test_load_monthly_with_a_month_selects_it_and_its_neighbours(conn):
+    _insert_tx(conn, "2026-06-10", -1000, category="Groceries")
+    _insert_tx(conn, "2026-07-10", -2000, category="Groceries")
+    _insert_tx(conn, "2026-08-10", -4000, category="Groceries")
+
+    view = load_monthly(conn, CATEGORY_TYPES, TODAY, date(2026, 7, 1))
+
+    assert view.selected == date(2026, 7, 1)
+    assert (view.older, view.newer) == (date(2026, 6, 1), date(2026, 8, 1))
+    assert view.spending.spent_cents == -2000
+
+
+def test_load_monthly_flags_salary_months_once_a_salary_day_is_set(conn):
+    save_settings(conn, 26, -50_000)
+
+    assert load_monthly(conn, CATEGORY_TYPES, TODAY, None).salary_months is True

@@ -16,6 +16,14 @@ from sonar.cashflow import forecast, lights_on, payday
 from sonar.cashflow.balance import BalanceEntry
 from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection
 from sonar.cashflow.lights_on import LightsOnForecast
+from sonar.cashflow.monthly import (
+    MonthlySpending,
+    adjacent_months,
+    monthly_spending,
+    payment_months,
+    period_for,
+    salary_paydays,
+)
 from sonar.cashflow.store import current_balance, load_settings
 from sonar.categorization import groups
 from sonar.categorization.store import transactions_with_category, uncategorized_count
@@ -165,6 +173,37 @@ def load_lights_on(conn: sqlite3.Connection, category_types: dict[str, str]) -> 
         daily=lights_on.lights_on_forecast(months, 1),
         salary_months=salary_day is not None,
     )
+
+
+@dataclass(frozen=True)
+class MonthlyView:
+    """What the Monthly page shows: one month's spending and the months around it."""
+
+    spending: MonthlySpending
+    months: list[date]  # every month with a payment, newest first
+    selected: date
+    older: date | None
+    newer: date | None
+    salary_months: bool
+
+
+def load_monthly(
+    conn: sqlite3.Connection, category_types: dict[str, str], today: date, month: date | None
+) -> MonthlyView:
+    """The spending of `month`, or of the latest month with payments when it is None."""
+    rows = transactions_with_category(conn)
+    salary_day = load_settings(conn).salary_day
+    paydays = salary_paydays(rows)
+    months = payment_months(rows, salary_day, paydays)
+    if month is None:
+        # The latest month with data rather than the clock's: exports are
+        # often weeks old, and an empty current month would open the page.
+        selected = months[0] if months else today.replace(day=1)
+    else:
+        selected = month
+    older, newer = adjacent_months(months, selected)
+    spending = monthly_spending(rows, category_types, period_for(selected, salary_day, paydays))
+    return MonthlyView(spending, months, selected, older, newer, salary_day is not None)
 
 
 def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[str, ...]:

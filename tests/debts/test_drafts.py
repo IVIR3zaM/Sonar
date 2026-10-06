@@ -229,6 +229,20 @@ def test_split_series_prefill_ignores_larger_debits_on_earlier_days():
     assert prefill.first_payment_date == date(2026, 1, 5)
 
 
+def test_split_series_prefill_starts_at_the_first_lone_small_debit():
+    txs = [_mandate_tx_amount(date(2026, m, 1), -3_300) for m in range(1, 10)]
+    txs += [
+        _mandate_tx_amount(date(2026, 3, 3), -67_000),
+        _mandate_tx_amount(date(2026, 6, 2), -170_000),
+        _mandate_tx_amount(date(2026, 9, 1), -120_000),
+    ]
+
+    prefill = draft_prefill(_payment(MANDATE_KEY + "#2"), txs)
+
+    assert prefill is not None
+    assert prefill.first_payment_date == date(2026, 1, 1)
+
+
 def _mandate_tx_amount(booking_date: date, amount_cents: int) -> ParsedTransaction:
     return _tx(
         booking_date,

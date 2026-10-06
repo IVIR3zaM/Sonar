@@ -408,6 +408,54 @@ def test_series_keys_rank_by_absolute_amount_and_break_ties_by_input_order():
     ]
 
 
+MONTHLY_FIRSTS = [date(2026, m, 1) for m in range(1, 10)]
+QUARTERLY_LONE = [
+    (date(2026, 3, 3), -67000),
+    (date(2026, 6, 2), -170000),
+    (date(2026, 9, 1), -120000),
+]
+
+
+def _mandate_tx(booking_date: date, amount_cents: int) -> ParsedTransaction:
+    return _tx(booking_date, amount_cents=amount_cents, mandate_ref="M-0001", creditor_id=CREDITOR)
+
+
+def test_lone_payments_join_the_series_with_the_nearest_amount():
+    rows = [(_mandate_tx(d, -3300), "Utilities") for d in MONTHLY_FIRSTS]
+    rows += [(_mandate_tx(d, a), "Utilities") for d, a in QUARTERLY_LONE]
+
+    quarterly, monthly = _detect(rows)
+
+    assert (quarterly.key, quarterly.schedule.amount_cents, quarterly.schedule.interval_months) == (
+        f"{MANDATE_KEY}#1",
+        120000,
+        3,
+    )
+    assert (monthly.key, monthly.schedule.amount_cents, monthly.schedule.interval_months) == (
+        f"{MANDATE_KEY}#2",
+        3300,
+        1,
+    )
+
+
+def test_series_keys_assign_a_short_date_to_the_nearest_ranks():
+    full = [_mandate_tx(QUARTERLY[0], a) for a in (-9000, -5000, -1000)]
+    short = [_mandate_tx(QUARTERLY[1], a) for a in (-5100, -950)]
+
+    pairs = series_keys(full + short)
+
+    assert [key for _, key in pairs[3:]] == [f"{MANDATE_KEY}#2", f"{MANDATE_KEY}#3"]
+
+
+def test_series_keys_give_an_equidistant_lone_payment_the_lower_rank():
+    full = [_mandate_tx(QUARTERLY[0], a) for a in (-9000, -1000)]
+    lone = _mandate_tx(QUARTERLY[1], -5000)
+
+    pairs = series_keys([*full, lone])
+
+    assert pairs[2][1] == f"{MANDATE_KEY}#1"
+
+
 def test_same_day_income_credits_split_through_detect_income():
     rows = [
         (_tx(d, amount_cents=a, counterparty="Family Benefits Office"), "Benefits")

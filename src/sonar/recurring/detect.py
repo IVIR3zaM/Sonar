@@ -14,6 +14,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
+from itertools import combinations
 from statistics import median_low
 
 from sonar.categorization.groups import EXCLUDED_FROM_RECURRENCE, INCOME
@@ -95,23 +96,52 @@ def payment_key(tx: ParsedTransaction) -> str:
 
 def series_keys(txs: Iterable[ParsedTransaction]) -> list[tuple[ParsedTransaction, str]]:
     # One mandate can carry several charges on one day; each charge is its own
-    # series, ranked on its date by amount so a skipped small charge keeps the rest in place.
+    # series, ranked by amount on the days it collides. A lone payment on another
+    # day belongs to the series it resembles, so a skipped charge keeps the rest in place.
     txs = list(txs)
     base_keys = [payment_key(tx) for tx in txs]
-    by_group_date: dict[tuple[str, date], list[int]] = defaultdict(list)
+    by_group_date: dict[str, dict[date, list[int]]] = defaultdict(lambda: defaultdict(list))
     for index, (tx, base) in enumerate(zip(txs, base_keys, strict=True)):
-        by_group_date[(base, tx.booking_date)].append(index)
-    splitting = {base for (base, _), indexes in by_group_date.items() if len(indexes) > 1}
+        by_group_date[base][tx.booking_date].append(index)
 
     ranks = [1] * len(txs)
-    for indexes in by_group_date.values():
-        largest_first = sorted(indexes, key=lambda i: (-abs(txs[i].amount_cents), i))
-        for rank, index in enumerate(largest_first, start=1):
-            ranks[index] = rank
+    splitting: set[str] = set()
+    for base, by_date in by_group_date.items():
+        series_count = max(len(indexes) for indexes in by_date.values())
+        if series_count > 1:
+            splitting.add(base)
+            _rank_group(txs, list(by_date.values()), series_count, ranks)
     return [
         (tx, f"{base}#{rank}" if base in splitting else base)
         for tx, base, rank in zip(txs, base_keys, ranks, strict=True)
     ]
+
+
+def _rank_group(
+    txs: list[ParsedTransaction], dates: list[list[int]], series_count: int, ranks: list[int]
+) -> None:
+    ordered = [sorted(indexes, key=lambda i: (-abs(txs[i].amount_cents), i)) for indexes in dates]
+    amounts = [[abs(txs[i].amount_cents) for i in indexes] for indexes in ordered]
+    references = _reference_amounts([a for a in amounts if len(a) == series_count])
+    for indexes, date_amounts in zip(ordered, amounts, strict=True):
+        for index, rank in zip(indexes, _nearest_ranks(date_amounts, references), strict=True):
+            ranks[index] = rank
+
+
+def _reference_amounts(collision_dates: list[list[int]]) -> list[int]:
+    """The typical amount of each rank (index 0 is rank 1), over the collision dates."""
+    return [median_low(amounts) for amounts in zip(*collision_dates, strict=True)]
+
+
+def _nearest_ranks(amounts: list[int], references: list[int]) -> tuple[int, ...]:
+    """Ranks for amounts (largest first): the increasing combination closest to the references."""
+    candidates = combinations(range(1, len(references) + 1), len(amounts))
+    return min(
+        candidates,
+        key=lambda ranks: sum(
+            abs(a - references[r - 1]) for a, r in zip(amounts, ranks, strict=True)
+        ),
+    )
 
 
 def _detect_group(

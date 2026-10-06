@@ -1,5 +1,5 @@
 # Shared mandate recurring split
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: Recurring detection finds each series when one payment key carries several payments on the same booking date, and every consumer of the key agrees on the split keys.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -34,7 +34,7 @@ Definition of done: a test with two same-day quarterly payments under one mandat
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | split same-day series in detection | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N02 | debts use split series keys | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | debts use split series keys | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
 
 ## N01 split same-day series in detection
 Do: Add the pure helper `series_keys` to `src/sonar/recurring/detect.py` and group by its keys in `_detect_series` (`:70`), so same-day payments under one key become separate series. Document the rule in SPEC §13.
@@ -51,17 +51,20 @@ Done when:
 - C4 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 
 ## N02 debts use split series keys
-Do: Make the debts functions that rebuild detection keys from transactions use `series_keys` (N01) instead of `payment_key`, so debt links, draft suppression and draft prefill agree with the split keys detection stores.
-Context: D3: `series_keys(txs)` in `src/sonar/recurring/detect.py` returns each transaction with its split-aware key (`<base>#<rank>` when its key group has a same-day pair, else the bare `payment_key`).
+Do: Make the debts functions that rebuild detection keys from transactions use `series_keys` (N01) instead of `payment_key`, so debt links, draft suppression and draft prefill agree with the split keys detection stores. Move the second debit of `test_linked_keys_purpose_omits_a_key_shared_with_a_non_matching_debit` (`tests/debts/test_model.py:351`) to another booking date, so it still tests a key shared across dates rather than a same-day split.
+Context: D1: a key group with two or more debits on one booking date splits into `<base>#<rank>` keys, rank by absolute amount on that date, largest first, ties in input order.
+  D3: `series_keys(txs)` in `src/sonar/recurring/detect.py` returns each transaction with its split-aware key (`<base>#<rank>` when its key group has a same-day pair, else the bare `payment_key`).
   D4: both consumers key every debit (amount < 0) of the whole history with `series_keys`, no category filter. `linked_keys` (`src/sonar/debts/model.py:219`): the matching keys and the purpose guard (`:228-233`) use those keys; with split keys a purpose debt matching only the smaller same-day charge links that series' `#2` key. `draft_prefill` (`src/sonar/debts/drafts.py:44`): its debits are those whose series key equals `payment.detection_key`. `_match_rule` and match rules stay unchanged. `src/sonar/debts/store.py` passes all transactions already and needs no change; drop the `payment_key` import where it becomes unused.
-Read: `src/sonar/debts/model.py:209-235`, `src/sonar/debts/drafts.py`, `src/sonar/recurring/detect.py`, `tests/debts/test_model.py:320-360`, `tests/debts/test_drafts.py`
+  The test at `tests/debts/test_model.py:351` relies on `_tx`'s default date (`:19`) for both debits; under D1 they become `#1`/`#2`. Only its second debit's `booking_date` changes (e.g. `date(2026, 2, 5)`); its name, purposes, amounts and assertion (`frozenset()`) stay.
+Read: `src/sonar/debts/model.py:209-235`, `src/sonar/debts/drafts.py`, `src/sonar/recurring/detect.py`, `tests/debts/test_model.py:17-30,320-415`, `tests/debts/test_drafts.py`
 Write: `src/sonar/debts/model.py`, `src/sonar/debts/drafts.py`, `tests/debts/test_model.py`, `tests/debts/test_drafts.py`
 Test first: in `tests/debts/test_drafts.py`, a payment with `detection_key` `mandate:CRED/M-1#2` over quarterly same-day debit pairs (larger and smaller) prefills `first_payment_date` from the earliest smaller debit and ignores the larger ones.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/debts`
-- C2 [review] New tests cover: the `#2` draft prefill above; `linked_keys` of a mandate debt on a split group returns both `#1` and `#2` keys; `linked_keys` of a purpose debt whose text is only in the smaller charges' purpose returns exactly the `#2` key. Existing `linked_keys` and draft tests are unchanged and pass.
-- C3 [review] `git diff` shows no change to `matches`, `MatchRule`, `_match_rule` or `src/sonar/debts/store.py`.
-- C4 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
+- C2 [review] New tests cover: the `#2` draft prefill above; `linked_keys` of a mandate debt on a split group returns both `#1` and `#2` keys; `linked_keys` of a purpose debt whose text is only in the smaller charges' purpose returns exactly the `#2` key.
+- C3 [review] `git diff tests/` changes no existing test except the one `booking_date` argument added to the second debit of `test_linked_keys_purpose_omits_a_key_shared_with_a_non_matching_debit`, whose assertion stays `frozenset()`.
+- C4 [review] `git diff` shows no change to `matches`, `MatchRule`, `_match_rule` or `src/sonar/debts/store.py`.
+- C5 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 
 ## Log
 
@@ -69,5 +72,20 @@ Done when:
 exec: DONE · 1119 passed
 - series_keys in detect.py; _detect_series groups by it; SPEC §13 Same-day series bullet; 5 new tests
 - ranks computed per (base key, date); only groups with a same-day pair get #rank suffix
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-06
+exec: BLOCKED · existing test_linked_keys_purpose_omits_a_key_shared_with_a_non_matching_debit has two same-day equal-amount debits, which series_keys splits into #1/#2, so linked_keys returns {#1} not empty; C2 forbids changing existing tests. Impl and new tests done; fix = give that test's two debits different dates
+
+### N02 replan 1 · 2026-10-06
+plan: REPLANNED
+- cause: existing test at tests/debts/test_model.py:351 has two same-day debits on one key, which D1 splits into #1/#2; old C2 forbade editing it
+- change: Do and new C3 allow only moving that test's second debit to another booking date, assertion unchanged; criteria renumbered C1-C5
+
+### N02 try 1 · 2026-10-06
+exec: DONE · 1123 passed
+- linked_keys and draft_prefill use series_keys over all debits; payment_key import dropped
+- Second debit of purpose-omits test moved to 2026-02-05; added #2 prefill and split linked_keys tests
 check: PASS 2/2
 verify: PASS

@@ -353,7 +353,13 @@ def test_linked_keys_purpose_omits_a_key_shared_with_a_non_matching_debit() -> N
     inst = Installment(**{**inst.__dict__, "match": MatchRule("purpose", ORDER)})
     txs = [
         _tx(-10000, mandate_ref="M-1", creditor_id="CRED", purpose=f"Rate {ORDER}"),
-        _tx(-10000, mandate_ref="M-1", creditor_id="CRED", purpose="Rate 111-2222222-3333333"),
+        _tx(
+            -10000,
+            date(2026, 2, 5),
+            mandate_ref="M-1",
+            creditor_id="CRED",
+            purpose="Rate 111-2222222-3333333",
+        ),
     ]
     assert linked_keys(inst, txs) == frozenset()
 
@@ -368,3 +374,43 @@ def test_linked_keys_purpose_keeps_a_key_whose_debits_all_match() -> None:
         _tx(5000, date(2026, 3, 5), mandate_ref="M-1", creditor_id="CRED", purpose="Refund"),
     ]
     assert linked_keys(inst, txs) == frozenset({"mandate:CRED/M-1"})
+
+
+def _split_day_txs(smaller_purpose: str = "") -> list[ParsedTransaction]:
+    txs = []
+    for booking_date in (date(2026, 1, 5), date(2026, 4, 5)):
+        txs.append(
+            _tx(-30000, booking_date, mandate_ref="M-1", creditor_id="CRED", purpose="Big rate")
+        )
+        txs.append(
+            _tx(
+                -5000,
+                booking_date,
+                mandate_ref="M-1",
+                creditor_id="CRED",
+                purpose=smaller_purpose,
+            )
+        )
+    return txs
+
+
+def test_linked_keys_mandate_on_a_split_group_returns_both_series_keys() -> None:
+    debt = Loan(
+        name="Car loan",
+        balance_cents=500000,
+        balance_as_of=date(2026, 6, 30),
+        rate_cents=100000,
+        interest_bp=None,
+        match=MatchRule("mandate", "M-1"),
+    )
+    assert linked_keys(debt, _split_day_txs()) == frozenset(
+        {"mandate:CRED/M-1#1", "mandate:CRED/M-1#2"}
+    )
+
+
+def test_linked_keys_purpose_only_in_the_smaller_charges_links_the_second_series() -> None:
+    inst = _installment()
+    inst = Installment(**{**inst.__dict__, "match": MatchRule("purpose", ORDER)})
+    assert linked_keys(inst, _split_day_txs(smaller_purpose=ORDER)) == frozenset(
+        {"mandate:CRED/M-1#2"}
+    )

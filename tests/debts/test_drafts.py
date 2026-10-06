@@ -200,3 +200,40 @@ def test_prefilled_rule_links_back_to_the_payment():
 
         assert prefill is not None
         assert payment.detection_key in linked_keys(prefill, txs)
+
+
+def test_split_series_prefill_uses_only_the_smaller_same_day_debits():
+    txs = []
+    for booking_date in (date(2026, 1, 5), date(2026, 4, 5), date(2026, 7, 5)):
+        txs.append(_mandate_tx_amount(booking_date, -30_000))
+        txs.append(_mandate_tx_amount(booking_date, -5_000))
+    txs.insert(0, _mandate_tx_amount(date(2025, 10, 5), -30_000))
+
+    prefill = draft_prefill(_payment(MANDATE_KEY + "#2"), txs)
+
+    assert prefill is not None
+    assert prefill.first_payment_date == date(2026, 1, 5)
+    assert prefill.match == MatchRule("mandate", "M-1")
+
+
+def test_split_series_prefill_ignores_larger_debits_on_earlier_days():
+    txs = [
+        _mandate_tx_amount(date(2025, 12, 5), -30_000),
+        _mandate_tx_amount(date(2026, 1, 5), -30_000),
+        _mandate_tx_amount(date(2026, 1, 5), -5_000),
+    ]
+
+    prefill = draft_prefill(_payment(MANDATE_KEY + "#2"), txs)
+
+    assert prefill is not None
+    assert prefill.first_payment_date == date(2026, 1, 5)
+
+
+def _mandate_tx_amount(booking_date: date, amount_cents: int) -> ParsedTransaction:
+    return _tx(
+        booking_date,
+        amount_cents=amount_cents,
+        counterparty="Car Bank",
+        mandate_ref="M-1",
+        creditor_id="DE00ZZZ0000000001",
+    )

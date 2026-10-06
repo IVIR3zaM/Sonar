@@ -14,6 +14,7 @@ from sonar.web.charts import (
     compact_eur,
     line_points,
     month_label,
+    payoff_ticks,
     runway,
     runway_scale,
 )
@@ -379,3 +380,31 @@ def test_line_chart_single_label_stays_inside_viewbox(render):
         x = float(text["x"])
         assert x - 10 >= min_x
         assert x + 10 <= min_x + width
+
+
+def test_payoff_ticks_put_amounts_on_a_log_scale():
+    ticks = payoff_ticks([30000, 1830000, 13830000])
+    assert [t.percent for t in ticks] == [0.0, 67.0, 100.0]
+    assert [t.position for t in ticks] == [0, 670, 1000]
+    assert [t.align for t in ticks] == ["start", "center", "end"]
+    assert [t.row for t in ticks] == [0, 0, 0]
+    assert [t.cents for t in ticks] == [30000, 1830000, 13830000]
+
+
+def test_payoff_ticks_single_amount_sits_at_zero():
+    [tick] = payoff_ticks([50000])
+    assert (tick.percent, tick.position, tick.row) == (0.0, 0, 0)
+
+
+def test_payoff_ticks_empty_input_gives_no_ticks():
+    assert payoff_ticks([]) == []
+
+
+def test_payoff_ticks_close_amounts_land_on_different_rows():
+    ticks = payoff_ticks([10000, 11000, 1000000])
+    assert [t.row for t in ticks] == [0, 1, 0]
+
+
+def test_payoff_ticks_fourth_crowded_tick_has_no_row():
+    ticks = payoff_ticks([10000, 10100, 10200, 10300, 1000000])
+    assert [t.row for t in ticks] == [0, 1, 2, None, 0]

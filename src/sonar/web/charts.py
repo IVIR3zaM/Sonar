@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from math import log10
 
 from sonar.web.display import display_date
 
@@ -74,20 +75,65 @@ def runway_scale(limit: int, balance: int, worst: int, best: int) -> list[ScaleM
         kept.setdefault(cents_by_part[part], part)
     parts = sorted(kept.values(), key=lambda part: x_by_part[part])
 
-    marks: list[ScaleMark] = []
-    row_ends: list[float] = []  # percent of the last mark on each row
-    for part in parts:
-        percent = x_by_part[part] / 10
+    percents = [x_by_part[part] / 10 for part in parts]
+    rows = _label_rows(percents, SCALE_MIN_GAP, max_rows=len(parts))
+    return [
+        ScaleMark(part, cents_by_part[part], percent, _align(percent), row)
+        for part, percent, row in zip(parts, percents, rows, strict=True)
+    ]
+
+
+def _label_rows(percents: Sequence[float], min_gap: float, max_rows: int) -> list[int | None]:
+    """Greedy row per label, in ascending order: the first row whose last label is far enough left.
+
+    A label with no free row within `max_rows` gets None.
+    """
+    row_ends: list[float] = []  # percent of the last label on each row
+    rows: list[int | None] = []
+    for percent in percents:
         row = next(
-            (i for i, end in enumerate(row_ends) if percent - end >= SCALE_MIN_GAP),
+            (i for i, end in enumerate(row_ends) if percent - end >= min_gap),
             len(row_ends),
         )
+        if row >= max_rows:
+            rows.append(None)
+            continue
         if row == len(row_ends):
             row_ends.append(percent)
         else:
             row_ends[row] = percent
-        marks.append(ScaleMark(part, cents_by_part[part], percent, _align(percent), row))
-    return marks
+        rows.append(row)
+    return rows
+
+
+# The scale is logarithmic because one large mortgage would otherwise crowd
+# every small debt into the left edge. The gap is 12 because a label like
+# "138k €" at text-xs is about 12% of a 375px slider.
+TICK_MIN_GAP = 12
+_TICK_MAX_ROWS = 3
+
+
+@dataclass(frozen=True)
+class PayoffTick:
+    cents: int
+    percent: float
+    position: int  # the range input's value, 0-1000
+    align: str  # "start" | "center" | "end"
+    row: int | None  # None when no label row is free
+
+
+def payoff_ticks(amounts: Sequence[int]) -> list[PayoffTick]:
+    """Slider ticks for ascending, positive cumulative pay-now amounts, on a log scale."""
+    if not amounts:
+        return []
+    low, high = log10(amounts[0]), log10(amounts[-1])
+    span = high - low
+    percents = [round(100 * (log10(a) - low) / span, 1) if span else 0.0 for a in amounts]
+    rows = _label_rows(percents, TICK_MIN_GAP, _TICK_MAX_ROWS)
+    return [
+        PayoffTick(cents, percent, round(percent * 10), _align(percent), row)
+        for cents, percent, row in zip(amounts, percents, rows, strict=True)
+    ]
 
 
 def _align(percent: float) -> str:

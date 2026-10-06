@@ -151,6 +151,25 @@ def add_debt(conn: sqlite3.Connection, debt: Installment | Loan) -> int:
         return _insert_debt(conn, debt)
 
 
+def add_debt_closing_drafts(conn: sqlite3.Connection, debt: Installment | Loan) -> int:
+    """Insert a debt and complete every draft it links, as completing a draft would.
+
+    Drafts are synced first so a qualifying payment that has no row yet still
+    ends up completed, and never comes back after the debt is deleted.
+    """
+    sync_drafts(conn)
+    txs = [tx for tx, _category in transactions_with_category(conn)]
+    keys = sorted(linked_keys(debt, txs))
+    with conn:
+        debt_id = _insert_debt(conn, debt)
+        conn.executemany(
+            "UPDATE debt_drafts SET status = 'completed' "
+            "WHERE status = 'open' AND detection_key = ?",
+            [(key,) for key in keys],
+        )
+    return debt_id
+
+
 def _insert_debt(conn: sqlite3.Connection, debt: Installment | Loan) -> int:
     # No transaction of its own, so complete_draft can pair it with its update.
     if isinstance(debt, Installment):

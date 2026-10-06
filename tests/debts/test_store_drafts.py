@@ -11,6 +11,7 @@ from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import (
     DraftNotFound,
     add_debt,
+    add_debt_closing_drafts,
     complete_draft,
     debt_overview,
     delete_debt,
@@ -246,3 +247,57 @@ def test_completing_a_completed_draft_raises_and_adds_no_debt(conn):
         complete_draft(conn, draft.id, _installment())
 
     assert [stored.debt for stored in list_debts(conn)] == [_loan()]
+
+
+def _draft_rows(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    return conn.execute(
+        "SELECT detection_key, status FROM debt_drafts ORDER BY detection_key"
+    ).fetchall()
+
+
+def test_adding_a_debt_completes_the_existing_draft_it_links(conn):
+    _seed_car(conn)
+    _seed_sofa(conn)
+    sync_drafts(conn)
+
+    debt_id = add_debt_closing_drafts(conn, _installment())
+
+    assert [stored.id for stored in list_debts(conn)] == [debt_id]
+    assert _draft_rows(conn) == [(SOFA_KEY, "completed"), (CAR_KEY, "open")]
+    assert _draft_keys(conn) == [CAR_KEY]
+
+
+def test_adding_a_debt_completes_a_draft_that_sync_had_not_created_yet(conn):
+    _seed_sofa(conn)
+
+    add_debt_closing_drafts(conn, _installment())
+
+    assert _draft_rows(conn) == [(SOFA_KEY, "completed")]
+
+
+def test_adding_a_debt_that_links_nothing_leaves_open_drafts_open(conn):
+    _seed_car(conn)
+    _seed_sofa(conn)
+    sync_drafts(conn)
+    unrelated = Loan(
+        name="Other",
+        balance_cents=1_000,
+        balance_as_of=date(2026, 6, 30),
+        rate_cents=100,
+        interest_bp=None,
+        match=MatchRule("counterparty", "Nobody"),
+    )
+
+    add_debt_closing_drafts(conn, unrelated)
+
+    assert _draft_rows(conn) == [(SOFA_KEY, "open"), (CAR_KEY, "open")]
+
+
+def test_payment_is_not_drafted_again_after_its_added_debt_is_deleted(conn):
+    _seed_sofa(conn)
+    debt_id = add_debt_closing_drafts(conn, _installment())
+
+    delete_debt(conn, debt_id)
+
+    assert sync_drafts(conn) == []
+    assert _draft_rows(conn) == [(SOFA_KEY, "completed")]

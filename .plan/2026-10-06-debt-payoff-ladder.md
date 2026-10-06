@@ -1,5 +1,5 @@
 # Debt payoff ladder page
-status: WAITING
+status: RUNNING
 created: 2026-10-06 · updated: 2026-10-06
 goal: A /payoff page shows, step by step from the smallest open debt up, how much paying now would free of the monthly fixed payments.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -45,7 +45,7 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N05 | payoff page and nav | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | step slider script | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
-| N08 | visual check of payoff | gate | N11,N12 | -/sonnet | 0 | 2 | TODO | |
+| N08 | visual check of payoff | gate | N11,N12 | -/sonnet | 0 | 2 | DONE | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 | N10 | full-width step cards | exec | N06,N07 | haiku/sonnet | 1 | 0 | DONE | |
 | N11 | full-month window and exact freed | exec | N12 | sonnet/sonnet | 1 | 2 | DONE | |

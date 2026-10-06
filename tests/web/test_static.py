@@ -46,3 +46,12 @@ def test_index_links_favicon_and_home_screen_icon(tmp_path):
     assert favicon.status_code == 200
     assert touch_icon.status_code == 200
     assert touch_icon.headers["content-type"] == "image/png"
+
+
+def test_static_payoff_script_returns_200(tmp_path):
+    """GET /static/payoff.js answers 200 and drives the payoff slider."""
+    app = create_app(db_path=tmp_path / "test.db")
+    with TestClient(app) as client:
+        response = client.get("/static/payoff.js")
+    assert response.status_code == 200
+    assert "payoff-slider" in response.text

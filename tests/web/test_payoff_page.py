@@ -198,6 +198,22 @@ def test_the_slider_block_is_hidden_but_no_step_is(tmp_path):
     assert not any(c.has_attr("hidden") for c in page.select("[data-step]"))
 
 
+def test_a_page_with_steps_loads_the_slider_script_deferred(tmp_path):
+    db_path = _db(tmp_path, DEBTS)
+
+    page = soup(_get(db_path))
+
+    script = page.select_one("script[src='/static/payoff.js']")
+    assert script is not None
+    assert script.has_attr("defer")
+
+
+def test_the_empty_page_does_not_load_the_slider_script(tmp_path):
+    db_path = _db(tmp_path, [])
+
+    assert "/static/payoff.js" not in _get(db_path).text
+
+
 def test_without_debts_the_page_shows_only_the_empty_state(tmp_path):
     db_path = _db(tmp_path, [])
 

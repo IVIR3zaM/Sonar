@@ -43,8 +43,8 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N04 | log-scale tick geometry | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | payoff loader | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | payoff page and nav | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | step slider script | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
-| N07 | SPEC amendment | exec | N05 | haiku/sonnet | 0 | 0 | TODO | |
+| N06 | step slider script | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
+| N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | RUNNING | |
 | N08 | visual check of payoff | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 
@@ -223,4 +223,11 @@ exec: DONE · 1266 passed
 - Added /payoff router, payoff.html (all steps server-rendered, hidden slider block with ticks), Payoff nav entry and icon, rebuilt sonar.css
 - Estimate date shows in the header on the empty state too; empty state hides the fixed-now stat
 check: PASS 3/3
+verify: PASS
+
+### N06 try 1 · 2026-10-06
+exec: DONE · 1269 passed
+- Added static/payoff.js step picker (47 lines) and deferred script tag at the end of payoff.html's steps branch
+- Tests: payoff.js served and mentions payoff-slider; page with steps loads it deferred, empty page does not; sonar.css unchanged
+check: PASS 4/4
 verify: PASS

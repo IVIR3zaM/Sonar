@@ -1,5 +1,5 @@
 # Debts JSON API
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: Claude Code lists, adds and deletes installments and loans through the bearer-protected JSON API, and an API-added debt closes its payment's open draft for good.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -36,7 +36,7 @@ Definition of done: the plan `verify` passes; a smoke curl run on a temp DB crea
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | add a debt and close its drafts | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N02 | debts JSON API and docs | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | debts JSON API and docs | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
 
 ## N01 add a debt and close its drafts
 Do: Add `add_debt_closing_drafts(conn, debt) -> int` to the debts store. When the API creates a debt that links to a drafted payment, it completes that draft the way the page's "complete draft" does, so the draft disappears and never comes back.
@@ -52,25 +52,31 @@ Done when:
 - C4 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 
 ## N02 debts JSON API and docs
-Do: Add `GET /api/debts`, `POST /api/debts` and `DELETE /api/debts/{id}` to the `/api` router. Add the three rows to the AGENTS.md endpoint table and one SPEC §13 amendment line.
-Context: D1 is the GET shape. Build each item from a `DebtView` returned by `debt_overview(conn, today())` (`src/sonar/debts/store.py:64`), with `remaining_cents(view)` (`:91`). Put the item builder in `src/sonar/web/api.py`, next to `_recurring_item` (`:125`).
-  D2 is the POST body. Add a `DebtIn(_StrictModel)` (`src/sonar/web/api.py:49`) with StrictInt for the cents and count fields, and parse it with `_parse_body` (`:104`). Build `Installment`, `Loan` and `MatchRule` (`src/sonar/debts/model.py:25`, `:47`, `:70`). On a domain `ValueError`, answer 400 `{"error": forms.friendly(error), "field": <field>}` (`src/sonar/web/forms.py`). Map the message to the field with a small needle table in `api.py` (for example "total must be positive" maps to `total_cents`; the needles are listed at `forms.py` DOMAIN_ERROR_HINTS). Save with `add_debt_closing_drafts` (N01; D3). 201 returns the new item.
-  D4: DELETE answers 200 with the item read before `delete_debt` (`store.py:203`). `DebtNotFound` answers 404 `{"error": "No such debt: <id>"}`.
-  D5: auth is already covered by `src/sonar/web/access.py`. D6: add the SPEC.md §13 line "Debts API (§7, API)" after the "Recurring descriptions" line.
-  In the AGENTS.md table at `AGENTS.md:101`, add `GET /debts` (-), `POST /debts` (`kind` plus the D2 fields) and `DELETE /debts/{id}` (-). Keep AGENTS.md short.
-Read: `src/sonar/web/api.py`, `src/sonar/debts/store.py`, `src/sonar/debts/model.py`, `src/sonar/web/forms.py`, `tests/web/test_api_recurring.py`, `tests/web/test_debts_drafts_page.py`, `AGENTS.md`, `SPEC.md`
+Do: Add `GET /api/debts`, `POST /api/debts` and `DELETE /api/debts/{id}` to the `/api` router in `src/sonar/web/api.py` (routes sit in `build_api_router`, `:140`). Add three rows to the AGENTS.md endpoint table and one SPEC §13 amendment line.
+Context: Item shape (D1, used by GET, POST 201 and DELETE 200). A dict `_debt_item(view: DebtView)`, next to `_recurring_item` (`api.py:125`), with exactly these keys, always all present:
+  `id, kind, name, match_field, match_value, rate_cents, total_cents, interval_months, first_payment_date, payments_count, balance_cents, balance_as_of, interest_bp, paid_cents, remaining_cents, payments_remaining, end_date, paid_off, linked_payment_ids`.
+  `kind` is `"installment"` or `"loan"`. The other kind's own fields are `null` (installment: `balance_cents, balance_as_of, interest_bp` null; loan: `total_cents, interval_months, first_payment_date, payments_count` null). Dates are ISO strings. `match_field`/`match_value` come from `debt.match` (`src/sonar/debts/model.py:25`).
+  Status figures come from `view.status` (`model.py:90` InstallmentStatus, LoanStatus after it): installment `paid_cents`, `payments_remaining`, `end_date`, `paid_off`; loan `paid_cents = paid_since_statement_cents`, `end_date = payoff_date` (may be null), `payments_remaining = null`, `paid_off`. `remaining_cents = remaining_cents(view)` for both (`src/sonar/debts/store.py:91`). `linked_payment_ids = sorted(p.id for p in view.linked_payments)`.
+  GET returns a bare JSON list built from `debt_overview(conn, today())` (`store.py:64`), in its order (installments, then loans, by name). POST and DELETE find their item in the same overview by id.
+  POST body (D2). `DebtIn(_StrictModel)` (`api.py:49`, extra="forbid") with every field optional, default None: `kind`, `name`, `match_field`, `match_value`, `first_payment_date`, `balance_as_of` as StrictStr; `total_cents`, `rate_cents`, `interval_months`, `payments_count`, `balance_cents`, `interest_bp` as StrictInt. Parse with `_parse_body` (`:104`): an unknown key or a wrong JSON type (text in a cents field, a number for a date) is its 422.
+  Then answer 400 `{"error": <text>, "field": <key>}` for the first failure, in this order:
+  1. `kind` not `installment`/`loan` (field `kind`).
+  2. A field of the other kind that is not null (field = that key). Installment-only: `total_cents, interval_months, first_payment_date, payments_count`. Loan-only: `balance_cents, balance_as_of, interest_bp`.
+  3. A missing or null required field, checked in this order. Installment: `name, total_cents, rate_cents, interval_months, first_payment_date, payments_count, match_field, match_value`. Loan: `name, balance_cents, balance_as_of, rate_cents, match_field, match_value`. `interest_bp` is optional (null/omitted = linear).
+  4. A date that `date.fromisoformat` rejects (field = that date key).
+  5. A domain `ValueError` from building `MatchRule`, `Installment` or `Loan` (`model.py:25`, `:47`, `:70`): error = `forms.friendly(error)` (`src/sonar/web/forms.py:58`). Field comes from a needle table in `api.py`: "name must not be blank"→name, "total must be positive"→total_cents, "rate must be positive"→rate_cents, "interval must be at least 1 month"→interval_months, "payments_count must be at least 1"→payments_count, "balance must be positive"→balance_cents, "interest_bp must be positive when set"→interest_bp, "field must be one of"→match_field, "value must not be blank"→match_value.
+  Save with `add_debt_closing_drafts(conn, debt)` (`store.py`, N01; it syncs drafts and completes the open draft of every payment the debt links). Answer 201 with the new item.
+  DELETE (D4): read the item first. If no debt has that id, answer 404 `{"error": "No such debt: <id>"}`. Otherwise call `delete_debt` (`store.py:203`) and answer 200 with the item. Leave drafts as they are.
+  Auth (D5): `src/sonar/web/access.py` already guards `/api`; no new auth code.
+  Docs: in AGENTS.md, after `AGENTS.md:101`, add three rows in the same style: GET `/debts` with body "-"; POST `/debts` with body "`kind` plus the installment or loan fields above"; DELETE `/debts/{id}` with body "-". In SPEC.md, after `SPEC.md:250` ("Recurring descriptions"), add one bullet "Debts API (§7, API)" that states the item keys, the POST rules, the draft closing and the DELETE answers in one or two sentences.
+Read: `src/sonar/web/api.py`, `src/sonar/debts/store.py`, `src/sonar/debts/model.py`, `src/sonar/web/forms.py`, `tests/web/test_api_recurring.py`, `tests/web/test_auth_api_token.py`, `tests/web/test_debts_drafts_page.py`
 Write: `src/sonar/web/api.py`, `tests/web/test_api_debts.py`, `AGENTS.md`, `SPEC.md`
-Test first: in `tests/web/test_api_debts.py`, POST an installment in cents, then check that GET lists it in the D1 shape with its status figures.
+Test first: in `tests/web/test_api_debts.py`, POST an installment, then GET lists it with every item key and the expected status figures.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/web/test_api_debts.py tests/web/test_auth_api_token.py`
-- C2 [review] Tests cover all of these:
-  - GET returns both kinds with every D1 key and nulls for the other kind; status figures match the page's for seeded payments; `linked_payment_ids` is filled.
-  - POST creates an installment and a loan, with and without `interest_bp`. It answers 400 for: a bad `kind`; a missing field; the other kind's field; a non-ISO date; a non-positive total, each with the right `field`. It answers 422 for an unknown key and for text in a cents field.
-  - A POST that links to a drafted payment leaves no open draft on `/debts`.
-  - DELETE returns the item, and a second DELETE answers 404.
-  - The right bearer reaches POST and a wrong one gets a 401.
-- C3 [smoke] Start the app on a temp DB (`$TMPDIR`, never `data/sonar.db`). Run `curl -s -X POST -H 'Content-Type: application/json' -d '{"kind":"installment","name":"Smoke TV","total_cents":60000,"rate_cents":5000,"interval_months":1,"first_payment_date":"2026-01-15","payments_count":12,"match_field":"counterparty","match_value":"Smoke Shop"}' http://127.0.0.1:8000/api/debts`. It must answer 201 with an id. Then `curl -s http://127.0.0.1:8000/api/debts` lists that debt, and `curl -s -X DELETE http://127.0.0.1:8000/api/debts/<id>` returns it. Stop the app.
-- C4 [review] AGENTS.md has exactly the three new table rows. SPEC.md §13 has the one new line. Neither contains real names.
+- C2 [review] `tests/web/test_api_debts.py` covers: GET with both kinds, every key present and the other kind's fields null; status figures for seeded payments equal `debt_overview`'s; `linked_payment_ids` filled and ascending. POST creating an installment, a loan with `interest_bp` and a loan without it. POST 400 with the right `field` for a bad `kind`, a missing field, the other kind's field, a non-ISO date and a non-positive total. POST 422 for an unknown key and for text in a cents field. A POST linking a drafted payment leaves no open draft on `/debts`. DELETE returns the item, and a second DELETE answers 404. With sign-in on, the right bearer reaches POST and a wrong one gets 401.
+- C3 [smoke] Start the app on a temp DB under `$TMPDIR` (never `data/sonar.db`). `curl -s -X POST -H 'Content-Type: application/json' -d '{"kind":"installment","name":"Smoke TV","total_cents":60000,"rate_cents":5000,"interval_months":1,"first_payment_date":"2026-01-15","payments_count":12,"match_field":"counterparty","match_value":"Smoke Shop"}' http://127.0.0.1:8000/api/debts` answers 201 with an id. `curl -s http://127.0.0.1:8000/api/debts` lists it, and `curl -s -X DELETE http://127.0.0.1:8000/api/debts/<id>` returns it. Stop the app.
+- C4 [review] `git diff AGENTS.md SPEC.md` adds exactly three table rows and one §13 bullet, with no real names. Nothing else changes in either file.
 - C5 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 
 ## Log
@@ -79,5 +85,22 @@ Done when:
 exec: DONE · 1063 passed
 - add_debt_closing_drafts in debts/store.py: sync_drafts, then insert + complete linked open drafts in one transaction
 - 4 tests in test_store_drafts.py cover existing draft, no draft row yet, no links, delete does not re-draft
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-06
+exec: BLOCKED · brief cites D1 (GET item keys) and D2 (POST body) but never states them; key names are a behavior decision
+
+### N02 replan 1 · 2026-10-06
+plan: REPLANNED
+- cause: brief cited D1/D2 without stating item keys, status mapping or POST body
+- brief now spells out every item key, per-kind nulls, status-field mapping, linked_payment_ids order
+- brief now lists DebtIn types, 400 check order, required fields per kind and the error-to-field needle table
+
+### N02 try 1 · 2026-10-06
+exec: DONE · 1100 passed
+- GET/POST/DELETE /api/debts in api.py with _debt_item, DebtIn and _build_debt; 37 tests in tests/web/test_api_debts.py
+- AGENTS.md: 3 table rows; SPEC §13: Debts API bullet
+- MatchRule is built before Installment/Loan, so a bad match field is reported before a bad name
 check: PASS 2/2
 verify: PASS

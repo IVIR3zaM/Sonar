@@ -99,6 +99,9 @@ Endpoints (all under `/api`, `Content-Type: application/json`):
 | GET | `/uncategorized` | - |
 | GET | `/recurring` | - |
 | PUT | `/recurring/{id}` | `name`, `description` |
+| GET | `/debts` | - |
+| POST | `/debts` | `kind` plus the installment or loan fields above |
+| DELETE | `/debts/{id}` | - |
 
 The five `group` values, and what each means for the forecast:
 

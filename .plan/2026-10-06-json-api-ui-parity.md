@@ -45,7 +45,7 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 | N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | monthly and transactions API | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
-| N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 0 | 0 | TODO | |
+| N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 1 | 0 | DONE | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
@@ -300,5 +300,9 @@ verify: PASS
 exec: DONE · 1239 passed
 - load_monthly/MonthlyView in cashflow.service shared by Monthly page and new GET /api/monthly; GET /api/transactions with from/to/category/uncategorized/q; shared _transaction_item
 - Choice: category+uncategorized=true 400 names field uncategorized; list body is {transactions: [...]}; uncategorized=false/empty is no filter
+check: PASS 2/2
+verify: PASS
+
+### N08 try 1 · 2026-10-06
 check: PASS 2/2
 verify: PASS

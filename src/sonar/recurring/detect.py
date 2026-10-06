@@ -4,7 +4,8 @@
 credits in income categories, minus the salary (SPEC §13 Recurring income).
 Both share one grouping and detection path. Pure functions only: rows and
 `today` are passed in, the store decides what to keep. Each detected payment
-gets a stable key so later runs update it instead of creating a duplicate.
+gets a stable key so later runs update it instead of creating a duplicate; a
+key that holds several payments on one day splits into `<key>#<rank>` series.
 """
 
 from __future__ import annotations
@@ -74,10 +75,11 @@ def _detect_series(
     if not rows:
         return []
     latest_booking = max(tx.booking_date for tx, _ in rows)
+    kept = [(tx, category) for tx, category in rows if keep(tx, category)]
+    keys = (key for _, key in series_keys(tx for tx, _ in kept))
     groups: dict[str, list[Row]] = defaultdict(list)
-    for tx, category in rows:
-        if keep(tx, category):
-            groups[payment_key(tx)].append((tx, category))
+    for row, key in zip(kept, keys, strict=True):
+        groups[key].append(row)
     detected = (_detect_group(key, group, latest_booking, today) for key, group in groups.items())
     return sorted((p for p in detected if p is not None), key=lambda p: p.key)
 
@@ -89,6 +91,27 @@ def payment_key(tx: ParsedTransaction) -> str:
     if tx.creditor_id:
         return f"creditor:{tx.creditor_id}"
     return f"counterparty:{normalize_text(tx.counterparty)}"
+
+
+def series_keys(txs: Iterable[ParsedTransaction]) -> list[tuple[ParsedTransaction, str]]:
+    # One mandate can carry several charges on one day; each charge is its own
+    # series, ranked on its date by amount so a skipped small charge keeps the rest in place.
+    txs = list(txs)
+    base_keys = [payment_key(tx) for tx in txs]
+    by_group_date: dict[tuple[str, date], list[int]] = defaultdict(list)
+    for index, (tx, base) in enumerate(zip(txs, base_keys, strict=True)):
+        by_group_date[(base, tx.booking_date)].append(index)
+    splitting = {base for (base, _), indexes in by_group_date.items() if len(indexes) > 1}
+
+    ranks = [1] * len(txs)
+    for indexes in by_group_date.values():
+        largest_first = sorted(indexes, key=lambda i: (-abs(txs[i].amount_cents), i))
+        for rank, index in enumerate(largest_first, start=1):
+            ranks[index] = rank
+    return [
+        (tx, f"{base}#{rank}" if base in splitting else base)
+        for tx, base, rank in zip(txs, base_keys, ranks, strict=True)
+    ]
 
 
 def _detect_group(

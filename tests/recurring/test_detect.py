@@ -2,7 +2,13 @@ from datetime import date
 
 import pytest
 
-from sonar.recurring.detect import DetectedPayment, detect_income, detect_recurring
+from sonar.recurring.detect import (
+    DetectedPayment,
+    detect_income,
+    detect_recurring,
+    payment_key,
+    series_keys,
+)
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.transactions import ParsedTransaction
 
@@ -338,3 +344,84 @@ def test_quarterly_income_with_three_payments_is_detected():
 
 def test_no_income_rows_give_no_series():
     assert _income([]) == []
+
+
+QUARTERLY = [date(2026, 3, 10), date(2026, 6, 10), date(2026, 9, 10)]
+MANDATE_KEY = f"mandate:{CREDITOR}/M-0001"
+
+
+def _shared_mandate_rows(dates: list[date], amounts: tuple[int, ...], **fields):
+    return [
+        (_tx(d, amount_cents=a, mandate_ref="M-0001", creditor_id=CREDITOR, **fields), "Utilities")
+        for d in dates
+        for a in amounts
+    ]
+
+
+def test_same_day_charges_under_one_mandate_split_into_series_by_amount_rank():
+    rows = _shared_mandate_rows(QUARTERLY, (-1205, -7612))
+
+    large, small = _detect(rows)
+
+    assert (large.key, large.schedule.amount_cents, large.schedule.interval_months) == (
+        f"{MANDATE_KEY}#1",
+        7612,
+        3,
+    )
+    assert (small.key, small.schedule.amount_cents, small.schedule.interval_months) == (
+        f"{MANDATE_KEY}#2",
+        1205,
+        3,
+    )
+
+
+def test_a_quarter_with_only_the_larger_charge_still_detects_the_first_series():
+    rows = _shared_mandate_rows(QUARTERLY[:2], (-1205, -7612))
+    rows += _shared_mandate_rows(QUARTERLY[2:], (-7612,))
+
+    [large] = _detect(rows)
+
+    assert (large.key, large.schedule.amount_cents) == (f"{MANDATE_KEY}#1", 7612)
+    assert large.last_paid_date == QUARTERLY[2]
+
+
+def test_series_keys_keep_the_bare_key_when_each_date_has_one_payment():
+    txs = [row[0] for row in _shared_mandate_rows(QUARTERLY, (-1205,))]
+
+    assert [key for _, key in series_keys(txs)] == [payment_key(txs[0])] * 3
+
+
+def test_series_keys_rank_by_absolute_amount_and_break_ties_by_input_order():
+    small, large, tie_a, tie_b = (
+        _tx(QUARTERLY[0], amount_cents=a, mandate_ref="M-0001", creditor_id=CREDITOR)
+        for a in (-1205, -7612, -300, -300)
+    )
+
+    pairs = series_keys([small, large, tie_a, tie_b])
+
+    assert [tx for tx, _ in pairs] == [small, large, tie_a, tie_b]
+    assert [key for _, key in pairs] == [
+        f"{MANDATE_KEY}#2",
+        f"{MANDATE_KEY}#1",
+        f"{MANDATE_KEY}#3",
+        f"{MANDATE_KEY}#4",
+    ]
+
+
+def test_same_day_income_credits_split_through_detect_income():
+    rows = [
+        (_tx(d, amount_cents=a, counterparty="Family Benefits Office"), "Benefits")
+        for d in _monthly_on(15)
+        for a in (10000, 25000)
+    ]
+
+    large, small = _income(rows)
+
+    assert (large.key, large.schedule.amount_cents) == (
+        "counterparty:family benefits office#1",
+        25000,
+    )
+    assert (small.key, small.schedule.amount_cents) == (
+        "counterparty:family benefits office#2",
+        10000,
+    )

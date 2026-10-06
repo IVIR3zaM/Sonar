@@ -97,6 +97,8 @@ Endpoints (all under `/api`, `Content-Type: application/json`):
 | DELETE | `/rules/{id}` | - |
 | POST | `/rules/{id}/move` | `position` |
 | GET | `/uncategorized` | - |
+| GET | `/recurring` | - |
+| PUT | `/recurring/{id}` | `name`, `description` |
 
 The five `group` values, and what each means for the forecast:
 

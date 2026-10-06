@@ -1,4 +1,4 @@
-"""JSON API for categories and rules (N17: SPEC §5, §13).
+"""JSON API for categories, rules and recurring payments (N17: SPEC §5, §6, §13).
 
 Thin HTTP translation over `categorization.service`: every endpoint reads or
 writes through its functions and nothing else, so validation, regex and
@@ -35,6 +35,13 @@ from sonar.categorization.service import (
 )
 from sonar.categorization.store import uncategorized_count, uncategorized_transactions
 from sonar.db import connect
+from sonar.recurring.store import (
+    PaymentNotFound,
+    RecurringPayment,
+    get_payment,
+    list_payments,
+    update_details,
+)
 
 _JSON_CONTENT_TYPE = "application/json"
 
@@ -89,6 +96,11 @@ class MoveIn(_StrictModel):
         return _numeric_as_text(value)
 
 
+class RecurringIn(_StrictModel):
+    name: str | None = None
+    description: str | None = None
+
+
 async def _parse_body(request: Request, model_cls: type[BaseModel]) -> BaseModel | JSONResponse:
     """The body as a `model_cls` instance, or the 415/422 response to return in its place."""
     content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
@@ -108,6 +120,21 @@ async def _parse_body(request: Request, model_cls: type[BaseModel]) -> BaseModel
         return JSONResponse(
             {"error": "Invalid request body", "details": error.errors()}, status_code=422
         )
+
+
+def _recurring_item(payment: RecurringPayment) -> dict:
+    latest = payment.periods[-1]
+    return {
+        "id": payment.id,
+        "detection_key": payment.detection_key,
+        "name": payment.name,
+        "description": payment.description,
+        "category": payment.category,
+        "status": payment.status,
+        "amount_cents": latest.amount_cents,
+        "interval_months": latest.interval_months,
+        "day": latest.day,
+    }
 
 
 def build_api_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
@@ -293,5 +320,39 @@ def build_api_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
                 ],
             }
         )
+
+    @router.get("/recurring")
+    async def get_recurring() -> JSONResponse:
+        conn = connect(db_path)
+        try:
+            items = [_recurring_item(p) for p in list_payments(conn, include_dismissed=True)]
+        finally:
+            conn.close()
+        return JSONResponse(items)
+
+    @router.put("/recurring/{id}")
+    async def put_recurring(id: int, request: Request) -> JSONResponse:
+        body = await _parse_body(request, RecurringIn)
+        if isinstance(body, JSONResponse):
+            return body
+        conn = connect(db_path)
+        try:
+            try:
+                current = get_payment(conn, id)
+            except PaymentNotFound:
+                return JSONResponse({"error": f"No such recurring payment: {id}"}, status_code=404)
+            name = (body.name or "").strip() if "name" in body.model_fields_set else current.name
+            if not name:
+                return JSONResponse(
+                    {"error": "Name must not be blank", "field": "name"}, status_code=400
+                )
+            description = (
+                body.description if "description" in body.model_fields_set else current.description
+            )
+            update_details(conn, id, name, description)
+            item = _recurring_item(get_payment(conn, id))
+        finally:
+            conn.close()
+        return JSONResponse(item)
 
     return router

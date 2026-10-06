@@ -1,5 +1,5 @@
 # Recurring payment descriptions and API
-status: RUNNING
+status: DONE
 created: 2026-10-06 · updated: 2026-10-06
 goal: Recurring payments carry an optional description, shown and edited on the Recurring page, and a bearer-protected JSON API lists them and sets their name and description.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -36,7 +36,7 @@ Definition of done: the plan `verify` passes; both endpoints answer correctly ag
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | description column, store and Recurring page | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N02 | recurring JSON API and docs | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | recurring JSON API and docs | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 description column, store and Recurring page
 Do: Add a nullable `description` to recurring payments: a new migration, the store reading and writing it, and the Recurring page showing it under the name and editing it in the add and edit forms. Add the two store functions the API node needs. Rebuild `sonar.css`.
@@ -79,5 +79,13 @@ Done when:
 exec: DONE · 1050 passed
 - Migration 0010 adds nullable description; store get_payment/update_details, add_manual/edit_payment take description (default None); sync keeps it and no longer deletes described rows
 - Recurring page shows description under name (data-field=description) and add/edit forms carry it; sonar.css rebuilt, unchanged (classes already present)
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-06
+exec: DONE · 1059 passed
+- GET /api/recurring and PUT /api/recurring/{id} in web/api.py with RecurringIn; tests/web/test_api_recurring.py (9 tests)
+- AGENTS.md two table rows; SPEC §13 one amendment line
+- PUT with explicit null name is a 400 (only an omitted name is kept)
 check: PASS 2/2
 verify: PASS

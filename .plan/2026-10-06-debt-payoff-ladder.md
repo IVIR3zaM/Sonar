@@ -41,7 +41,7 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N01 | preflight | check | - | -/haiku | 1 | 1 | DONE | |
 | N02 | pure payoff ladder | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | log-scale tick geometry | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | payoff loader | exec | N02 | sonnet/sonnet | 1 | 0 | RUNNING | |
+| N03 | payoff loader | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | payoff page and nav | exec | N03,N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | step slider script | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | SPEC amendment | exec | N05 | haiku/sonnet | 0 | 0 | TODO | |
@@ -208,5 +208,12 @@ verify: PASS
 exec: DONE · 1250 passed
 - payoff_ticks + PayoffTick in charts.py; greedy row pass extracted to _label_rows shared with runway_scale
 - runway_scale passes max_rows=len(parts) so it never limits rows
+check: PASS 2/2
+verify: PASS
+
+### N03 try 1 · 2026-10-06
+exec: DONE · 1255 passed
+- load_payoff + Payoff dataclass in cashflow/service.py; month_totals made public; _debt_source shared with _fixed_sources
+- Payoff did not exist yet, so defined it in service.py
 check: PASS 2/2
 verify: PASS

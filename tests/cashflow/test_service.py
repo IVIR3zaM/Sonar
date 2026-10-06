@@ -12,7 +12,7 @@ import pytest
 
 from sonar.cashflow.forecast import DueItem, Projection
 from sonar.cashflow.lights_on import CategoryExpected
-from sonar.cashflow.service import load_dashboard, load_lights_on, load_monthly
+from sonar.cashflow.service import load_dashboard, load_lights_on, load_monthly, load_payoff
 from sonar.cashflow.store import save_settings, set_manual_balance
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debts.model import Installment, Loan, MatchRule
@@ -656,3 +656,106 @@ def test_load_monthly_flags_salary_months_once_a_salary_day_is_set(conn):
     save_settings(conn, 26, -50_000)
 
     assert load_monthly(conn, CATEGORY_TYPES, TODAY, None).salary_months is True
+
+
+def _fixed_totals(conn: sqlite3.Connection, today: date = TODAY) -> list[int]:
+    return [m.total_cents for m in load_dashboard(conn, CATEGORY_TYPES, today).fixed_costs.months]
+
+
+def _loan(name: str, mandate: str, balance_cents: int = 100_000) -> Loan:
+    return Loan(
+        name=name,
+        balance_cents=balance_cents,
+        balance_as_of=date(2026, 8, 24),
+        rate_cents=20_000,
+        interest_bp=None,
+        match=MatchRule("mandate", mandate),
+    )
+
+
+def test_payoff_frees_the_installment_rate_from_the_dashboard_fixed_costs(
+    conn: sqlite3.Connection,
+) -> None:
+    _monthly(conn, "Rent", 1, 50_000)
+    add_debt(conn, _installment("Sofa", "M-1", first_payment_date=date(2026, 9, 15)))
+
+    payoff = load_payoff(conn, TODAY)
+
+    totals = _fixed_totals(conn)
+    (step,) = payoff.steps
+    assert payoff.estimate_date == TODAY
+    assert payoff.before_min_cents == min(totals)
+    assert payoff.before_max_cents == max(totals)
+    assert (step.before_min_cents, step.before_max_cents) == (min(totals), max(totals))
+    assert step.freed_min_cents == 10_000
+    assert step.freed_max_cents == 10_000
+    assert step.pay_now_cents == 120_000
+    assert [d.name for d in step.debts] == ["Sofa"]
+    assert step.debts[0].kind == "installment"
+    assert step.debts[0].months == (10_000,) * 12
+
+
+def test_payoff_without_debts_has_no_steps_but_the_before_range(
+    conn: sqlite3.Connection,
+) -> None:
+    _monthly(conn, "Rent", 1, 50_000)
+
+    payoff = load_payoff(conn, TODAY)
+
+    assert payoff.steps == ()
+    assert (payoff.before_min_cents, payoff.before_max_cents) == (50_000, 50_000)
+
+
+def test_payoff_leaves_a_paid_off_installment_off_the_ladder(conn: sqlite3.Connection) -> None:
+    for booking_date in ["2026-08-15", "2026-09-05"]:
+        _insert_tx(conn, booking_date, -10_000, mandate_ref="M-2")
+    add_debt(
+        conn,
+        _installment(
+            "Lamp",
+            "M-2",
+            total_cents=20_000,
+            first_payment_date=date(2026, 8, 15),
+            payments_count=2,
+        ),
+    )
+    add_debt(conn, _installment("Sofa", "M-1", first_payment_date=date(2026, 9, 15)))
+
+    payoff = load_payoff(conn, TODAY)
+
+    (step,) = payoff.steps
+    assert [d.name for d in step.debts] == ["Sofa"]
+
+
+def test_payoff_estimates_from_the_balance_date_and_projects_a_loan_to_it(
+    conn: sqlite3.Connection,
+) -> None:
+    _insert_import_balance(conn, "2026-09-20", 100_000)
+    add_debt(conn, _loan("Car", "M-3"))
+
+    payoff = load_payoff(conn, date(2026, 9, 28))
+
+    (step,) = payoff.steps
+    (car,) = step.debts
+    assert payoff.estimate_date == date(2026, 9, 20)
+    assert car.kind == "loan"
+    assert car.interval_months == 1
+    # The first rate falls on 2026-09-24: after the balance date, before today.
+    assert car.remaining_cents == 100_000
+    assert load_payoff(conn, date(2026, 9, 28)).steps == load_payoff(conn, date(2026, 9, 21)).steps
+    assert step.pay_now_cents == car.remaining_cents
+
+
+def test_payoff_counts_a_debt_linked_recurring_payment_once(conn: sqlite3.Connection) -> None:
+    for month in range(1, 9):
+        _insert_tx(conn, f"2026-{month:02d}-15", -10_000, mandate_ref="M-1")
+    _insert_detected(conn, "mandate:/M-1", "Sofa rate", day=15, amount_cents=10_000)
+    add_debt(conn, _installment("Sofa", "M-1"))
+
+    payoff = load_payoff(conn, TODAY)
+
+    (step,) = payoff.steps
+    # The debt owns the payment; paying it off leaves nothing of "Sofa rate".
+    assert step.after_min_cents == 0
+    assert step.after_max_cents == 0
+    assert step.freed_max_cents == payoff.before_max_cents

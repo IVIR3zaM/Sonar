@@ -28,6 +28,8 @@ from sonar.cashflow.store import current_balance, load_settings
 from sonar.categorization import groups
 from sonar.categorization.store import transactions_with_category, uncategorized_count
 from sonar.debts import model
+from sonar.debts.model import Installment
+from sonar.debts.payoff import LadderDebt, PayoffStep, payoff_ladder
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
 from sonar.recurring.detect import Row, detect_income
 from sonar.recurring.store import list_payments
@@ -64,6 +66,54 @@ class Dashboard:
     debts: list[tuple[str, int]]
     debts_total_cents: int
     uncategorized_count: int
+
+
+@dataclass(frozen=True)
+class Payoff:
+    estimate_date: date
+    steps: tuple[PayoffStep, ...]
+    # The fixed-cost series' own range, kept for the page when there are no steps.
+    before_min_cents: int
+    before_max_cents: int
+
+
+def load_payoff(conn: sqlite3.Connection, today: date) -> Payoff:
+    """The payoff ladder over the dashboard's own fixed-cost months.
+
+    Each open debt's months come from the same month totals as the dashboard
+    chart, so a payment is counted exactly as it is there.
+    """
+    balance = current_balance(conn)
+    estimate_date = today if balance is None else balance.as_of
+    txs = [tx for tx, _ in transactions_with_category(conn)]
+    views = debt_overview(conn, estimate_date)
+    base = [
+        m.total_cents
+        for m in forecast.month_totals(_fixed_sources(conn, views, txs), estimate_date)
+    ]
+    open_views = [view for view in views if not view.status.paid_off]
+    ladder = payoff_ladder([_ladder_debt(view, txs, estimate_date) for view in open_views], base)
+    return Payoff(estimate_date, ladder, min(base), max(base))
+
+
+def _ladder_debt(view: DebtView, txs: list[ParsedTransaction], estimate_date: date) -> LadderDebt:
+    months = forecast.month_totals((_debt_source(view, txs),), estimate_date)
+    debt, status = view.debt, view.status
+    if isinstance(debt, Installment):
+        kind: Literal["installment", "loan"] = "installment"
+        interval_months, end_date = debt.interval_months, status.end_date
+    else:
+        kind, interval_months, end_date = "loan", 1, status.payoff_date
+    return LadderDebt(
+        id=view.id,
+        kind=kind,
+        name=debt.name,
+        remaining_cents=remaining_cents(view),
+        rate_cents=debt.rate_cents,
+        interval_months=interval_months,
+        end_date=end_date,
+        months=tuple(m.total_cents for m in months),
+    )
 
 
 def load_dashboard(
@@ -244,13 +294,14 @@ def _fixed_sources(
         for payment in list_payments(conn)
         if payment.id not in linked_ids
     ]
-    owed = [
-        FixedSource(
-            view.debt.name,
-            model.debt_schedule(view.debt, view.status),
-            model.last_payment_date(view.debt, txs),
-        )
-        for view in views
-    ]
     # A paid-off debt's schedule is empty, which is how it drops out (SPEC §7).
+    owed = [_debt_source(view, txs) for view in views]
     return tuple(recurring + owed)
+
+
+def _debt_source(view: DebtView, txs: list[ParsedTransaction]) -> FixedSource:
+    return FixedSource(
+        view.debt.name,
+        model.debt_schedule(view.debt, view.status),
+        model.last_payment_date(view.debt, txs),
+    )

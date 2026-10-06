@@ -105,7 +105,7 @@ def traffic_light(p: Projection, limit_cents: int) -> Literal["green", "yellow",
 
 def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
     """Monthly equivalent, one row per current payment, and 12 monthly totals."""
-    months = _month_totals(sources, today)
+    months = month_totals(sources, today)
     total = sum(m.total_cents for m in months)
     # Integer round half up; totals are never negative, so this is exact.
     monthly_equivalent = (total * 2 + MONTHS_SHOWN) // (MONTHS_SHOWN * 2)
@@ -117,7 +117,7 @@ def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
     )
 
 
-def _month_totals(sources: tuple[FixedSource, ...], today: date) -> tuple[MonthTotal, ...]:
+def month_totals(sources: tuple[FixedSource, ...], today: date) -> tuple[MonthTotal, ...]:
     first = today.replace(day=1)
     firsts = [schedule.add_months(first, offset, 1) for offset in range(MONTHS_SHOWN)]
     end = schedule.add_months(first, MONTHS_SHOWN, 1) - timedelta(days=1)

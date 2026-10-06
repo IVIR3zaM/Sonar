@@ -140,6 +140,33 @@ def load_dashboard(
     )
 
 
+@dataclass(frozen=True)
+class LightsOnView:
+    """What the Keep the lights on page shows: the latest months and their daily average."""
+
+    categories: tuple[str, ...]
+    months: list[lights_on.MonthSpend]
+    daily: LightsOnForecast | None
+    salary_months: bool
+
+
+def load_lights_on(conn: sqlite3.Connection, category_types: dict[str, str]) -> LightsOnView:
+    """The last 24 complete months and the daily average learned from the latest ones."""
+    rows = transactions_with_category(conn)
+    salary_day = load_settings(conn).salary_day
+    balance = current_balance(conn)
+    until = lights_on.last_known_day(rows, balance.as_of if balance else None)
+    months = (
+        [] if until is None else lights_on.month_spends(rows, category_types, salary_day, until)
+    )
+    return LightsOnView(
+        categories=_names_of_type(category_types, groups.LIGHTS_ON),
+        months=months[-24:],
+        daily=lights_on.lights_on_forecast(months, 1),
+        salary_months=salary_day is not None,
+    )
+
+
 def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[str, ...]:
     return tuple(sorted(name for name, type_ in category_types.items() if type_ == category_type))
 

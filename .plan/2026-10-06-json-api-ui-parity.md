@@ -43,7 +43,7 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 | N03 | recurring writes, restore and item | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 1 | 0 | RUNNING | |
+| N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | monthly and transactions API | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
@@ -286,4 +286,12 @@ check: PASS 2/2
 verify: PASS
 
 ### N04 try 1 · 2026-10-06
+verify: PASS
+
+### N06 try 1 · 2026-10-06
+exec: DONE · 1214 passed
+- month_rows/MonthRow in cashflow/lights_on.py, load_lights_on/LightsOnView in cashflow/service.py; lights-on page now calls both, no template change
+- GET /api/dashboard and /api/lights-on in web/api/cashflow.py with _jsonable in _common.py
+- chart series now built from MonthRow instead of a private _cents copy
+check: PASS 2/2
 verify: PASS

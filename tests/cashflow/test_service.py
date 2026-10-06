@@ -12,7 +12,7 @@ import pytest
 
 from sonar.cashflow.forecast import DueItem, Projection
 from sonar.cashflow.lights_on import CategoryExpected
-from sonar.cashflow.service import load_dashboard
+from sonar.cashflow.service import load_dashboard, load_lights_on
 from sonar.cashflow.store import save_settings, set_manual_balance
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debts.model import Installment, Loan, MatchRule
@@ -590,3 +590,30 @@ def test_income_leaves_due_and_fixed_costs_unchanged(conn: sqlite3.Connection) -
     assert after.due == before.due
     assert after.due_total_cents == before.due_total_cents
     assert after.fixed_costs == before.fixed_costs
+
+
+def test_load_lights_on_without_transactions_has_no_months_and_no_daily(conn):
+    view = load_lights_on(conn, CATEGORY_TYPES)
+
+    assert view.categories == ("Groceries",)
+    assert view.months == []
+    assert view.daily is None
+    assert view.salary_months is False
+
+
+def test_load_lights_on_reports_complete_months_and_daily_average(conn):
+    _insert_tx(conn, "2026-01-01", -3100, category="Groceries")
+    # A later booking makes January a complete month.
+    _insert_tx(conn, "2026-02-01", 100)
+
+    view = load_lights_on(conn, CATEGORY_TYPES)
+
+    assert [m.lights_on_cents for m in view.months] == [3100]
+    assert view.daily is not None
+    assert view.daily.months_used == tuple(m.period for m in view.months)
+
+
+def test_load_lights_on_flags_salary_months_once_a_salary_day_is_set(conn):
+    save_settings(conn, 26, -50_000)
+
+    assert load_lights_on(conn, CATEGORY_TYPES).salary_months is True

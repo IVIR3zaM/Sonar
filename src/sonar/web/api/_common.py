@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import fields, is_dataclass
+from datetime import date
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -44,3 +47,16 @@ async def _parse_body(request: Request, model_cls: type[BaseModel]) -> BaseModel
         return JSONResponse(
             {"error": "Invalid request body", "details": error.errors()}, status_code=422
         )
+
+
+def _jsonable(value: object) -> object:
+    """A dataclass tree as plain JSON data: fields as dicts, dates as ISO text, tuples as lists."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _jsonable(getattr(value, f.name)) for f in fields(value)}
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, tuple | list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    return value

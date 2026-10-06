@@ -8,9 +8,12 @@ import pytest
 from sonar.cashflow import monthly
 from sonar.cashflow.lights_on import (
     CategoryExpected,
+    MonthRow,
+    MonthSpend,
     complete_months,
     last_known_day,
     lights_on_forecast,
+    month_rows,
     month_spends,
 )
 from sonar.cashflow.monthly import Period
@@ -236,3 +239,32 @@ def test_last_known_day_without_a_balance_is_the_latest_booking():
 
 def test_last_known_day_without_rows_is_none():
     assert last_known_day([], date(2026, 4, 30)) is None
+
+
+def test_month_rows_round_each_daily_figure_half_up_and_flag_used_months():
+    # February has 28 days: 14/28 = 0.5 rounds up, 13/28 rounds down, 42/28 = 1.5 rounds up.
+    feb = MonthSpend(FEB, {"groceries": 14, "transport": 13}, occasional_cents=42)
+    mar = MonthSpend(MAR, {}, occasional_cents=0)
+
+    rows = month_rows([feb, mar], ["groceries", "transport"], used=(FEB,))
+
+    assert rows == (
+        MonthRow(
+            period=FEB,
+            used=True,
+            total_cents=1,
+            by_category={"groceries": 1, "transport": 0},
+            occasional_cents=2,
+        ),
+        MonthRow(
+            period=MAR,
+            used=False,
+            total_cents=0,
+            by_category={"groceries": 0, "transport": 0},
+            occasional_cents=0,
+        ),
+    )
+
+
+def test_month_rows_without_months_is_empty():
+    assert month_rows([], ["groceries"], used=()) == ()

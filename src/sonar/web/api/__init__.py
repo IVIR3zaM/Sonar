@@ -15,12 +15,12 @@ from pathlib import Path
 
 from fastapi import APIRouter
 
-from sonar.web.api import categories, debts, recurring, settings
+from sonar.web.api import cashflow, categories, debts, recurring, settings
 
 
 def build_api_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
     """The `/api` router; included by `create_app` so every route shares its DB and clock."""
     router = APIRouter(prefix="/api")
-    for module in (categories, recurring, debts, settings):
+    for module in (categories, recurring, debts, settings, cashflow):
         router.include_router(module.build_router(db_path, today))
     return router

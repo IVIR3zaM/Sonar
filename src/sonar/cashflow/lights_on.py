@@ -67,6 +67,17 @@ class MonthSpend:
 
 
 @dataclass(frozen=True)
+class MonthRow:
+    """One month's daily averages in whole cents, as the Keep-the-lights-on table shows them."""
+
+    period: Period
+    used: bool
+    total_cents: int
+    by_category: dict[str, int]
+    occasional_cents: int
+
+
+@dataclass(frozen=True)
 class CategoryExpected:
     category: str
     expected_cents: int
@@ -152,6 +163,22 @@ def lights_on_forecast(months: Sequence[MonthSpend], days: int) -> LightsOnForec
         high_cents=_cents(max(daily_averages) * days),
         by_category=_expected_by_category(recent, total_days, days),
         months_used=tuple(m.period for m in recent),
+    )
+
+
+def month_rows(
+    months: Sequence[MonthSpend], categories: Sequence[str], used: Sequence[Period]
+) -> tuple[MonthRow, ...]:
+    """One row per month; `used` are the periods the forecast learned from."""
+    return tuple(
+        MonthRow(
+            period=m.period,
+            used=m.period in used,
+            total_cents=_cents(m.daily_lights_on),
+            by_category={c: _cents(m.daily_by_category.get(c, Fraction(0))) for c in categories},
+            occasional_cents=_cents(m.daily_occasional),
+        )
+        for m in months
     )
 
 

@@ -1,5 +1,5 @@
 # Debt payoff ladder page
-status: WAITING
+status: RUNNING
 created: 2026-10-06 · updated: 2026-10-06
 goal: A /payoff page shows, step by step from the smallest open debt up, how much paying now would free of the monthly fixed payments.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -12,7 +12,7 @@ tier: M
 
 Goal: the owner sees what an early payoff buys. The open installments and loans are lined up from the smallest remaining amount to the largest. Each step adds the next debt, and the page shows the total to pay now and how much lower the monthly fixed payments get. Fixed payments are not all monthly, so each figure is a range from the cheapest month to the dearest of the next 12 months.
 
-In scope: a pure ladder function in the debts package, with tests built on the worked example. A loader next to `load_dashboard` that feeds it the same 12-month fixed-cost series as the dashboard chart. Log-scale tick geometry in `web/charts.py`. A `/payoff` page with a "Payoff" nav entry after "Installments and loans". A step slider driven by one small vanilla JS file in `static/`. All steps are server-rendered, so they stay readable without JS. An empty state for when there are no open debts. A SPEC §13 amendment, a visual gate and a final check.
+In scope: a pure ladder function in the debts package, with tests built on the worked example. A loader next to `load_dashboard` that feeds it the dashboard's fixed-cost month totals over the 12 full months after the estimate date. Log-scale tick geometry in `web/charts.py`. A `/payoff` page with a "Payoff" nav entry after "Installments and loans". A step slider driven by one small vanilla JS file in `static/`. All steps are server-rendered, so they stay readable without JS. An empty state for when there are no open debts. A SPEC §13 amendment, a visual gate and a final check.
 
 Out of scope: a JSON API endpoint (the AGENTS.md endpoint table stays unchanged), editing debts from this page, interest savings, prepayment penalties, migrations, and any change to the dashboard or Debts page output.
 
@@ -23,9 +23,9 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 ## Decisions
 
 - D1 Ladder membership: every debt from `debt_overview(conn, estimate_date)` whose status is not `paid_off` and whose `remaining_cents(view)` is above 0. The estimate date is the current balance's `as_of`, else `today`, as in `load_dashboard` (`src/sonar/cashflow/service.py:79`). Debts sort by remaining amount ascending, then by name, then by id | confirmed
-- D2 Figures per step (from the request): pay now = the sum of the remaining amounts of the debts included so far. `before` is the 12 monthly totals of `forecast.fixed_costs(sources, estimate_date).months`, the dashboard's Fixed costs chart. `after[m] = before[m] −` the included debts' own payments in month m, each debt's payments coming from the same `FixedSource` the dashboard builds for it. The step reports `before`/`after` min and max over the 12 months, `freed_min = before_min − after_min` and `freed_max = before_max − after_max` | confirmed
+- D2 Figures per step (from the request): pay now = the sum of the remaining amounts of the debts included so far. `before` is the 12 monthly totals of `forecast.month_totals(sources, window_start)` over the dashboard's own fixed sources, where `window_start` is the first day of the month after the estimate date: the estimate month is partial, so it would pull every min down (N08 gate). This applies to before, after and `#payoff-fixed-now`. `after[m] = before[m] −` the included debts' own payments in month m, each debt's payments coming from the same `FixedSource` the dashboard builds for it. The step reports `before`/`after` min and max over the 12 months, `freed_min = before_min − after_min` and `freed_max = before_max − after_max` | confirmed
 - D3 Code placement: the pure `src/sonar/debts/payoff.py` (`LadderDebt`, `PayoffStep`, `payoff_ladder`) imports nothing from cashflow. The loader `load_payoff(conn, today) -> Payoff` sits in `src/sonar/cashflow/service.py` and reuses `_fixed_sources`. `forecast._month_totals` becomes the public `month_totals` | confirmed
-- D4 Slider geometry: a native range input, `min=0 max=1000 step=1`. Each step sits at `position = round(percent * 10)`, where percent is `100 * (log10(pay_now) − log10(first)) / (log10(last) − log10(first))`, one decimal; a single step sits at 0. Tick labels are `compact_eur(pay_now)`, aligned like the runway scale and put into at most 3 rows by a greedy pass with `TICK_MIN_GAP = 12` percent. A tick that fits no row keeps its mark but has no label. The row pass is extracted from `runway_scale` and shared, which makes two real uses | confirmed
+- D4 Slider geometry: a native range input, `min=0 max=1000 step=1`. Each step sits at `position = round(percent * 10)`, where percent is `100 * (log10(pay_now) − log10(first)) / (log10(last) − log10(first))`, one decimal; a single step sits at 0. Tick labels are `compact_eur(pay_now)`, aligned like the runway scale and put into at most 3 rows by a greedy pass with `TICK_MIN_GAP = 20` percent (N08 gate: labels overlapped at 375px). A tick that fits no row keeps its mark but has no label. The row pass is extracted from `runway_scale` and shared, which makes two real uses | confirmed
 - D5 JS behavior: `static/payoff.js` snaps the slider to the nearest step on `input` and shows only that step's panel. Arrow keys and PageUp/PageDown move one step, and Home/End go to the first or last step. It sets `aria-valuetext` to the step's pay-now text. It toggles only the `hidden` attribute and `data-selected`, never classes, because Tailwind does not scan `static/`. It makes no network request. Step 1 is selected on load | confirmed
 - D6 Without JS: the slider block carries `hidden` and JS removes it. Every step's panel is rendered without `hidden`, each listing its own included debts, so all steps read top to bottom | confirmed
 - D7 Ranges display as "min – max", collapsing to one amount when min equals max. The wrapper always carries `data-min-cents` and `data-max-cents`. The fixed payments per month before any payoff appear once, as a stat `#payoff-fixed-now` above the slider | confirmed
@@ -45,9 +45,11 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N05 | payoff page and nav | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | step slider script | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | SPEC amendment | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
-| N08 | visual check of payoff | gate | N10 | -/sonnet | 0 | 1 | TODO | |
+| N08 | visual check of payoff | gate | N11,N12 | -/sonnet | 0 | 2 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 | N10 | full-width step cards | exec | N06,N07 | haiku/sonnet | 1 | 0 | DONE | |
+| N11 | full-month payoff window | exec | N12 | sonnet/sonnet | 0 | 1 | TODO | |
+| N12 | readable payoff ticks | exec | N10 | sonnet/sonnet | 1 | 1 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work. The untouched tree passes verify, the Tailwind build runs, the repo is writable for the per-node commits, and `samples/` has a file for the visual gate.
@@ -179,14 +181,48 @@ Done when:
 - C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/payoff-check.css" --minify && cmp -s "$TMPDIR/payoff-check.css" src/sonar/web/static/sonar.css`
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
+## N11 full-month payoff window
+Do: Make `load_payoff` take every month series over the 12 full calendar months that start the month after the estimate date, so a partial estimate month no longer sets the minimum. Update the SPEC bullet to match.
+Context: D2 (confirmed at the N08 gate): `window_start = schedule.add_months(estimate_date.replace(day=1), 1, 1)` (`src/sonar/recurring/schedule.py:120`). Pass it instead of `estimate_date` to both `forecast.month_totals` calls: the base at `src/sonar/cashflow/service.py:92` and each debt's months at `:100`. It covers `before`, `after` and `Payoff.before_min/max_cents` (`#payoff-fixed-now`). The estimate date itself, `debt_overview(conn, estimate_date)` and `remaining_cents` stay as they are. `month_totals` and `load_dashboard` stay unchanged, and the dashboard tests pass unedited.
+  The docstring at `service.py:81` says why: payments before the estimate date have already left the schedule, so the estimate month is partial and would drag every min down.
+  Existing tests at `tests/cashflow/test_service.py:676-760` that compare against the dashboard series: compare instead against `_fixed_totals(conn, <first of the next month>)` (`:661`), and let their installments pay in every window month. Change an expected value only where the window shift explains it.
+  Page fixtures: `_installment` in `tests/web/test_payoff_page.py:24-33` starts on 2026-09-15, before the window, so its last payment falls outside it and `test_a_range_with_equal_ends_shows_one_amount` (`:138`) breaks. Change only its `first_payment_date` to `date(2026, 10, 15)`; edit no assertion in that file.
+  SPEC: in the Payoff ladder bullet (`SPEC.md:255`), change only "min and max over the dashboard's 12-month Fixed costs series" to "min and max over the 12 full months after the balance date, counted as on the dashboard's Fixed costs chart".
+Read: `src/sonar/cashflow/service.py:80-117`, `src/sonar/cashflow/forecast.py:120-130`, `tests/cashflow/test_service.py:640-760`, `tests/web/test_payoff_page.py:17-45`, `SPEC.md:255`
+Write: `src/sonar/cashflow/service.py`, `tests/cashflow/test_service.py`, `tests/web/test_payoff_page.py`, `SPEC.md`
+Test first: in `tests/cashflow/test_service.py`, set the balance `as_of` to 2026-09-23 and call `load_payoff(conn, date(2026, 9, 28))`. Add a monthly recurring Rent due on the 1st at 50000, and an installment (anonymized name) due on the 1st at 20000 with `first_payment_date=date(2026, 10, 1)` and at least 13 payments. It gives one step with `before_min_cents == 70000`, `freed_min_cents == freed_max_cents == 20000` and `debts[0].months == (20000,) * 12`. It fails today because September holds no installment payment.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/cashflow tests/web/test_payoff_page.py`
+- C2 [review] Both `month_totals` calls in `load_payoff`/`_ladder_debt` use the same next-month `window_start`. `forecast.py` and `load_dashboard` are unchanged (`git diff src/sonar/cashflow/forecast.py` is empty), and no dashboard test was edited.
+- C3 [review] The Test first case exists. `git diff SPEC.md` changes only the parenthesis in the Payoff ladder bullet. This node changes only the `first_payment_date` in `_installment` in `tests/web/test_payoff_page.py`.
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N12 readable payoff ticks
+Do: First set N11's uncommitted edits aside with `git stash push -m plz-N11-wip -- src/sonar/cashflow/service.py tests/cashflow/test_service.py SPEC.md` (N11 runs after this node and redoes them from its brief). Then make the `/payoff` tick labels short and spaced so no two overlap at 375px.
+Context: D4 (gap confirmed at the N08 gate): labels are `compact_eur(pay_now)` ("960 €", "2,8k €", "138k €"), but `payoff.html:56` renders `tick.cents|eur` ("2.760,00 €"). Use `charts.compact_eur(tick.cents)` there; `charts` is a template global (`src/sonar/web/app.py:79`), used the same way at `components/charts.html:74`. Keep the "·" for a `row=None` tick and change no hook or class.
+  In `src/sonar/web/charts.py:109-112`, set `TICK_MIN_GAP = 20` and rewrite the comment: a compact label at text-xs is about 13% of a 375px slider, and a start-aligned label next to a centered one needs about 1.5 label widths. `runway_scale` and `SCALE_MIN_GAP` stay unchanged.
+  The existing `payoff_ticks` tests (`tests/web/test_charts.py:385-410`) keep their assertions; they still hold at 20.
+  The load window stays at the estimate month here (D2's full-month window is N11's). Edit no file outside Write, and leave `_installment` (`tests/web/test_payoff_page.py:24-33`) as it is.
+Read: `src/sonar/web/charts.py:86-137`, `src/sonar/web/templates/payoff.html:45-60`, `tests/web/test_charts.py:385-410`, `tests/web/test_payoff_page.py:170-190`
+Write: `src/sonar/web/charts.py`, `tests/web/test_charts.py`, `src/sonar/web/templates/payoff.html`, `tests/web/test_payoff_page.py`, `src/sonar/web/static/sonar.css`
+Test first: in `tests/web/test_charts.py`, `payoff_ticks([100000, 200000, 4700000])` gives percents `[0.0, 18.0, 100.0]` and rows `[0, 1, 0]`. In `tests/web/test_payoff_page.py`, each labelled `[data-tick]` text equals `charts.compact_eur` of its `data-cents`. Both fail on the committed tree: the gap is 12 and labels use `eur`.
+Done when:
+- C1 [cmd] `git diff --quiet HEAD -- src/sonar/cashflow tests/cashflow SPEC.md`
+- C2 [cmd] `uv run pytest -q tests/web/test_charts.py tests/web/test_payoff_page.py`
+- C3 [review] `git diff tests/web/test_charts.py` only adds tests, and `runway_scale` and its tests are unchanged. The `payoff.html` diff changes only the label expression. `git diff tests/web/test_payoff_page.py` only adds the label test.
+- C4 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/payoff-check.css" --minify && cmp -s "$TMPDIR/payoff-check.css" src/sonar/web/static/sonar.css`
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N08 visual check of payoff
 Do: Check `/payoff` in the browser pane at desktop and 375px, light and dark, following the config `visual_recipe` on a temp DB.
-Context: After the recipe's import and settings, add four anonymized debts to the temp app through `POST /api/debts` (AGENTS.md table): small, mid and large monthly installments, and one installment with `interval_months: 3`, so that min and max differ. Use made-up names and match values; write none to a tracked file. Also open `/payoff` on a second fresh temp DB for the empty state. Defects go back to N10, N05 or N06 as a replan.
+Context: After the recipe's import and settings (balance date mid-month), add four anonymized debts to the temp app through `POST /api/debts` (AGENTS.md table): small, mid and large monthly installments due on the 1st, and one installment with `interval_months: 3`, so that min and max differ. Use made-up names and match values; write none to a tracked file. Also open `/payoff` on a second fresh temp DB for the empty state.
+  D2: every range covers the 12 full months after the balance date, never the partial balance month. D4: tick labels are compact ("960 €", "2,8k €") in at most 3 rows with a 20% gap. Defects go back as a replan to N11 (figures), N12 (ticks), N10 (card width), N05 (markup) or N06 (script).
 Done when:
 - C1 [visual] Desktop 1280px, light and dark: "Payoff" sits right after "Installments and loans" in the nav and is current. Above the slider are the pay-now total, freed min–max and fixed-after min–max; below it is the included debts table with kind, name, remaining, rate, every and end date. The shown step card spans the full content width, its three figures sit on one line without wrapping, and its table shows all six columns with no scroll inside the card.
-- C2 [visual] The tick labels sit on a log scale, left to right ascending, and none overlap or leave the card. Dragging the slider snaps to a step and switches the shown figures and table with no network request (read_network_requests). The arrow keys move one step.
-- C3 [visual] 375px, light and dark: no page-level horizontal scroll, the debts table fits or scrolls inside its card, and the slider and labels are readable and usable.
-- C4 [visual] The empty DB shows the empty state with a link to `/debts` and no slider.
+- C2 [visual] At the last step, freed min is at least the sum of the three monthly installments' rates, and `#payoff-fixed-now` min is not a partial month far below the other months.
+- C3 [visual] The tick labels are compact amounts on a log scale, left to right ascending, and none overlap or leave the card. Dragging the slider snaps to a step and switches the shown figures and table with no network request (read_network_requests). The arrow keys move one step.
+- C4 [visual] 375px, light and dark: no page-level horizontal scroll, no two tick labels overlap, the debts table fits or scrolls inside its card, and the slider and labels are readable and usable.
+- C5 [visual] The empty DB shows the empty state with a link to `/debts` and no slider.
 
 ## N09 plan acceptance
 Do: Check the whole plan against its Definition of done, SPEC §11 and §12, and the AGENTS.md rules.
@@ -271,4 +307,41 @@ exec: DONE · 1269 passed
 - payoff.html step-card wrapper now grid grid-cols-1 gap-4
 - sonar.css rebuilt; identical (xl:grid-cols-2 still used elsewhere)
 check: PASS 3/3
+verify: PASS
+
+### N08 try 1 · 2026-10-06
+human: Re-gate after N10: desktop card width fixed. Two defects: (1) 375px light: the first two tick labels ('960,00 €' and '2.760,00 €', positions about 0% and 21%) overlap; the row pass must use the label width at the rendered size, e.g. a larger min gap or a row per label that would collide at 375px, so no labels overlap at 375px. (2) Wrong min: fixed_costs months[0] is the partial estimate month (estimate 2026-09-23, so Sep holds only payments after the 23rd: 4.829,79 € without the monthly debts due on the 1st), so before_min and after_min are both that month and paying off every debt frees only 40 € at the minimum (expected about 2.240 €+). Fix D2: take min and max over the 12 full calendar months starting the month after the estimate date (not the partial estimate month), for before, after and the Fixed costs now stat; add a test where the estimate date is mid-month and a debt is due on the 1st.
+
+### N08 replan 2 · 2026-10-06
+plan: REPLANNED +N11,N12
+- Cause 1: base and debt month totals start at the partial estimate month (service.py:92,100), so min reflects only post-estimate payments
+- Cause 2: tick labels render tick.cents|eur, not compact_eur as D4 requires (payoff.html:56), and gap 12 is too small for start-next-to-center labels at 375px
+- D2 amended per gate: window is the 12 full months after the estimate date; D4 gap 12 -> 20
+- Added N11 (loader window + SPEC bullet) and N12 (compact labels + gap 20), both deps N10, disjoint Write; N08 now deps N11,N12
+- N08 brief: new C2 on the freed min, compact non-overlapping labels at 375px in C3/C4
+- Graph is now 12 nodes (>10, L per §1); kept M because converting a RUNNING plan would mean hand-moving CLI-owned logs
+
+### N11 try 1 · 2026-10-06
+exec: BLOCKED · tests/web/test_payoff_page.py:141 test_a_range_with_equal_ends_shows_one_amount fails (outside Write): its installment starts 2026-09-15 with 12 payments so September 2027 is unpaid in the new window; needs first_payment_date >= 2026-10 in _installment
+
+### N12 try 1 · 2026-10-06
+exec: BLOCKED · N12 edits done and its tests pass, but Verify fails on tests/web/test_payoff_page.py::test_a_range_with_equal_ends_shows_one_amount, caused by uncommitted edits to src/sonar/cashflow/service.py and tests/cashflow/test_service.py that are outside N12's Write
+
+### N11 replan 1 · 2026-10-06
+plan: REPLANNED
+- cause: tests/web/test_payoff_page.py:138 fixture installment starts 2026-09-15, so its last payment leaves the new window; file was outside Write
+- brief: adds tests/web/test_payoff_page.py to Read/Write, only _installment first_payment_date -> 2026-10-15, C1 runs that file, C3 limits the edit
+- graph: N11 deps N10 -> N12, since N12 also writes tests/web/test_payoff_page.py
+
+### N12 replan 1 · 2026-10-06
+plan: REPLANNED
+- cause: N11's uncommitted edits (service.py, test_service.py, SPEC.md) in the tree break test_a_range_with_equal_ends_shows_one_amount; N11 now runs after N12, and the _installment fix that matches them is N11's
+- brief: Do starts with git stash push -m plz-N11-wip of those 3 paths; new C1 asserts cashflow and SPEC.md match HEAD; C3 limits the test_payoff_page.py diff to the label test; _installment stays
+- N11 try 2 redoes its edits from its brief; the stash plz-N11-wip is only a backup
+
+### N12 try 1 · 2026-10-06
+exec: DONE · 1271 passed
+- payoff ticks use charts.compact_eur; TICK_MIN_GAP 20 with new comment
+- added gap and compact-label tests; N11 wip stashed as plz-N11-wip
+check: PASS 4/4
 verify: PASS

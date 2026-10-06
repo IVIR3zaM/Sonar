@@ -107,9 +107,10 @@ def _label_rows(percents: Sequence[float], min_gap: float, max_rows: int) -> lis
 
 
 # The scale is logarithmic because one large mortgage would otherwise crowd
-# every small debt into the left edge. The gap is 12 because a label like
-# "138k €" at text-xs is about 12% of a 375px slider.
-TICK_MIN_GAP = 12
+# every small debt into the left edge. The gap is 20 because a compact label
+# at text-xs is about 13% of a 375px slider, and a start-aligned label next
+# to a centered one needs about 1.5 label widths.
+TICK_MIN_GAP = 20
 _TICK_MAX_ROWS = 3
 
 

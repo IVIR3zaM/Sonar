@@ -188,6 +188,19 @@ def test_ticks_match_the_steps(tmp_path):
     assert [int(c["data-position"]) for c in cards] == [t.position for t in expected]
 
 
+def test_tick_labels_are_compact_amounts(tmp_path):
+    db_path = _db(tmp_path, DEBTS)
+
+    page = soup(_get(db_path))
+
+    labelled = [
+        t for t in page.select("#payoff-slider-block [data-tick]") if t.get_text(strip=True) != "·"
+    ]
+    assert labelled
+    for tick in labelled:
+        assert tick.get_text(strip=True) == charts.compact_eur(int(tick["data-cents"]))
+
+
 def test_the_slider_block_is_hidden_but_no_step_is(tmp_path):
     db_path = _db(tmp_path, DEBTS)
 

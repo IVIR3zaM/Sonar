@@ -53,7 +53,7 @@
     <span data-tick="{{ loop.index }}" data-cents="{{ tick.cents }}" data-position="{{ tick.position }}"
           style="left: {{ tick.percent }}%"
           class="absolute whitespace-nowrap tabular-nums data-selected:font-semibold data-selected:text-ink {{ ['top-0', 'top-4', 'top-8'][tick.row] if tick.row is not none else 'top-0' }} {{ translate[tick.align] }}">
-      {{- tick.cents|eur if tick.row is not none else "·" -}}
+      {{- charts.compact_eur(tick.cents) if tick.row is not none else "·" -}}
     </span>
     {%- endfor %}
   </div>

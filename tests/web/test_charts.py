@@ -408,3 +408,9 @@ def test_payoff_ticks_close_amounts_land_on_different_rows():
 def test_payoff_ticks_fourth_crowded_tick_has_no_row():
     ticks = payoff_ticks([10000, 10100, 10200, 10300, 1000000])
     assert [t.row for t in ticks] == [0, 1, 2, None, 0]
+
+
+def test_payoff_ticks_keep_a_wide_gap_between_labels_on_one_row():
+    ticks = payoff_ticks([100000, 200000, 4700000])
+    assert [t.percent for t in ticks] == [0.0, 18.0, 100.0]
+    assert [t.row for t in ticks] == [0, 1, 0]

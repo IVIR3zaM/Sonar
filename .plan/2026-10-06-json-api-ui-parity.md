@@ -41,9 +41,9 @@ Definition of done: each page data route maps to a tested `/api` endpoint (file 
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
 | N02 | split api into a package | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | recurring writes, restore and item | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N04 | debt drafts and edit API | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N05 | settings and reapply API | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
+| N06 | dashboard and lights-on API | exec | N05 | sonnet/sonnet | 1 | 0 | RUNNING | |
 | N07 | monthly and transactions API | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | API parity docs | exec | N03,N04,N07 | haiku/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |

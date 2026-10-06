@@ -7,7 +7,7 @@ import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debts.model import Installment, Loan, MatchRule
-from sonar.debts.store import DebtNotFound, add_debt, delete_debt, list_debts
+from sonar.debts.store import DebtNotFound, add_debt, delete_debt, list_debts, update_debt
 
 
 @pytest.fixture
@@ -101,3 +101,60 @@ def test_delete_unknown_id_raises_and_leaves_table_unchanged(conn: sqlite3.Conne
         delete_debt(conn, 999)
 
     assert list_debts(conn) == before
+
+
+def test_update_edits_an_installment_in_place_and_keeps_its_id(conn: sqlite3.Connection) -> None:
+    debt_id = add_debt(conn, _installment("Sofa"))
+    edited = Installment(
+        name="Couch",
+        total_cents=90_000,
+        rate_cents=15_000,
+        interval_months=3,
+        first_payment_date=date(2026, 2, 1),
+        payments_count=6,
+        match=MatchRule("purpose", "couch"),
+    )
+
+    update_debt(conn, debt_id, edited)
+
+    [stored] = list_debts(conn)
+    assert stored.id == debt_id
+    assert stored.debt == edited
+
+
+def test_update_changing_an_installment_to_a_loan_nulls_the_installment_columns(
+    conn: sqlite3.Connection,
+) -> None:
+    debt_id = add_debt(conn, _installment("Sofa"))
+    loan = _loan("Sofa loan", interest_bp=450)
+
+    update_debt(conn, debt_id, loan)
+
+    [stored] = list_debts(conn)
+    assert stored.id == debt_id
+    assert stored.debt == loan
+    row = conn.execute(
+        "SELECT kind, total_cents, interval_months, first_payment_date, payments_count "
+        "FROM debts WHERE id = ?",
+        (debt_id,),
+    ).fetchone()
+    assert row == ("loan", None, None, None, None)
+
+
+def test_update_changing_a_loan_to_an_installment_nulls_the_loan_columns(
+    conn: sqlite3.Connection,
+) -> None:
+    debt_id = add_debt(conn, _loan("Car", interest_bp=450))
+
+    update_debt(conn, debt_id, _installment("Car"))
+
+    row = conn.execute(
+        "SELECT kind, balance_cents, balance_as_of, interest_bp FROM debts WHERE id = ?",
+        (debt_id,),
+    ).fetchone()
+    assert row == ("installment", None, None, None)
+
+
+def test_update_unknown_id_raises_debt_not_found(conn: sqlite3.Connection) -> None:
+    with pytest.raises(DebtNotFound):
+        update_debt(conn, 99, _installment())

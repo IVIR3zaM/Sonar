@@ -219,6 +219,40 @@ def list_debts(conn: sqlite3.Connection) -> list[StoredDebt]:
     return sorted(debts, key=lambda stored: (isinstance(stored.debt, Loan), stored.debt.name))
 
 
+def update_debt(conn: sqlite3.Connection, id: int, debt: Installment | Loan) -> None:
+    """Replace a debt's fields in place, keeping its id; the other kind's columns go NULL."""
+    installment = debt if isinstance(debt, Installment) else None
+    loan = debt if isinstance(debt, Loan) else None
+    with conn:
+        row = conn.execute("SELECT 1 FROM debts WHERE id = ?", (id,)).fetchone()
+        if row is None:
+            raise DebtNotFound(id)
+        conn.execute(
+            """
+            UPDATE debts SET
+                kind = ?, name = ?, rate_cents = ?, match_field = ?, match_value = ?,
+                total_cents = ?, interval_months = ?, first_payment_date = ?,
+                payments_count = ?, balance_cents = ?, balance_as_of = ?, interest_bp = ?
+            WHERE id = ?
+            """,
+            (
+                "installment" if installment else "loan",
+                debt.name,
+                debt.rate_cents,
+                debt.match.field,
+                debt.match.value,
+                installment.total_cents if installment else None,
+                installment.interval_months if installment else None,
+                installment.first_payment_date.isoformat() if installment else None,
+                installment.payments_count if installment else None,
+                loan.balance_cents if loan else None,
+                loan.balance_as_of.isoformat() if loan else None,
+                loan.interest_bp if loan else None,
+                id,
+            ),
+        )
+
+
 def delete_debt(conn: sqlite3.Connection, id: int) -> None:
     with conn:
         row = conn.execute("SELECT 1 FROM debts WHERE id = ?", (id,)).fetchone()

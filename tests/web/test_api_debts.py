@@ -394,3 +394,84 @@ def test_with_sign_in_on_the_right_bearer_reaches_post_and_a_wrong_one_gets_401(
     assert right.status_code == 201
     assert wrong.status_code == 401
     assert len(_stored(db_path)) == 1
+
+
+def test_put_edits_in_place_and_answers_200_with_the_new_values_and_same_id(db_path):
+    with _client(db_path) as client:
+        created = client.post("/api/debts", json=INSTALLMENT).json()
+        body = {**INSTALLMENT, "name": "Car Bank 2", "payments_count": 24, "total_cents": 240_000}
+        response = client.put(f"/api/debts/{created['id']}", json=body)
+        listed = client.get("/api/debts").json()
+
+    assert response.status_code == 200
+    item = response.json()
+    assert item["id"] == created["id"]
+    assert item["name"] == "Car Bank 2"
+    assert item["payments_count"] == 24
+    assert item["total_cents"] == 240_000
+    assert listed == [item]
+
+
+def test_put_can_change_an_installment_to_a_loan(db_path):
+    with _client(db_path) as client:
+        created = client.post("/api/debts", json=INSTALLMENT).json()
+        response = client.put(f"/api/debts/{created['id']}", json=LOAN)
+
+    assert response.status_code == 200
+    item = response.json()
+    assert item["id"] == created["id"]
+    assert item["kind"] == "loan"
+    assert item["total_cents"] is None
+    assert item["balance_cents"] == 500_000
+
+
+def test_put_leaves_drafts_untouched(db_path):
+    with _client(db_path) as client:
+        created = client.post("/api/debts", json=INSTALLMENT).json()
+        conn = connect(db_path)
+        try:
+            conn.execute("UPDATE debt_drafts SET status = 'open'")
+            conn.commit()
+        finally:
+            conn.close()
+        client.put(f"/api/debts/{created['id']}", json={**INSTALLMENT, "name": "Other"})
+
+    assert _open_drafts(db_path) == 1
+
+
+@pytest.mark.parametrize(
+    "body,field",
+    [
+        ({**INSTALLMENT, "kind": "mortgage"}, "kind"),
+        ({**INSTALLMENT, "balance_cents": 5}, "balance_cents"),
+        (_without(INSTALLMENT, "name"), "name"),
+        ({**INSTALLMENT, "total_cents": 0}, "total_cents"),
+        ({**INSTALLMENT, "first_payment_date": "05/07/2026"}, "first_payment_date"),
+    ],
+)
+def test_put_bad_body_answers_400_with_the_field_and_changes_nothing(db_path, body, field):
+    with _client(db_path) as client:
+        created = client.post("/api/debts", json=INSTALLMENT).json()
+        response = client.put(f"/api/debts/{created['id']}", json=body)
+        listed = client.get("/api/debts").json()
+
+    assert response.status_code == 400
+    assert response.json()["field"] == field
+    assert listed == [created]
+
+
+def test_put_unknown_id_is_404(db_path):
+    with _client(db_path) as client:
+        response = client.put("/api/debts/999", json=INSTALLMENT)
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "No such debt: 999"}
+    assert _stored(db_path) == []
+
+
+def test_put_bad_body_for_an_unknown_id_is_400(db_path):
+    with _client(db_path) as client:
+        response = client.put("/api/debts/999", json={**INSTALLMENT, "total_cents": 0})
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "total_cents"

@@ -13,12 +13,17 @@ from pydantic import StrictInt, StrictStr
 from sonar.db import connect
 from sonar.debts.model import Installment, InstallmentStatus, Loan, MatchRule
 from sonar.debts.store import (
+    DebtDraft,
     DebtNotFound,
     DebtView,
+    DraftNotFound,
     add_debt_closing_drafts,
+    complete_draft,
     debt_overview,
     delete_debt,
     remaining_cents,
+    sync_drafts,
+    update_debt,
 )
 from sonar.web.api._common import _parse_body, _StrictModel
 from sonar.web.forms import friendly
@@ -139,6 +144,20 @@ _DEBT_ITEM_KEYS = (
 )
 
 
+def _draft_item(draft: DebtDraft) -> dict:
+    prefill = draft.prefill
+    return {
+        "id": draft.id,
+        "detection_key": draft.detection_key,
+        "name": prefill.name,
+        "rate_cents": prefill.rate_cents,
+        "interval_months": prefill.interval_months,
+        "first_payment_date": prefill.first_payment_date.isoformat(),
+        "match_field": prefill.match.field,
+        "match_value": prefill.match.value,
+    }
+
+
 def _bad_debt(error: str, field: str) -> JSONResponse:
     return JSONResponse({"error": error, "field": field}, status_code=400)
 
@@ -220,6 +239,52 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         finally:
             conn.close()
         return JSONResponse(item, status_code=201)
+
+    @router.get("/debts/drafts")
+    async def get_debt_drafts() -> JSONResponse:
+        conn = connect(db_path)
+        try:
+            items = [_draft_item(draft) for draft in sync_drafts(conn)]
+        finally:
+            conn.close()
+        return JSONResponse(items)
+
+    @router.post("/debts/drafts/{id}", status_code=201)
+    async def complete_debt_draft(request: Request, id: int) -> JSONResponse:
+        body = await _parse_body(request, DebtIn)
+        if isinstance(body, JSONResponse):
+            return body
+        debt = _build_debt(body)
+        if isinstance(debt, JSONResponse):
+            return debt
+        conn = connect(db_path)
+        try:
+            try:
+                item = _debt_item(_find_debt(conn, complete_draft(conn, id, debt)))
+            except DraftNotFound:
+                return JSONResponse({"error": f"No such draft: {id}"}, status_code=404)
+        finally:
+            conn.close()
+        return JSONResponse(item, status_code=201)
+
+    @router.put("/debts/{id}")
+    async def put_debt(request: Request, id: int) -> JSONResponse:
+        body = await _parse_body(request, DebtIn)
+        if isinstance(body, JSONResponse):
+            return body
+        debt = _build_debt(body)
+        if isinstance(debt, JSONResponse):
+            return debt
+        conn = connect(db_path)
+        try:
+            try:
+                update_debt(conn, id, debt)
+                item = _debt_item(_find_debt(conn, id))
+            except DebtNotFound:
+                return JSONResponse({"error": f"No such debt: {id}"}, status_code=404)
+        finally:
+            conn.close()
+        return JSONResponse(item)
 
     @router.delete("/debts/{id}")
     async def delete_debt_route(id: int) -> JSONResponse:

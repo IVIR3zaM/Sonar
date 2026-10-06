@@ -109,13 +109,14 @@ def _installment(
     mandate: str,
     *,
     total_cents: int = 120_000,
+    rate_cents: int = 10_000,
     first_payment_date: date = date(2026, 1, 15),
     payments_count: int = 12,
 ) -> Installment:
     return Installment(
         name=name,
         total_cents=total_cents,
-        rate_cents=10_000,
+        rate_cents=rate_cents,
         interval_months=1,
         first_payment_date=first_payment_date,
         payments_count=payments_count,
@@ -677,22 +678,46 @@ def test_payoff_frees_the_installment_rate_from_the_dashboard_fixed_costs(
     conn: sqlite3.Connection,
 ) -> None:
     _monthly(conn, "Rent", 1, 50_000)
-    add_debt(conn, _installment("Sofa", "M-1", first_payment_date=date(2026, 9, 15)))
+    add_debt(conn, _installment("Sofa", "M-1", first_payment_date=date(2026, 10, 15)))
 
     payoff = load_payoff(conn, TODAY)
 
-    totals = _fixed_totals(conn)
+    totals = _fixed_totals(conn, date(2026, 10, 1))
     (step,) = payoff.steps
     assert payoff.estimate_date == TODAY
     assert payoff.before_min_cents == min(totals)
     assert payoff.before_max_cents == max(totals)
     assert (step.before_min_cents, step.before_max_cents) == (min(totals), max(totals))
-    assert step.freed_min_cents == 10_000
-    assert step.freed_max_cents == 10_000
+    assert step.freed_cents == 10_000
     assert step.pay_now_cents == 120_000
     assert [d.name for d in step.debts] == ["Sofa"]
     assert step.debts[0].kind == "installment"
     assert step.debts[0].months == (10_000,) * 12
+
+
+def test_payoff_counts_the_twelve_full_months_after_a_mid_month_balance_date(
+    conn: sqlite3.Connection,
+) -> None:
+    _insert_import_balance(conn, "2026-09-23", 100_000)
+    _monthly(conn, "Rent", 1, 50_000)
+    add_debt(
+        conn,
+        _installment(
+            "Sofa",
+            "M-1",
+            rate_cents=20_000,
+            first_payment_date=date(2026, 10, 1),
+            payments_count=14,
+            total_cents=280_000,
+        ),
+    )
+
+    payoff = load_payoff(conn, date(2026, 9, 28))
+
+    (step,) = payoff.steps
+    assert step.before_min_cents == 70_000
+    assert step.freed_cents == 20_000
+    assert step.debts[0].months == (20_000,) * 12
 
 
 def test_payoff_without_debts_has_no_steps_but_the_before_range(
@@ -758,4 +783,4 @@ def test_payoff_counts_a_debt_linked_recurring_payment_once(conn: sqlite3.Connec
     # The debt owns the payment; paying it off leaves nothing of "Sofa rate".
     assert step.after_min_cents == 0
     assert step.after_max_cents == 0
-    assert step.freed_max_cents == payoff.before_max_cents
+    assert step.freed_cents == 10_000

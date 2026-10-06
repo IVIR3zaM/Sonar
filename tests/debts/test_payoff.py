@@ -38,8 +38,7 @@ def test_worked_example_with_shuffled_input():
         ["TV", "Car", "Mortgage"],
     ]
     assert [s.pay_now_cents for s in steps] == [30000, 1830000, 13830000]
-    assert [s.freed_min_cents for s in steps] == [4000, 74000, 224000]
-    assert [s.freed_max_cents for s in steps] == [4000, 74000, 224000]
+    assert [s.freed_cents for s in steps] == [4000, 74000, 224000]
     assert [s.after_min_cents for s in steps] == [296000, 226000, 76000]
     assert [s.after_max_cents for s in steps] == [296000, 226000, 76000]
     assert all(s.before_min_cents == s.before_max_cents == 300000 for s in steps)
@@ -60,8 +59,7 @@ def test_quarterly_debt_over_uneven_base_uses_range_formulas():
 
     assert (step.before_min_cents, step.before_max_cents) == (20000, 60000)
     assert (step.after_min_cents, step.after_max_cents) == (20000, 50000)
-    # D2: before_min - after_min and before_max - after_max, not per-month differences
-    assert (step.freed_min_cents, step.freed_max_cents) == (0, 10000)
+    assert step.freed_cents == 10000
 
 
 def test_zero_remaining_debt_is_left_out():

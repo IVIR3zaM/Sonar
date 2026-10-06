@@ -64,7 +64,7 @@
   {% call card(title="Step " ~ step.number, attrs={"data-step": step.number, "data-position": ticks[loop.index0].position}) %}
     <dl class="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
       <div><dt class="{{ dt }}">Pay off now</dt><dd class="{{ dd }}">{{ amount(step.pay_now_cents, colored=false, attrs={"data-part": "pay-now"}) }}</dd></div>
-      <div><dt class="{{ dt }}">Freed per month</dt><dd class="{{ dd }}">{{ range(step.freed_min_cents, step.freed_max_cents, attrs={"data-part": "freed"}) }}</dd></div>
+      <div><dt class="{{ dt }}">Freed per month</dt><dd class="{{ dd }}">{{ amount(step.freed_cents, colored=false, attrs={"data-part": "freed"}) }}</dd></div>
       <div><dt class="{{ dt }}">Fixed costs after</dt><dd class="{{ dd }}">{{ range(step.after_min_cents, step.after_max_cents, attrs={"data-part": "fixed-after"}) }}</dd></div>
     </dl>
     <div class="{{ table_wrap }} mt-4">

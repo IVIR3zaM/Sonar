@@ -1,8 +1,9 @@
 """Cumulative payoff steps: pay the smallest debts first and see what monthly fixed cost is freed.
 
-Freed cost is a range, not one number, because fixed payments are not all monthly:
-a quarterly or yearly payment makes some months heavier, so the fixed total has a
-minimum and a maximum over the horizon.
+Freed is one amount per month: the sum of the included debts' rates, whatever
+their interval. Only the fixed totals are ranges, because fixed payments are not
+all monthly: a quarterly or yearly payment makes some months heavier, so the
+total has a minimum and a maximum over the horizon.
 """
 
 from collections.abc import Sequence
@@ -34,8 +35,7 @@ class PayoffStep:
     before_max_cents: int
     after_min_cents: int
     after_max_cents: int
-    freed_min_cents: int
-    freed_max_cents: int
+    freed_cents: int
 
 
 def payoff_ladder(
@@ -67,8 +67,7 @@ def payoff_ladder(
                 before_max_cents=before_max,
                 after_min_cents=min(after),
                 after_max_cents=max(after),
-                freed_min_cents=before_min - min(after),
-                freed_max_cents=before_max - max(after),
+                freed_cents=sum(d.rate_cents for d in included),
             )
         )
     return tuple(steps)

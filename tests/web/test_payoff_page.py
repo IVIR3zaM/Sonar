@@ -27,7 +27,7 @@ def _installment(name: str, total_cents: int, rate_cents: int, interval_months: 
         total_cents=total_cents,
         rate_cents=rate_cents,
         interval_months=interval_months,
-        first_payment_date=date(2026, 9, 15),
+        first_payment_date=date(2026, 10, 15),
         payments_count=total_cents // rate_cents,
         match=MatchRule("counterparty", name),
     )
@@ -94,10 +94,7 @@ def test_each_step_matches_the_ladder_in_ascending_order(tmp_path):
     assert pay_now == [s.pay_now_cents for s in payoff.steps]
     assert pay_now == sorted(pay_now)
     for card, step in zip(cards, payoff.steps, strict=True):
-        assert _range_cents(card.select_one("[data-part=freed]")) == (
-            step.freed_min_cents,
-            step.freed_max_cents,
-        )
+        assert cents(card.select_one("[data-part=freed]")) == step.freed_cents
         assert _range_cents(card.select_one("[data-part=fixed-after]")) == (
             step.after_min_cents,
             step.after_max_cents,
@@ -137,26 +134,26 @@ def test_table_shows_remaining_rate_every_and_end_date(tmp_path):
 
 def test_a_range_with_equal_ends_shows_one_amount(tmp_path):
     db_path = _db(tmp_path, [_installment("Sofa", 120_000, 10_000)])
-    [step] = _payoff(db_path).steps
-    assert step.freed_min_cents == step.freed_max_cents
+    payoff = _payoff(db_path)
+    assert payoff.before_min_cents == payoff.before_max_cents
 
     page = soup(_get(db_path))
 
-    freed = page.select_one("[data-step] [data-part=freed]")
-    assert len(freed.select("[data-cents]")) == 1
+    fixed_now = page.select_one("#payoff-fixed-now")
+    assert len(fixed_now.select("[data-cents]")) == 1
 
 
 def test_a_range_with_different_ends_shows_both_amounts(tmp_path):
     db_path = _db(tmp_path, [_installment("Bike", 120_000, 40_000, interval_months=3)])
-    [step] = _payoff(db_path).steps
-    assert step.freed_min_cents != step.freed_max_cents
+    payoff = _payoff(db_path)
+    assert payoff.before_min_cents != payoff.before_max_cents
 
     page = soup(_get(db_path))
 
-    freed = page.select_one("[data-step] [data-part=freed]")
-    assert [cents(a) for a in freed.select("[data-cents]")] == [
-        step.freed_min_cents,
-        step.freed_max_cents,
+    fixed_now = page.select_one("#payoff-fixed-now")
+    assert [cents(a) for a in fixed_now.select("[data-cents]")] == [
+        payoff.before_min_cents,
+        payoff.before_max_cents,
     ]
 
 

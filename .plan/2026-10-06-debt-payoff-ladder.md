@@ -1,5 +1,5 @@
 # Debt payoff ladder page
-status: RUNNING
+status: WAITING
 created: 2026-10-06 · updated: 2026-10-06
 goal: A /payoff page shows, step by step from the smallest open debt up, how much paying now would free of the monthly fixed payments.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -10,7 +10,7 @@ tier: M
 
 ## Intent
 
-Goal: the owner sees what an early payoff buys. The open installments and loans are lined up from the smallest remaining amount to the largest. Each step adds the next debt, and the page shows the total to pay now and how much lower the monthly fixed payments get. Fixed payments are not all monthly, so each figure is a range from the cheapest month to the dearest of the next 12 months.
+Goal: the owner sees what an early payoff buys. The open installments and loans are lined up from the smallest remaining amount to the largest. Each step adds the next debt, and the page shows the total to pay now, how much is freed per month and what the monthly fixed payments become. The freed amount is one exact figure, the sum of the included debts' rates. Fixed payments are not all monthly, so the fixed payments now and after are ranges from the cheapest to the dearest of the 12 full months after the estimate date.
 
 In scope: a pure ladder function in the debts package, with tests built on the worked example. A loader next to `load_dashboard` that feeds it the dashboard's fixed-cost month totals over the 12 full months after the estimate date. Log-scale tick geometry in `web/charts.py`. A `/payoff` page with a "Payoff" nav entry after "Installments and loans". A step slider driven by one small vanilla JS file in `static/`. All steps are server-rendered, so they stay readable without JS. An empty state for when there are no open debts. A SPEC §13 amendment, a visual gate and a final check.
 
@@ -23,12 +23,12 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 ## Decisions
 
 - D1 Ladder membership: every debt from `debt_overview(conn, estimate_date)` whose status is not `paid_off` and whose `remaining_cents(view)` is above 0. The estimate date is the current balance's `as_of`, else `today`, as in `load_dashboard` (`src/sonar/cashflow/service.py:79`). Debts sort by remaining amount ascending, then by name, then by id | confirmed
-- D2 Figures per step (from the request): pay now = the sum of the remaining amounts of the debts included so far. `before` is the 12 monthly totals of `forecast.month_totals(sources, window_start)` over the dashboard's own fixed sources, where `window_start` is the first day of the month after the estimate date: the estimate month is partial, so it would pull every min down (N08 gate). This applies to before, after and `#payoff-fixed-now`. `after[m] = before[m] −` the included debts' own payments in month m, each debt's payments coming from the same `FixedSource` the dashboard builds for it. The step reports `before`/`after` min and max over the 12 months, `freed_min = before_min − after_min` and `freed_max = before_max − after_max` | confirmed
+- D2 Figures per step (from the request): pay now = the sum of the remaining amounts of the debts included so far. `before` is the 12 monthly totals of `forecast.month_totals(sources, window_start)` over the dashboard's own fixed sources, where `window_start` is the first day of the month after the estimate date: the estimate month is partial, so it would pull every min down (N08 gate). This applies to before, after and `#payoff-fixed-now`. `after[m] = before[m] −` the included debts' own payments in month m, each debt's payments coming from the same `FixedSource` the dashboard builds for it. The step reports `before`/`after` min and max over the 12 months. Freed per month is one exact amount, not a range (user change at N11): `freed_cents` = the sum of the `rate_cents` of the debts included up to that step, whatever their interval (worked example: 40 €, 740 €, 2.240 €). `freed_min_cents`/`freed_max_cents` are dropped from the pure ladder, loader, page and SPEC | confirmed
 - D3 Code placement: the pure `src/sonar/debts/payoff.py` (`LadderDebt`, `PayoffStep`, `payoff_ladder`) imports nothing from cashflow. The loader `load_payoff(conn, today) -> Payoff` sits in `src/sonar/cashflow/service.py` and reuses `_fixed_sources`. `forecast._month_totals` becomes the public `month_totals` | confirmed
 - D4 Slider geometry: a native range input, `min=0 max=1000 step=1`. Each step sits at `position = round(percent * 10)`, where percent is `100 * (log10(pay_now) − log10(first)) / (log10(last) − log10(first))`, one decimal; a single step sits at 0. Tick labels are `compact_eur(pay_now)`, aligned like the runway scale and put into at most 3 rows by a greedy pass with `TICK_MIN_GAP = 20` percent (N08 gate: labels overlapped at 375px). A tick that fits no row keeps its mark but has no label. The row pass is extracted from `runway_scale` and shared, which makes two real uses | confirmed
 - D5 JS behavior: `static/payoff.js` snaps the slider to the nearest step on `input` and shows only that step's panel. Arrow keys and PageUp/PageDown move one step, and Home/End go to the first or last step. It sets `aria-valuetext` to the step's pay-now text. It toggles only the `hidden` attribute and `data-selected`, never classes, because Tailwind does not scan `static/`. It makes no network request. Step 1 is selected on load | confirmed
 - D6 Without JS: the slider block carries `hidden` and JS removes it. Every step's panel is rendered without `hidden`, each listing its own included debts, so all steps read top to bottom | confirmed
-- D7 Ranges display as "min – max", collapsing to one amount when min equals max. The wrapper always carries `data-min-cents` and `data-max-cents`. The fixed payments per month before any payoff appear once, as a stat `#payoff-fixed-now` above the slider | confirmed
+- D7 Ranges (fixed costs now and after; freed is one amount per D2) display as "min – max", collapsing to one amount when min equals max. The wrapper always carries `data-min-cents` and `data-max-cents`. The fixed payments per month before any payoff appear once, as a stat `#payoff-fixed-now` above the slider | confirmed
 - D8 Nav: `("/payoff", "Payoff", "payoff")` goes right after `/debts` in `nav_items` (`src/sonar/web/templates/base.html:17`), with a new `"payoff"` icon: a 24×24 stroke path in the same style as the others, for example a downward trend arrow | confirmed
 - D9 Script loading: `payoff.html` ends its content block with `<script src="/static/payoff.js" defer></script>`, only when there are steps; `base.html` gets no new block. The SPEC §13 amendment records that this page's script file overrides §12's "small inline progressive-enhancement scripts only" | confirmed
 - D10 SPEC: one §13 bullet, "Payoff ladder (§7, §9, §12)", stating D1, D2, D4-D7 and D9 in two or three sentences | confirmed
@@ -48,7 +48,7 @@ Definition of done: the plan `verify` passes. `/payoff` works at desktop and 375
 | N08 | visual check of payoff | gate | N11,N12 | -/sonnet | 0 | 2 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 | N10 | full-width step cards | exec | N06,N07 | haiku/sonnet | 1 | 0 | DONE | |
-| N11 | full-month payoff window | exec | N12 | sonnet/sonnet | 0 | 1 | TODO | |
+| N11 | full-month window and exact freed | exec | N12 | sonnet/sonnet | 1 | 2 | DONE | |
 | N12 | readable payoff ticks | exec | N10 | sonnet/sonnet | 1 | 1 | DONE | |
 
 ## N01 preflight
@@ -181,21 +181,27 @@ Done when:
 - C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/payoff-check.css" --minify && cmp -s "$TMPDIR/payoff-check.css" src/sonar/web/static/sonar.css`
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
-## N11 full-month payoff window
-Do: Make `load_payoff` take every month series over the 12 full calendar months that start the month after the estimate date, so a partial estimate month no longer sets the minimum. Update the SPEC bullet to match.
-Context: D2 (confirmed at the N08 gate): `window_start = schedule.add_months(estimate_date.replace(day=1), 1, 1)` (`src/sonar/recurring/schedule.py:120`). Pass it instead of `estimate_date` to both `forecast.month_totals` calls: the base at `src/sonar/cashflow/service.py:92` and each debt's months at `:100`. It covers `before`, `after` and `Payoff.before_min/max_cents` (`#payoff-fixed-now`). The estimate date itself, `debt_overview(conn, estimate_date)` and `remaining_cents` stay as they are. `month_totals` and `load_dashboard` stay unchanged, and the dashboard tests pass unedited.
-  The docstring at `service.py:81` says why: payments before the estimate date have already left the schedule, so the estimate month is partial and would drag every min down.
-  Existing tests at `tests/cashflow/test_service.py:676-760` that compare against the dashboard series: compare instead against `_fixed_totals(conn, <first of the next month>)` (`:661`), and let their installments pay in every window month. Change an expected value only where the window shift explains it.
-  Page fixtures: `_installment` in `tests/web/test_payoff_page.py:24-33` starts on 2026-09-15, before the window, so its last payment falls outside it and `test_a_range_with_equal_ends_shows_one_amount` (`:138`) breaks. Change only its `first_payment_date` to `date(2026, 10, 15)`; edit no assertion in that file.
-  SPEC: in the Payoff ladder bullet (`SPEC.md:255`), change only "min and max over the dashboard's 12-month Fixed costs series" to "min and max over the 12 full months after the balance date, counted as on the dashboard's Fixed costs chart".
-Read: `src/sonar/cashflow/service.py:80-117`, `src/sonar/cashflow/forecast.py:120-130`, `tests/cashflow/test_service.py:640-760`, `tests/web/test_payoff_page.py:17-45`, `SPEC.md:255`
-Write: `src/sonar/cashflow/service.py`, `tests/cashflow/test_service.py`, `tests/web/test_payoff_page.py`, `SPEC.md`
-Test first: in `tests/cashflow/test_service.py`, set the balance `as_of` to 2026-09-23 and call `load_payoff(conn, date(2026, 9, 28))`. Add a monthly recurring Rent due on the 1st at 50000, and an installment (anonymized name) due on the 1st at 20000 with `first_payment_date=date(2026, 10, 1)` and at least 13 payments. It gives one step with `before_min_cents == 70000`, `freed_min_cents == freed_max_cents == 20000` and `debts[0].months == (20000,) * 12`. It fails today because September holds no installment payment.
+## N11 full-month window and exact freed
+Do: Make `load_payoff` take every month series over the 12 full calendar months after the estimate date, and replace the freed range with one exact amount, the sum of the included debts' rates, in the pure ladder, loader, page and SPEC bullet.
+Context: D2 window: `window_start = schedule.add_months(estimate_date.replace(day=1), 1, 1)` (`src/sonar/recurring/schedule.py:120`) replaces `estimate_date` in both `forecast.month_totals` calls (`src/sonar/cashflow/service.py:92` base, `:100` each debt). It covers `before`, `after` and `Payoff.before_min/max_cents` (`#payoff-fixed-now`). `debt_overview(conn, estimate_date)` and `remaining_cents` stay as they are; `forecast.py` and `load_dashboard` stay unchanged. The docstring at `service.py:81` says why: the estimate month is partial and would drag every min down.
+  D2 freed: in `src/sonar/debts/payoff.py:37-38,70-71`, `PayoffStep` swaps `freed_min_cents`/`freed_max_cents` for `freed_cents = sum(d.rate_cents for d in included)`, whatever the interval. Before/after min and max stay. Rewrite the module docstring (`:1-6`): freed is the included rates; only the fixed totals are ranges, because fixed payments are not all monthly.
+  Page: `src/sonar/web/templates/payoff.html:67` renders freed as `amount(step.freed_cents, colored=false, attrs={"data-part": "freed"})`, like pay-now at `:66`. The `range` macro stays for fixed-now and fixed-after (D7).
+  SPEC (`SPEC.md:255`): replace "(min and max over the dashboard's 12-month Fixed costs series), showing freed = before − after for each" with "(min and max over the 12 full months after the balance date, counted as on the dashboard's Fixed costs chart), and the freed amount per month, the sum of the included debts' rates". Change nothing else.
+  Test updates, changing an expected value only where D2 explains it:
+  - `tests/debts/test_payoff.py`: `:41-42` become `freed_cents == [4000, 74000, 224000]`; the quarterly test (`:48-64`) asserts `freed_cents == 10000` (its rate) and drops the range-formula comment.
+  - `tests/cashflow/test_service.py:676-760`: compare against `_fixed_totals(conn, <first of the next month>)` (`:661`), let installments pay in every window month, and assert `freed_cents` (`:690-691`, `:761`).
+  - `tests/web/test_payoff_page.py`: in `_installment` (`:24-33`) change only `first_payment_date` to `date(2026, 10, 15)`. `:97-100` asserts `cents([data-part=freed]) == step.freed_cents`. The two range-display tests (`:138-160`) target `#payoff-fixed-now` and `payoff.before_min/max_cents` instead of freed, keeping their equal/different-ends preconditions.
+  Ignore the stash `plz-N11-wip`: it predates this brief; neither pop nor drop it.
+Read: `src/sonar/debts/payoff.py`, `src/sonar/cashflow/service.py:80-117`, `src/sonar/web/templates/payoff.html:18-70`, `tests/debts/test_payoff.py:1-66`, `tests/cashflow/test_service.py:655-765`, `tests/web/test_payoff_page.py:17-175`, `SPEC.md:255`
+Write: `src/sonar/debts/payoff.py`, `src/sonar/cashflow/service.py`, `src/sonar/web/templates/payoff.html`, `src/sonar/web/static/sonar.css`, `SPEC.md`, `tests/debts/test_payoff.py`, `tests/cashflow/test_service.py`, `tests/web/test_payoff_page.py`
+Test first: two failing tests. (1) In `tests/debts/test_payoff.py`, the worked example asserts `[s.freed_cents for s in steps] == [4000, 74000, 224000]`; it fails because `PayoffStep` has no `freed_cents`. (2) In `tests/cashflow/test_service.py`, the balance `as_of` is 2026-09-23 and the call is `load_payoff(conn, date(2026, 9, 28))`, with a monthly recurring Rent due on the 1st at 50000 and an installment (anonymized name) due on the 1st at 20000 from `first_payment_date=date(2026, 10, 1)` with at least 13 payments. It gives one step with `before_min_cents == 70000`, `freed_cents == 20000` and `debts[0].months == (20000,) * 12`; it fails because September is partial.
 Done when:
-- C1 [cmd] `uv run pytest -q tests/cashflow tests/web/test_payoff_page.py`
-- C2 [review] Both `month_totals` calls in `load_payoff`/`_ladder_debt` use the same next-month `window_start`. `forecast.py` and `load_dashboard` are unchanged (`git diff src/sonar/cashflow/forecast.py` is empty), and no dashboard test was edited.
-- C3 [review] The Test first case exists. `git diff SPEC.md` changes only the parenthesis in the Payoff ladder bullet. This node changes only the `first_payment_date` in `_installment` in `tests/web/test_payoff_page.py`.
-- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+- C1 [cmd] `uv run pytest -q tests/debts tests/cashflow tests/web/test_payoff_page.py`
+- C2 [cmd] `! git grep --untracked -nE 'freed_(min|max)' -- src tests SPEC.md && git diff --quiet HEAD -- src/sonar/cashflow/forecast.py`
+- C3 [review] Both `month_totals` calls in `load_payoff`/`_ladder_debt` use the same next-month `window_start`; `load_dashboard` is unchanged and no dashboard test was edited. `freed_cents` is the sum of the included `rate_cents` and the docstring matches D2.
+- C4 [review] Both Test first cases exist. `git diff SPEC.md` changes only the Payoff ladder bullet's figures clause. In `tests/web/test_payoff_page.py` the only `_installment` change is `first_payment_date`, freed is checked as one amount, and the range tests read `#payoff-fixed-now`.
+- C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/payoff-check.css" --minify && cmp -s "$TMPDIR/payoff-check.css" src/sonar/web/static/sonar.css`
+- C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N12 readable payoff ticks
 Do: First set N11's uncommitted edits aside with `git stash push -m plz-N11-wip -- src/sonar/cashflow/service.py tests/cashflow/test_service.py SPEC.md` (N11 runs after this node and redoes them from its brief). Then make the `/payoff` tick labels short and spaced so no two overlap at 375px.
@@ -216,10 +222,10 @@ Done when:
 ## N08 visual check of payoff
 Do: Check `/payoff` in the browser pane at desktop and 375px, light and dark, following the config `visual_recipe` on a temp DB.
 Context: After the recipe's import and settings (balance date mid-month), add four anonymized debts to the temp app through `POST /api/debts` (AGENTS.md table): small, mid and large monthly installments due on the 1st, and one installment with `interval_months: 3`, so that min and max differ. Use made-up names and match values; write none to a tracked file. Also open `/payoff` on a second fresh temp DB for the empty state.
-  D2: every range covers the 12 full months after the balance date, never the partial balance month. D4: tick labels are compact ("960 €", "2,8k €") in at most 3 rows with a 20% gap. Defects go back as a replan to N11 (figures), N12 (ticks), N10 (card width), N05 (markup) or N06 (script).
+  D2: every range (fixed now, fixed after) covers the 12 full months after the balance date, never the partial balance month; freed is one exact amount, the sum of the included debts' rates. D4: tick labels are compact ("960 €", "2,8k €") in at most 3 rows with a 20% gap. Defects go back as a replan to N11 (figures), N12 (ticks), N10 (card width), N05 (markup) or N06 (script).
 Done when:
-- C1 [visual] Desktop 1280px, light and dark: "Payoff" sits right after "Installments and loans" in the nav and is current. Above the slider are the pay-now total, freed min–max and fixed-after min–max; below it is the included debts table with kind, name, remaining, rate, every and end date. The shown step card spans the full content width, its three figures sit on one line without wrapping, and its table shows all six columns with no scroll inside the card.
-- C2 [visual] At the last step, freed min is at least the sum of the three monthly installments' rates, and `#payoff-fixed-now` min is not a partial month far below the other months.
+- C1 [visual] Desktop 1280px, light and dark: "Payoff" sits right after "Installments and loans" in the nav and is current. Above the slider are the pay-now total, the freed amount (one figure) and fixed-after min–max; below it is the included debts table with kind, name, remaining, rate, every and end date. The shown step card spans the full content width, its three figures sit on one line without wrapping, and its table shows all six columns with no scroll inside the card.
+- C2 [visual] Each step's "Freed per month" is one amount, the running sum of the included debts' rates (rates 40 €, 700 €, 1.500 € give 40 €, 740 €, 2.240 €), and `#payoff-fixed-now` min is not a partial month far below the other months.
 - C3 [visual] The tick labels are compact amounts on a log scale, left to right ascending, and none overlap or leave the card. Dragging the slider snaps to a step and switches the shown figures and table with no network request (read_network_requests). The arrow keys move one step.
 - C4 [visual] 375px, light and dark: no page-level horizontal scroll, no two tick labels overlap, the debts table fits or scrolls inside its card, and the slider and labels are readable and usable.
 - C5 [visual] The empty DB shows the empty state with a link to `/debts` and no slider.
@@ -343,5 +349,36 @@ plan: REPLANNED
 exec: DONE · 1271 passed
 - payoff ticks use charts.compact_eur; TICK_MIN_GAP 20 with new comment
 - added gap and compact-label tests; N11 wip stashed as plz-N11-wip
+check: PASS 4/4
+verify: PASS
+
+### N11 try 1 · 2026-10-06
+plan: BRIEFED
+- cause: user change to D2, freed per month is one exact amount (sum of included rate_cents), not a range
+- D2/D7/Intent amended; freed_min/max dropped in payoff.py, loader tests, payoff.html and SPEC bullet; window change kept
+- brief: Write adds payoff.py, test_payoff.py, payoff.html, sonar.css; two Test first cases; C2 greps out freed_(min|max); range page tests move to #payoff-fixed-now
+- N08 C1/C2 and Context now check one freed amount; title -> full-month window and exact freed
+exec: DONE · 1272 passed
+- load_payoff uses 12 full months from next-month window_start for base and each debt; PayoffStep.freed_cents = sum of included rates; page/SPEC/docstring updated
+- Added rate_cents kwarg to the test _installment helper in test_service.py
+check: FAIL C2
+- C2 exit 1: Binary file src/sonar/debts/__pycache__/payoff.cpython-312.pyc matches
+
+### N11 try 2 · 2026-10-06
+exec: DONE · 1272 passed
+- try 2: C2 failed only on a stale gitignored payoff .pyc; regenerated, grep now clean
+- no source changes needed; full pytest, ruff and CSS cmp pass
+check: FAIL C2
+- C2 exit 1: Binary file src/sonar/debts/__pycache__/payoff.cpython-312.pyc matches
+
+### N11 replan 2 · 2026-10-06
+plan: REPLANNED
+- cause: C2's grep -r matched the gitignored src/sonar/debts/__pycache__/payoff.cpython-312.pyc, not source; executor work is correct
+- brief: C2 now uses git grep --untracked (tracked and untracked, never ignored files); Do, Write and other criteria unchanged; new C2 exits 0 on the current tree
+
+### N11 try 1 · 2026-10-06
+exec: DONE · 1272 passed
+- load_payoff uses next-month window_start for base and per-debt month_totals; PayoffStep.freed_cents = sum of included rates; page/SPEC/tests updated
+- added rate_cents param to test_service _installment helper for the new window test
 check: PASS 4/4
 verify: PASS

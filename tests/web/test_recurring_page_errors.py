@@ -378,3 +378,57 @@ def test_add_payment_error_message_is_friendly(tmp_path):
     alert = page.select_one("#add-payment #form-error")
     assert text(alert) == "Interval must be at least 1 month."
     assert alert["tabindex"] == "-1"
+
+
+def test_add_error_re_render_keeps_the_typed_description(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        response = client.post(
+            "/recurring",
+            data={
+                "name": "Gym",
+                "amount": "50.00",
+                "interval_months": "0",
+                "day": "1",
+                "starts_on": "2026-01-01",
+                "description": "Main studio",
+            },
+        )
+
+    assert response.status_code == 400
+    add_form = soup(response).select_one("#add-payment")
+    assert add_form.select_one('input[name="description"]')["value"] == "Main studio"
+
+
+def test_edit_error_re_render_keeps_the_typed_description(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post(
+            "/recurring",
+            data={
+                "name": "Gym",
+                "amount": "50.00",
+                "interval_months": "1",
+                "day": "1",
+                "starts_on": "2026-01-01",
+            },
+        )
+        payment_id = _payment_id(db_path)
+        response = client.post(
+            f"/recurring/{payment_id}/edit",
+            data={
+                "name": "Gym",
+                "amount": "50.00",
+                "interval_months": "0",
+                "day": "1",
+                "description": "Typed note",
+            },
+        )
+
+    assert response.status_code == 400
+    drawer = _drawer(soup(response), payment_id)
+    assert drawer.select_one('input[name="description"]')["value"] == "Typed note"

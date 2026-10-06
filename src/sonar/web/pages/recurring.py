@@ -78,6 +78,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         interval_months: str = Form(...),
         day: str = Form(...),
         starts_on: str = Form(...),
+        description: str = Form(""),
     ) -> HTMLResponse:
         try:
             period = SchedulePeriod(
@@ -94,6 +95,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 "interval_months": interval_months,
                 "day": day,
                 "starts_on": starts_on,
+                "description": description,
             }
             return _render_recurring_page(
                 request,
@@ -102,7 +104,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             )
         conn = connect(db_path)
         try:
-            add_manual(conn, name, None, period)
+            add_manual(conn, name, None, period, description)
         finally:
             conn.close()
         return RedirectResponse("/recurring", status_code=303)
@@ -115,6 +117,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         amount: str = Form(...),
         interval_months: str = Form(...),
         day: str = Form(...),
+        description: str = Form(""),
     ) -> HTMLResponse:
         try:
             amount_cents = forms.field("Amount", amount, "amount", parse_cents)
@@ -127,6 +130,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 "amount": amount,
                 "interval_months": interval_months,
                 "day": day,
+                "description": description,
             }
             return _render_recurring_page(
                 request,
@@ -135,7 +139,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             )
         conn = connect(db_path)
         try:
-            edit_payment(conn, id, name, amount_cents, interval, day_number)
+            edit_payment(conn, id, name, amount_cents, interval, day_number, description)
         finally:
             conn.close()
         return RedirectResponse("/recurring", status_code=303)

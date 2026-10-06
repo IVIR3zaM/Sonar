@@ -446,3 +446,59 @@ def test_mobile_row_fits(tmp_path):
 
         drawer = page.select_one(f"#drawer-{payment_id}")
         assert int(drawer.select_one("td")["colspan"]) == header_count
+
+
+_ADD_DATA = {
+    "name": "Gym",
+    "amount": "50.00",
+    "interval_months": "1",
+    "day": "1",
+    "starts_on": "2026-01-01",
+}
+
+
+def test_description_posted_with_add_form_shows_under_the_name(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/recurring", data={**_ADD_DATA, "description": "  Main studio  "})
+        [row] = _payment_rows(client.get("/recurring"))
+
+    assert fields(row)["description"] == "Main studio"
+
+
+def test_description_is_hidden_when_not_set(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/recurring", data=_ADD_DATA)
+        [row] = _payment_rows(client.get("/recurring"))
+
+    assert row.select_one('[data-field="description"]') is None
+
+
+def test_edit_form_saves_and_prefills_the_description(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/recurring", data=_ADD_DATA)
+        payment_id = _payment_id(db_path)
+        edited = client.post(
+            f"/recurring/{payment_id}/edit",
+            follow_redirects=False,
+            data={
+                "name": "Gym",
+                "amount": "50.00",
+                "interval_months": "1",
+                "day": "1",
+                "description": "Pays the studio",
+            },
+        )
+        assert edited.status_code == 303
+        [row] = _payment_rows(client.get("/recurring"))
+
+    assert fields(row)["description"] == "Pays the studio"
+    assert row.select_one('input[name="description"]')["value"] == "Pays the studio"

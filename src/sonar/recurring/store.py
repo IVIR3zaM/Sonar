@@ -18,7 +18,7 @@ from sonar.recurring.schedule import SchedulePeriod, pause_after, resume_on
 
 _PAYMENT_COLUMNS = (
     "id, detection_key, name, category, status, source, "
-    "name_locked, schedule_locked, last_paid_date"
+    "name_locked, schedule_locked, last_paid_date, description"
 )
 
 
@@ -38,6 +38,7 @@ class RecurringPayment:
     schedule_locked: bool
     last_paid_date: date | None
     periods: tuple[SchedulePeriod, ...]
+    description: str | None = None
 
 
 def list_payments(
@@ -52,18 +53,32 @@ def list_payments(
     return sorted(payments, key=lambda p: (_latest_period(p.periods).day, p.name))
 
 
+def get_payment(conn: sqlite3.Connection, id: int) -> RecurringPayment:
+    row = conn.execute(
+        f"SELECT {_PAYMENT_COLUMNS} FROM recurring_payments WHERE id = ?", (id,)
+    ).fetchone()
+    if row is None:
+        raise PaymentNotFound(id)
+    return _payment_from_row(conn, row)
+
+
 def add_manual(
-    conn: sqlite3.Connection, name: str, category: str | None, period: SchedulePeriod
+    conn: sqlite3.Connection,
+    name: str,
+    category: str | None,
+    period: SchedulePeriod,
+    description: str | None = None,
 ) -> int:
     """Add a hand-entered payment; both locks are set since nothing was detected."""
     with conn:
         cursor = conn.execute(
             """
             INSERT INTO recurring_payments (
-                detection_key, name, category, status, source, name_locked, schedule_locked
-            ) VALUES (NULL, ?, ?, 'active', 'manual', 1, 1)
+                detection_key, name, category, status, source,
+                name_locked, schedule_locked, description
+            ) VALUES (NULL, ?, ?, 'active', 'manual', 1, 1, ?)
             """,
-            (name, category),
+            (name, category, _clean_description(description)),
         )
         payment_id = cursor.lastrowid
         _insert_periods(conn, payment_id, (period,))
@@ -77,8 +92,12 @@ def edit_payment(
     amount_cents: int,
     interval_months: int,
     day: int,
+    description: str | None = None,
 ) -> None:
-    """Edit the name and the latest period in place, locking whatever changed."""
+    """Edit the name and the latest period in place, locking whatever changed.
+
+    A description change locks nothing: detection never writes it anyway.
+    """
     with conn:
         row = conn.execute(
             "SELECT name, name_locked, schedule_locked FROM recurring_payments WHERE id = ?",
@@ -100,15 +119,36 @@ def edit_payment(
         conn.execute(
             """
             UPDATE recurring_payments
-            SET name = ?, name_locked = ?, schedule_locked = ?
+            SET name = ?, description = ?, name_locked = ?, schedule_locked = ?
             WHERE id = ?
             """,
-            (name, name_locked or name_changed, schedule_locked or schedule_changed, id),
+            (
+                name,
+                _clean_description(description),
+                name_locked or name_changed,
+                schedule_locked or schedule_changed,
+                id,
+            ),
         )
         conn.execute(
             "UPDATE schedule_periods SET amount_cents = ?, interval_months = ?, day = ? "
             "WHERE payment_id = ? AND starts_on = ?",
             (amount_cents, interval_months, day, id, latest.starts_on.isoformat()),
+        )
+
+
+def update_details(conn: sqlite3.Connection, id: int, name: str, description: str | None) -> None:
+    """Set the name and description only; the name locks only on a real change."""
+    with conn:
+        row = conn.execute(
+            "SELECT name, name_locked FROM recurring_payments WHERE id = ?", (id,)
+        ).fetchone()
+        if row is None:
+            raise PaymentNotFound(id)
+        current_name, name_locked = row
+        conn.execute(
+            "UPDATE recurring_payments SET name = ?, description = ?, name_locked = ? WHERE id = ?",
+            (name, _clean_description(description), name_locked or name != current_name, id),
         )
 
 
@@ -150,8 +190,8 @@ def sync_detected(conn: sqlite3.Connection, category_types: dict[str, str], toda
     My edits always win (SPEC §6): a dismissed row is left untouched so dismissals
     survive re-detection, and a locked name or schedule is kept as the user set it.
     A detected row that no longer matches anything is deleted, but only if it is
-    still exactly as detection left it (active, unlocked) - an edited or dismissed
-    row is kept even once its key stops being detected.
+    still exactly as detection left it (active, unlocked, no description) - an
+    edited, described or dismissed row is kept even once its key stops being detected.
     """
     detected = {
         payment.key: payment
@@ -160,10 +200,10 @@ def sync_detected(conn: sqlite3.Connection, category_types: dict[str, str], toda
     changed = 0
     with conn:
         existing = {
-            key: (payment_id, status, bool(name_locked), bool(schedule_locked))
-            for key, payment_id, status, name_locked, schedule_locked in conn.execute(
-                "SELECT detection_key, id, status, name_locked, schedule_locked "
-                "FROM recurring_payments WHERE detection_key IS NOT NULL"
+            key: (payment_id, status, bool(name_locked), bool(schedule_locked), described)
+            for key, payment_id, status, name_locked, schedule_locked, described in conn.execute(
+                "SELECT detection_key, id, status, name_locked, schedule_locked, "
+                "description IS NOT NULL FROM recurring_payments WHERE detection_key IS NOT NULL"
             ).fetchall()
         }
 
@@ -172,15 +212,15 @@ def sync_detected(conn: sqlite3.Connection, category_types: dict[str, str], toda
                 _insert_detected(conn, payment)
                 changed += 1
                 continue
-            payment_id, status, name_locked, schedule_locked = existing[key]
+            payment_id, status, name_locked, schedule_locked, _ = existing[key]
             if status == "dismissed":
                 continue  # leave dismissed rows alone; the user rejected this payment
             if _update_detected(conn, payment_id, payment, name_locked, schedule_locked):
                 changed += 1
 
         for key in existing.keys() - detected.keys():
-            payment_id, status, name_locked, schedule_locked = existing[key]
-            if status == "active" and not name_locked and not schedule_locked:
+            payment_id, status, name_locked, schedule_locked, described = existing[key]
+            if status == "active" and not (name_locked or schedule_locked or described):
                 _delete_payment(conn, payment_id)
                 changed += 1
     return changed
@@ -231,6 +271,10 @@ def _update_detected(
     return changed
 
 
+def _clean_description(description: str | None) -> str | None:
+    return (description or "").strip() or None
+
+
 def _require_exists(conn: sqlite3.Connection, payment_id: int) -> None:
     row = conn.execute("SELECT 1 FROM recurring_payments WHERE id = ?", (payment_id,)).fetchone()
     if row is None:
@@ -254,6 +298,7 @@ def _payment_from_row(conn: sqlite3.Connection, row: tuple) -> RecurringPayment:
         name_locked,
         schedule_locked,
         last_paid_date,
+        description,
     ) = row
     return RecurringPayment(
         id=payment_id,
@@ -266,6 +311,7 @@ def _payment_from_row(conn: sqlite3.Connection, row: tuple) -> RecurringPayment:
         schedule_locked=bool(schedule_locked),
         last_paid_date=date.fromisoformat(last_paid_date) if last_paid_date else None,
         periods=_load_periods(conn, payment_id),
+        description=description,
     )
 
 

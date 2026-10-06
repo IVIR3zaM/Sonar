@@ -98,11 +98,26 @@ Endpoints (all under `/api`, `Content-Type: application/json`):
 | POST | `/rules/{id}/move` | `position` |
 | GET | `/uncategorized` | - |
 | GET | `/recurring` | - |
-| PUT | `/recurring/{id}` | `name`, `description` |
+| POST | `/recurring` | `name`, `amount_cents`, `interval_months`, `day`, `starts_on`, `description` |
+| PUT | `/recurring/{id}` | `name`, `description`, `amount_cents`, `interval_months`, `day` |
+| POST | `/recurring/{id}/pause` | `last_date` |
+| POST | `/recurring/{id}/resume` | `starts_on`, `amount_cents`, `interval_months`, `day` |
 | POST | `/recurring/{id}/dismiss` | - |
+| POST | `/recurring/{id}/restore` | - |
 | GET | `/debts` | - |
 | POST | `/debts` | `kind` plus the installment or loan fields above; `match_field` is `counterparty`, `mandate` or `purpose` |
+| PUT | `/debts/{id}` | same fields as POST `/debts` |
 | DELETE | `/debts/{id}` | - |
+| GET | `/debts/drafts` | - |
+| POST | `/debts/drafts/{id}` | same fields as POST `/debts` |
+| GET | `/settings` | - |
+| PUT | `/settings` | `salary_day`, `overdraft_limit_cents` |
+| POST | `/settings/balance` | `amount_cents`, `as_of` |
+| POST | `/reapply` | - |
+| GET | `/dashboard` | - |
+| GET | `/lights-on` | - |
+| GET | `/monthly` | query `month`, `category` |
+| GET | `/transactions` | query `from`, `to`, `category`, `uncategorized`, `q` |
 
 The five `group` values, and what each means for the forecast:
 

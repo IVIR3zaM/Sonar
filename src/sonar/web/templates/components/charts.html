@@ -1,10 +1,11 @@
 {# Server-rendered SVG charts (SPEC §12). Geometry comes from sonar.web.charts via
    the `charts` global, so these macros only draw. #}
 
-{% macro runway_bar(limit, balance, worst, best) %}
+{% macro runway_bar(limit, balance, worst, best, income=None) %}
 {%- set width = 300 -%}
-{%- set g = charts.runway(limit, balance, worst, best, width) -%}
+{%- set g = charts.runway(limit, balance, worst, best, width, income=income) -%}
 {%- set summary = "Balance " ~ balance|eur ~ ", projected " ~ worst|eur ~ " to " ~ best|eur ~ " at payday, overdraft limit " ~ limit|eur -%}
+{%- if income is not none %}{% set summary = summary ~ ", expected monthly income " ~ income|eur %}{% endif -%}
 <svg role="img" aria-label="{{ summary }}" viewBox="0 0 {{ width }} 32" preserveAspectRatio="none"
      class="block h-8 w-full" data-worst="{{ worst }}" data-best="{{ best }}">
   <title>{{ summary }}</title>
@@ -20,6 +21,12 @@
         class="fill-emerald-100 dark:fill-emerald-950">
     <title>Above zero</title>
   </rect>
+  {%- if income is not none and income > balance %}
+  <rect data-part="to-income" x="{{ g.balance_x }}" y="10" width="{{ g.income_x - g.balance_x }}" height="12"
+        class="fill-violet-300 dark:fill-violet-800" data-cents="{{ income }}">
+    <title>Expected monthly income {{ income|eur }}</title>
+  </rect>
+  {%- endif %}
   <rect data-part="band" x="{{ g.band_start_x }}" y="6" width="{{ g.band_end_x - g.band_start_x }}" height="20"
         class="fill-sky-500/50 dark:fill-sky-400/50" data-worst="{{ worst }}" data-best="{{ best }}">
     <title>Projected at payday: {{ worst|eur }} to {{ best|eur }}</title>
@@ -37,14 +44,14 @@
     <title>Balance {{ balance|eur }}</title>
   </rect>
 </svg>
-{%- set marks = charts.runway_scale(limit, balance, worst, best) -%}
+{%- set marks = charts.runway_scale(limit, balance, worst, best, income=income) -%}
 {%- set rows = (marks|map(attribute="row")|max) + 1 -%}
 {%- set translate = {"start": "", "center": "-translate-x-1/2", "end": "-translate-x-full"} %}
-<div data-scale aria-hidden="true" class="relative mt-1 text-xs text-ink-muted {{ ['h-4', 'h-8', 'h-12'][rows - 1] }}">
+<div data-scale aria-hidden="true" class="relative mt-1 text-xs text-ink-muted {{ ['h-4', 'h-8', 'h-12', 'h-16'][rows - 1] }}">
   {%- for mark in marks %}
   <span data-part="{{ mark.part }}" data-cents="{{ mark.cents }}" data-row="{{ mark.row }}"
         style="left: {{ mark.percent }}%"
-        class="absolute whitespace-nowrap tabular-nums {{ ['top-0', 'top-4', 'top-8'][mark.row] }} {{ translate[mark.align] }}">
+        class="absolute whitespace-nowrap tabular-nums {{ ['top-0', 'top-4', 'top-8', 'top-12'][mark.row] }} {{ translate[mark.align] }}">
     {{- "0" if mark.part == "zero" else mark.cents|eur -}}
   </span>
   {%- endfor %}

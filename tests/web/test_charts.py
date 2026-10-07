@@ -69,6 +69,30 @@ def test_runway_orders_limit_zero_band_and_balance_on_one_axis():
     assert 0 <= g.band_start_x < g.band_end_x <= g.limit_x < g.zero_x < g.balance_x <= 300
 
 
+def test_runway_ends_at_the_expected_income():
+    g = runway(-50000, -30000, -60000, 20000, 300, income=400000)
+    assert g.income_x == 300
+    assert g.balance_x < 150
+
+
+def test_runway_without_income_is_unchanged():
+    g = runway(-50000, -30000, -60000, 20000, 300)
+    assert g.income_x is None
+    assert (g.limit_x, g.zero_x, g.balance_x, g.band_start_x, g.band_end_x) == (
+        38,
+        225,
+        112,
+        0,
+        300,
+    )
+
+
+def test_runway_ends_at_a_balance_above_the_income():
+    g = runway(-50000, 100000, -20000, 30000, 300, income=50000)
+    assert g.balance_x == 300
+    assert g.income_x == 200
+
+
 def test_runway_scale_places_limit_zero_and_balance_along_the_axis():
     marks = runway_scale(-50000, 100000, -20000, 30000)
     assert [m.part for m in marks] == ["limit", "zero", "balance"]
@@ -117,6 +141,25 @@ def test_runway_scale_matches_the_svg_axis(args):
     x_by_part = {"limit": g.limit_x, "zero": g.zero_x, "balance": g.balance_x}
     for mark in runway_scale(*args):
         assert abs(mark.percent * 3 - x_by_part[mark.part]) <= 1.5
+
+
+def test_runway_scale_marks_the_income_at_the_right_end():
+    marks = runway_scale(-50000, 100000, -20000, 30000, income=200000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance", "income"]
+    assert [m.cents for m in marks] == [-50000, 0, 100000, 200000]
+    assert [m.percent for m in marks] == [0.0, 20.0, 60.0, 100.0]
+    assert marks[-1].align == "end"
+
+
+def test_runway_scale_income_equal_to_the_balance_shares_its_label():
+    marks = runway_scale(-50000, 100000, -20000, 30000, income=100000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance"]
+
+
+def test_runway_scale_fits_four_close_marks_on_four_rows():
+    marks = runway_scale(-3000, 6000, -400000, -300000, income=9000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance", "income"]
+    assert [m.row for m in marks] == [0, 1, 2, 3]
 
 
 def test_runway_scale_all_zero_is_safe():
@@ -234,6 +277,55 @@ def test_runway_bar_macro_puts_close_scale_marks_on_distinct_rows(render):
     soup = render("runway_bar", "runway_bar(-5000, 3000, -400000, -300000)")
     marks = soup.select("[data-scale] span[data-part]")
     assert [m["data-row"] for m in marks] == ["0", "1", "2"]
+
+
+def test_runway_bar_macro_draws_the_stretch_to_income(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000, income=200000)")
+    balance_x = runway(-50000, 100000, -20000, 30000, 300, income=200000).balance_x
+    to_income = soup.select_one("[data-part=to-income]")
+    assert to_income["data-cents"] == "200000"
+    assert int(to_income["x"]) == balance_x
+    assert int(to_income["x"]) + int(to_income["width"]) == 300
+    assert "2.000,00" in to_income.find("title").get_text()
+    svg = soup.find("svg")
+    assert "expected monthly income 2.000,00\u00a0€" in svg["aria-label"]
+    assert "expected monthly income" in svg.find("title").get_text()
+    parts = [r["data-part"] for r in svg.find_all("rect")]
+    assert parts.index("funds") < parts.index("to-income") < parts.index("band")
+    scale = soup.select("[data-scale] span[data-part]")
+    assert scale[-1]["data-part"] == "income"
+    assert "2.000,00\u00a0€" in scale[-1].get_text()
+
+
+def test_runway_bar_macro_zones_still_tile_the_axis_with_income(render):
+    soup = render("runway_bar", "runway_bar(-50000, -30000, -60000, 20000, income=400000)")
+    beyond = soup.select_one("[data-part=beyond-limit]")
+    overdraft = soup.select_one("[data-part=overdraft]")
+    funds = soup.select_one("[data-part=funds]")
+    assert int(beyond["x"]) == 0
+    assert int(beyond["x"]) + int(beyond["width"]) == int(overdraft["x"])
+    assert int(overdraft["x"]) + int(overdraft["width"]) == int(funds["x"])
+    assert int(funds["x"]) + int(funds["width"]) == 300
+
+
+def test_runway_bar_macro_has_no_income_stretch_below_the_balance(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000, income=50000)")
+    assert soup.select_one("[data-part=to-income]") is None
+    assert soup.select_one("[data-part=balance]")["x"] == "298"
+    assert "expected monthly income 500,00\u00a0€" in soup.find("svg")["aria-label"]
+
+
+def test_runway_bar_macro_without_income_names_no_income(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000)")
+    assert soup.select_one("[data-part=to-income]") is None
+    assert "income" not in soup.find("svg")["aria-label"]
+    assert soup.select_one("[data-scale] [data-part=income]") is None
+
+
+def test_runway_bar_macro_puts_four_close_marks_on_four_rows(render):
+    soup = render("runway_bar", "runway_bar(-3000, 6000, -400000, -300000, income=9000)")
+    marks = soup.select("[data-scale] span[data-part]")
+    assert [m["data-row"] for m in marks] == ["0", "1", "2", "3"]
 
 
 def test_month_columns_macro_has_one_rect_per_month(render):

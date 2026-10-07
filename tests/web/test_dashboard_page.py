@@ -642,3 +642,65 @@ def test_income_card_is_absent_without_salary_day_or_balance(tmp_path, setting):
     page = _dashboard(db_path, **{setting: False})
 
     assert page.select_one("#income-card") is None
+
+
+SALARY_TOML = """
+[[category]]
+name = "Salary"
+type = "income"
+
+[[rule]]
+category = "Salary"
+counterparty = "Employer"
+"""
+
+
+def _insert_salary(db_path: Path) -> None:
+    for month, day, amount_cents in ((6, 26, 200_000), (7, 24, 250_000), (8, 26, 230_000)):
+        _insert_debit(
+            db_path,
+            fingerprint=f"s{month}",
+            booking_date=f"2026-{month:02d}-{day:02d}",
+            amount_cents=amount_cents,
+            counterparty="Employer",
+        )
+
+
+def test_runway_reaches_the_expected_monthly_income(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, SALARY_TOML)
+    _insert_salary(db_path)
+
+    page = _dashboard(db_path)
+
+    legend = page.select_one("#runway [data-legend=income]")
+    assert cents(legend) == 250_000
+    assert "salary" not in text(legend)
+    assert cents(page.select_one("#runway [data-part=to-income]")) == 250_000
+
+
+def test_runway_has_no_income_without_income_credits(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, INCOME_TOML)
+    _insert_benefits(db_path)
+
+    page = _dashboard(db_path)
+
+    assert page.select_one("#runway") is not None
+    assert page.select_one("#runway [data-legend=income]") is None
+    assert page.select_one("#runway [data-part=to-income]") is None
+
+
+def test_income_legend_splits_salary_and_recurring_income(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, SALARY_TOML + INCOME_TOML)
+    _insert_salary(db_path)
+    _insert_benefits(db_path)
+
+    legend = _dashboard(db_path).select_one("#runway [data-legend=income]")
+
+    total, salary, recurring = (int(el["data-cents"]) for el in legend.select("[data-cents]"))
+    assert salary == 250_000
+    assert recurring > 0
+    assert total == salary + recurring
+    assert "recurring" in text(legend)

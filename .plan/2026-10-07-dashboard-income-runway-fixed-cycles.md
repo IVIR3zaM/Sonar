@@ -44,9 +44,9 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | N02 | expected monthly income | exec | N01 | sonnet/sonnet | 2 | 0 | DONE | |
 | N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 2 | 0 | DONE | |
-| N05 | runway to income | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
+| N05 | runway to income | exec | N04 | opus/sonnet | 1 | 0 | DONE | |
 | N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
-| N07 | SPEC amendment | exec | N04 | haiku/sonnet | 0 | 0 | TODO | |
+| N07 | SPEC amendment | exec | N06 | haiku/sonnet | 0 | 1 | TODO | |
 | N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 
@@ -139,12 +139,13 @@ Done when:
 - C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N07 SPEC amendment
-Do: Append one §13 bullet "Dashboard income runway and pay-cycle fixed costs (§9, §11, §12)" after the Payoff ladder bullet (`SPEC.md:255`). It states D1-D11 in plain words and changes no other line of SPEC.
+Do: SPEC §13 ends with exactly one bullet "Dashboard income runway and pay-cycle fixed costs (§9, §11, §12)" right after the Payoff ladder bullet (`SPEC.md:255`). It states D1-D11 in plain words and changes no other line of SPEC. If the working tree already has that bullet, check it against this brief and complete it in place; never add a second one.
 Context: D1 the salary rule per complete cycle and its max over 3; D2 the recurring monthly equivalent; D3 the no-salary fallback; D4 the runway's right end, the balance→income segment, the scale mark and the legend.
   D5-D7: 13 pay-cycle columns from the estimate date: 6 actual fixed debits, the current cycle booked to the estimate date plus forecast, and 6 forecast cycles of every fixed row due, debts until their end.
   D8: no salary day → a settings hint. D10/D11: the chart look and the table columns. D9: `/api/dashboard` `expected_income` and `fixed_costs.cycles` replace `fixed_costs.months`.
   Say it overrides §9's "per-month totals for the next 12 months", §11's "the next 12 months per month" and §12's "12-month SVG column chart" and "spanning overdraft limit, 0 and balance". The Monthly equivalent is unchanged. Use the style of the existing §13 bullets (`SPEC.md:249`): one paragraph, no real names.
-Read: `SPEC.md:118-148`, `SPEC.md:170-205`, `SPEC.md:240-255`
+  Runs after N06, so verify sees the finished runway and cycle-chart code; touch nothing outside SPEC.md.
+Read: `SPEC.md:118-148`, `SPEC.md:170-205`, `SPEC.md:240-260`, `git diff SPEC.md`
 Write: `SPEC.md`
 Test first: -
 Done when:
@@ -230,4 +231,21 @@ exec: DONE · 1287 passed
 - API test now asserts all 13 cycles equal load_dashboard's (start,end,kind,booked_cents,forecast_cents)
 - fixed C3 finding; no source change
 check: PASS 2/2
+verify: PASS
+
+### N07 try 1 · 2026-10-07
+exec: BLOCKED · Dependency: N05 incomplete changes in working tree cause test failure (hardcoded 'income' string in charts.py:85 violates test_no_hardcoded_type_strings; N07 Write scope is SPEC.md only)
+
+### N07 replan 1 · 2026-10-07
+plan: REPLANNED
+- Cause: N07 ran in parallel with N05 in a shared working tree; verify_fast (C3) failed on N05's in-flight charts.py, not on SPEC.md
+- Deps N04 -> N06 so verify runs after all code nodes that touch charts.py and tests
+- Brief: keep the existing working-tree bullet and complete it in place, never add a second; Read adds git diff SPEC.md
+
+### N05 try 1 · 2026-10-07
+exec: DONE · 1301 passed, 4 skipped
+- charts.runway/runway_scale take income (Runway.income_x, income scale mark, 4 label rows); runway_bar draws violet to-income rect + aria text; index.html passes expected_income and adds income legend; sonar.css rebuilt
+- income scale part uses categorization.groups.INCOME constant because test_no_hardcoded_type_strings forbids the literal 'income' outside groups.py
+- aria-label names income whenever given; to-income rect only when income > balance; SPEC.md diff in tree is not from this node
+check: PASS 3/3
 verify: PASS

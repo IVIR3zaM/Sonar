@@ -1,5 +1,5 @@
 # Dashboard income runway and fixed-cost pay cycles
-status: WAITING
+status: RUNNING
 created: 2026-10-07 · updated: 2026-10-07
 goal: The runway bar reaches out to the expected monthly income instead of shrinking with a negative balance, and the Fixed costs chart shows actual and forecast fixed costs per pay cycle instead of 12 calendar months.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -47,7 +47,7 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | N05 | runway to income | exec | N04 | opus/sonnet | 1 | 0 | DONE | |
 | N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 1 | 1 | DONE | |
 | N07 | SPEC amendment | exec | N06 | sonnet/sonnet | 1 | 2 | DONE | |
-| N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
+| N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | DONE | gate approved by owner as is; known: 375px income legend overflow, legend Booked vs Actual |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight

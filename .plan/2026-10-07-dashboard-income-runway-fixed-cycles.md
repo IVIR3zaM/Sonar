@@ -41,7 +41,7 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 1 | DONE | |
-| N02 | expected monthly income | exec | N01 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N02 | expected monthly income | exec | N01 | sonnet/sonnet | 2 | 0 | DONE | |
 | N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N05 | runway to income | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
@@ -210,3 +210,9 @@ verify: PASS
 ### N02 try 1 · 2026-10-07
 verify: FAIL C3
 - C3 src/sonar/cashflow/income.py:23-24 - public module constants CYCLES_LOOKED_AT and MONTHS_PER_YEAR are added besides ExpectedIncome and expected_income - expected no other public name (underscore-private or inlined)
+
+### N02 try 2 · 2026-10-07
+exec: DONE · 1282 passed
+- income.py: made CYCLES_LOOKED_AT and MONTHS_PER_YEAR underscore-private (C3 finding)
+check: PASS 2/2
+verify: PASS

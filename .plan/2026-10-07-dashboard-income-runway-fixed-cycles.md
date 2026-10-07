@@ -1,5 +1,5 @@
 # Dashboard income runway and fixed-cost pay cycles
-status: RUNNING
+status: DONE
 created: 2026-10-07 · updated: 2026-10-07
 goal: The runway bar reaches out to the expected monthly income instead of shrinking with a negative balance, and the Fixed costs chart shows actual and forecast fixed costs per pay cycle instead of 12 calendar months.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -48,7 +48,7 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 1 | 1 | DONE | |
 | N07 | SPEC amendment | exec | N06 | sonnet/sonnet | 1 | 2 | DONE | |
 | N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | DONE | gate approved by owner as is; known: 375px income legend overflow, legend Booked vs Actual |
-| N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
+| N09 | plan acceptance | check | N08 | -/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work. The untouched tree passes verify, the Tailwind build runs, the repo is writable for the per-node commits, and `samples/` has a file for the visual gate.
@@ -314,4 +314,8 @@ exec: DONE · 1309 passed
 - Rewrote SPEC.md:256 in place to state F1-F11 and quote the four overridden clauses
 - Removed per-row/per-debt cycle amounts and the Income before payday card from the bullet
 check: PASS 3/3
+verify: PASS
+
+### N09 try 1 · 2026-10-07
+check: PASS 2/2
 verify: PASS

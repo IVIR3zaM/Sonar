@@ -3,7 +3,7 @@ dashboard (SPEC §8, §9).
 """
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -11,6 +11,7 @@ from sonar.cashflow.payday import (
     Cycle,
     complete_cycles,
     current_cycle,
+    next_cycles,
     next_payday,
     payday_in,
     previous_payday,
@@ -104,3 +105,28 @@ def test_complete_cycles_are_contiguous_most_recent_first():
         Cycle(date(2026, 6, 26), date(2026, 7, 23)),
         Cycle(date(2026, 5, 26), date(2026, 6, 25)),
     )
+
+
+def test_next_cycles_continue_the_current_cycle_contiguously():
+    today = date(2026, 9, 23)
+    current = current_cycle(today, 26)
+
+    cycles = next_cycles(today, 26, 3)
+
+    assert cycles == (
+        Cycle(date(2026, 9, 25), date(2026, 10, 25)),
+        Cycle(date(2026, 10, 26), date(2026, 11, 25)),
+        Cycle(date(2026, 11, 26), date(2026, 12, 24)),
+    )
+    assert cycles[0].start == current.end + timedelta(days=1)
+
+
+def test_next_cycles_follow_a_weekend_moved_payday():
+    # 26 Sep 2026 is a Saturday, so the cycle starts on Friday the 25th.
+    assert calendar.weekday(2026, 9, 26) == calendar.SATURDAY
+
+    assert next_cycles(date(2026, 8, 30), 26, 1) == (Cycle(date(2026, 9, 25), date(2026, 10, 25)),)
+
+
+def test_next_cycles_of_zero_is_empty():
+    assert next_cycles(date(2026, 9, 23), 26, 0) == ()

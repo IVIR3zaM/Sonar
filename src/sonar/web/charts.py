@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from math import log10
 
+from sonar.categorization.groups import INCOME
 from sonar.web.display import display_date
 
 # Non-breaking space before the currency sign, as in display.eur.
@@ -24,16 +25,21 @@ class Runway:
     balance_x: int
     band_start_x: int
     band_end_x: int
+    income_x: int | None = None
 
 
-def runway(limit: int, balance: int, worst: int, best: int, width: int) -> Runway:
-    """Place the overdraft limit, zero, balance and projected band on one axis.
+def runway(
+    limit: int, balance: int, worst: int, best: int, width: int, income: int | None = None
+) -> Runway:
+    """Place the overdraft limit, zero, balance, projected band and income on one axis.
 
     The axis spans every value shown, so a projection below the limit or a
-    balance far above zero still fits inside [0, width].
+    balance far above zero still fits inside [0, width]. The expected income,
+    when known, usually sets the right end, so the balance reads as a share of it.
     """
-    low = min(limit, 0, balance, worst, best)
-    high = max(limit, 0, balance, worst, best)
+    values = [limit, 0, balance, worst, best] + ([] if income is None else [income])
+    low = min(values)
+    high = max(values)
     span = high - low
 
     def x(cents: int) -> int:
@@ -42,7 +48,8 @@ def runway(limit: int, balance: int, worst: int, best: int, width: int) -> Runwa
         return round((cents - low) * width / span)
 
     band_start, band_end = sorted((x(worst), x(best)))
-    return Runway(x(limit), x(0), x(balance), band_start, band_end)
+    income_x = None if income is None else x(income)
+    return Runway(x(limit), x(0), x(balance), band_start, band_end, income_x)
 
 
 # A label like "−1.500,00 €" at text-xs takes about a quarter of the bar at 375px.
@@ -52,27 +59,34 @@ _EDGE_PERCENT = 12.5
 
 @dataclass(frozen=True)
 class ScaleMark:
-    part: str  # "limit" | "zero" | "balance"
+    part: str  # "limit" | "zero" | "balance" | "income"
     cents: int
     percent: float
     align: str  # "start" | "center" | "end"
     row: int
 
 
-def runway_scale(limit: int, balance: int, worst: int, best: int) -> list[ScaleMark]:
-    """Label positions, as percentages of the runway bar, for limit, zero and balance.
+def runway_scale(
+    limit: int, balance: int, worst: int, best: int, income: int | None = None
+) -> list[ScaleMark]:
+    """Label positions, as percentages of the runway bar, for limit, zero, balance and income.
 
     The labels are HTML under the SVG, not SVG text: the SVG uses
     preserveAspectRatio="none", which would stretch text. Positions come from
     `runway` so every label lines up with its mark.
     """
-    axis = runway(limit, balance, worst, best, width=1000)
+    axis = runway(limit, balance, worst, best, width=1000, income=income)
     x_by_part = {"limit": axis.limit_x, "zero": axis.zero_x, "balance": axis.balance_x}
     cents_by_part = {"limit": limit, "zero": 0, "balance": balance}
+    if income is not None and axis.income_x is not None:
+        # The income mark shares the income group's name, which the type guard requires.
+        x_by_part[INCOME] = axis.income_x
+        cents_by_part[INCOME] = income
     # Equal values share one label; the first part listed wins.
     kept: dict[int, str] = {}
-    for part in ("balance", "zero", "limit"):
-        kept.setdefault(cents_by_part[part], part)
+    for part in ("balance", "zero", "limit", INCOME):
+        if part in cents_by_part:
+            kept.setdefault(cents_by_part[part], part)
     parts = sorted(kept.values(), key=lambda part: x_by_part[part])
 
     percents = [x_by_part[part] / 10 for part in parts]
@@ -150,6 +164,27 @@ def columns(values: Sequence[int], height: int) -> list[int]:
     return _scale(values, height)
 
 
+@dataclass(frozen=True)
+class Stack:
+    booked_height: int
+    forecast_height: int
+
+
+def stacked_columns(booked: Sequence[int], forecast: Sequence[int], height: int) -> list[Stack]:
+    """Booked and forecast parts of each column, on the scale of the column totals.
+
+    The forecast part is what is left of the column, so the two parts always
+    add up to exactly the column's height.
+    """
+    totals = [b + f for b, f in zip(booked, forecast, strict=True)]
+    peak = max(totals, default=0)
+    stacks = []
+    for part, column in zip(booked, columns(totals, height), strict=True):
+        booked_height = round(part * height / peak) if peak else 0
+        stacks.append(Stack(booked_height, column - booked_height))
+    return stacks
+
+
 def bars(values: Sequence[int], width: int) -> list[int]:
     """Bar widths, with the largest magnitude filling `width`."""
     return _scale(values, width)
@@ -196,6 +231,16 @@ def compact_eur(cents: int) -> str:
 def month_label(month: date) -> str:
     """Axis label "Sep 2026" for a first-of-month date."""
     return display_date(month).split(" ", 1)[1]
+
+
+def day_month(day: date) -> str:
+    """Short label "7 Oct", without the year."""
+    return display_date(day).rsplit(" ", 1)[0]
+
+
+def cycle_label(start: date, end: date) -> str:
+    """Axis label "25 Sep – 24 Oct" for a pay cycle."""
+    return f"{day_month(start)} \u2013 {day_month(end)}"
 
 
 def _scale(values: Sequence[int], extent: int) -> list[int]:

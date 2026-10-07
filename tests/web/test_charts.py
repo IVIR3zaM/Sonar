@@ -12,11 +12,14 @@ from sonar.web.charts import (
     bars,
     columns,
     compact_eur,
+    cycle_label,
+    day_month,
     line_points,
     month_label,
     payoff_ticks,
     runway,
     runway_scale,
+    stacked_columns,
 )
 
 
@@ -69,6 +72,30 @@ def test_runway_orders_limit_zero_band_and_balance_on_one_axis():
     assert 0 <= g.band_start_x < g.band_end_x <= g.limit_x < g.zero_x < g.balance_x <= 300
 
 
+def test_runway_ends_at_the_expected_income():
+    g = runway(-50000, -30000, -60000, 20000, 300, income=400000)
+    assert g.income_x == 300
+    assert g.balance_x < 150
+
+
+def test_runway_without_income_is_unchanged():
+    g = runway(-50000, -30000, -60000, 20000, 300)
+    assert g.income_x is None
+    assert (g.limit_x, g.zero_x, g.balance_x, g.band_start_x, g.band_end_x) == (
+        38,
+        225,
+        112,
+        0,
+        300,
+    )
+
+
+def test_runway_ends_at_a_balance_above_the_income():
+    g = runway(-50000, 100000, -20000, 30000, 300, income=50000)
+    assert g.balance_x == 300
+    assert g.income_x == 200
+
+
 def test_runway_scale_places_limit_zero_and_balance_along_the_axis():
     marks = runway_scale(-50000, 100000, -20000, 30000)
     assert [m.part for m in marks] == ["limit", "zero", "balance"]
@@ -119,6 +146,25 @@ def test_runway_scale_matches_the_svg_axis(args):
         assert abs(mark.percent * 3 - x_by_part[mark.part]) <= 1.5
 
 
+def test_runway_scale_marks_the_income_at_the_right_end():
+    marks = runway_scale(-50000, 100000, -20000, 30000, income=200000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance", "income"]
+    assert [m.cents for m in marks] == [-50000, 0, 100000, 200000]
+    assert [m.percent for m in marks] == [0.0, 20.0, 60.0, 100.0]
+    assert marks[-1].align == "end"
+
+
+def test_runway_scale_income_equal_to_the_balance_shares_its_label():
+    marks = runway_scale(-50000, 100000, -20000, 30000, income=100000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance"]
+
+
+def test_runway_scale_fits_four_close_marks_on_four_rows():
+    marks = runway_scale(-3000, 6000, -400000, -300000, income=9000)
+    assert [m.part for m in marks] == ["limit", "zero", "balance", "income"]
+    assert [m.row for m in marks] == [0, 1, 2, 3]
+
+
 def test_runway_scale_all_zero_is_safe():
     marks = runway_scale(0, 0, 0, 0)
     assert [(m.part, m.percent, m.row) for m in marks] == [("balance", 0.0, 0)]
@@ -159,6 +205,26 @@ def test_bars_scale_the_largest_value_to_full_width():
 
 def test_month_label():
     assert month_label(date(2026, 9, 1)) == "Sep 2026"
+
+
+def test_cycle_label():
+    assert cycle_label(date(2026, 9, 25), date(2026, 10, 24)) == "25 Sep \u2013 24 Oct"
+
+
+def test_day_month():
+    assert day_month(date(2026, 10, 7)) == "7 Oct"
+
+
+def test_stacked_columns_split_each_column_by_the_totals_scale():
+    stacks = stacked_columns([10000, 3000, 0], [0, 2000, 4000], 80)
+
+    assert [s.booked_height + s.forecast_height for s in stacks] == columns([10000, 5000, 4000], 80)
+    assert [(s.booked_height, s.forecast_height) for s in stacks] == [(80, 0), (24, 16), (0, 32)]
+
+
+def test_stacked_columns_all_zero_have_no_height():
+    stacks = stacked_columns([0, 0], [0, 0], 80)
+    assert [(s.booked_height, s.forecast_height) for s in stacks] == [(0, 0), (0, 0)]
 
 
 def test_line_points_puts_the_larger_value_higher_on_a_shared_scale():
@@ -236,60 +302,153 @@ def test_runway_bar_macro_puts_close_scale_marks_on_distinct_rows(render):
     assert [m["data-row"] for m in marks] == ["0", "1", "2"]
 
 
-def test_month_columns_macro_has_one_rect_per_month(render):
-    months = [
-        SimpleNamespace(month=date(2026, 10, 1), total_cents=0),
-        SimpleNamespace(month=date(2026, 11, 1), total_cents=-10000),
-        SimpleNamespace(month=date(2026, 12, 1), total_cents=-5000),
+def test_runway_bar_macro_draws_the_stretch_to_income(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000, income=200000)")
+    balance_x = runway(-50000, 100000, -20000, 30000, 300, income=200000).balance_x
+    to_income = soup.select_one("[data-part=to-income]")
+    assert to_income["data-cents"] == "200000"
+    assert int(to_income["x"]) == balance_x
+    assert int(to_income["x"]) + int(to_income["width"]) == 300
+    assert "2.000,00" in to_income.find("title").get_text()
+    svg = soup.find("svg")
+    assert "expected monthly income 2.000,00\u00a0€" in svg["aria-label"]
+    assert "expected monthly income" in svg.find("title").get_text()
+    parts = [r["data-part"] for r in svg.find_all("rect")]
+    assert parts.index("funds") < parts.index("to-income") < parts.index("band")
+    scale = soup.select("[data-scale] span[data-part]")
+    assert scale[-1]["data-part"] == "income"
+    assert "2.000,00\u00a0€" in scale[-1].get_text()
+
+
+def test_runway_bar_macro_zones_still_tile_the_axis_with_income(render):
+    soup = render("runway_bar", "runway_bar(-50000, -30000, -60000, 20000, income=400000)")
+    beyond = soup.select_one("[data-part=beyond-limit]")
+    overdraft = soup.select_one("[data-part=overdraft]")
+    funds = soup.select_one("[data-part=funds]")
+    assert int(beyond["x"]) == 0
+    assert int(beyond["x"]) + int(beyond["width"]) == int(overdraft["x"])
+    assert int(overdraft["x"]) + int(overdraft["width"]) == int(funds["x"])
+    assert int(funds["x"]) + int(funds["width"]) == 300
+
+
+def test_runway_bar_macro_has_no_income_stretch_below_the_balance(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000, income=50000)")
+    assert soup.select_one("[data-part=to-income]") is None
+    assert soup.select_one("[data-part=balance]")["x"] == "298"
+    assert "expected monthly income 500,00\u00a0€" in soup.find("svg")["aria-label"]
+
+
+def test_runway_bar_macro_without_income_names_no_income(render):
+    soup = render("runway_bar", "runway_bar(-50000, 100000, -20000, 30000)")
+    assert soup.select_one("[data-part=to-income]") is None
+    assert "income" not in soup.find("svg")["aria-label"]
+    assert soup.select_one("[data-scale] [data-part=income]") is None
+
+
+def test_runway_bar_macro_puts_four_close_marks_on_four_rows(render):
+    soup = render("runway_bar", "runway_bar(-3000, 6000, -400000, -300000, income=9000)")
+    marks = soup.select("[data-scale] span[data-part]")
+    assert [m["data-row"] for m in marks] == ["0", "1", "2", "3"]
+
+
+def _cycles():
+    def cycle(start, end, kind, booked, forecast):
+        return SimpleNamespace(
+            start=start,
+            end=end,
+            kind=kind,
+            booked_cents=booked,
+            forecast_cents=forecast,
+            total_cents=booked + forecast,
+        )
+
+    starts = [date(2026, month, 25) for month in range(3, 13)] + [
+        date(2027, month, 25) for month in range(1, 5)
     ]
-    soup = render("month_columns", "month_columns(months)", months=months)
+    kinds = ["actual"] * 6 + ["current"] + ["forecast"] * 6
+    return [
+        cycle(
+            starts[i],
+            starts[i + 1].replace(day=24),
+            kind,
+            0 if kind == "forecast" else 100000 + i * 1000,
+            0 if kind == "actual" else 50000,
+        )
+        for i, kind in enumerate(kinds)
+    ]
+
+
+def _cycle_chart(render):
+    return render(
+        "cycle_columns",
+        "cycle_columns(cycles, estimate_date)",
+        cycles=_cycles(),
+        estimate_date=date(2026, 10, 7),
+    )
+
+
+def test_cycle_columns_macro_has_one_group_per_cycle(render):
+    soup = _cycle_chart(render)
     svg = soup.find("svg")
     assert svg["role"] == "img"
-    assert svg["aria-label"]
-    rects = svg.find_all("rect")
-    assert [r["data-cents"] for r in rects] == ["0", "-10000", "-5000"]
-    assert [r["height"] for r in rects] == ["0", "80", "40"]
-    assert "Nov 2026" in rects[1].find("title").get_text()
+    assert "6 past" in svg["aria-label"]
+    assert "current" in svg["aria-label"]
+    assert "6 next pay cycles" in svg["aria-label"]
+    groups = svg.select("[data-kind]")
+    assert [g["data-kind"] for g in groups] == ["actual"] * 6 + ["current"] + ["forecast"] * 6
 
 
-def test_month_columns_macro_labels_each_column_with_its_total(render):
-    months = [
-        SimpleNamespace(month=date(2026, 10, 1), total_cents=0),
-        SimpleNamespace(month=date(2026, 11, 1), total_cents=-10000),
-        SimpleNamespace(month=date(2026, 12, 1), total_cents=-5000),
-    ]
-    soup = render("month_columns", "month_columns(months)", months=months)
+def test_cycle_columns_macro_stacks_booked_and_forecast_in_the_current_column(render):
+    svg = _cycle_chart(render).find("svg")
+    current = svg.select_one("[data-kind=current]")
+    booked = current.select("rect[data-part=booked]")
+    forecast = current.select("rect[data-part=forecast]")
+    assert len(booked) == 1 and len(forecast) == 1
+    booked, forecast = booked[0], forecast[0]
+    assert booked["data-cents"] == "106000"
+    assert forecast["data-cents"] == "50000"
+    # Forecast sits right on top of booked, and together they fill the column.
+    assert int(forecast["y"]) + int(forecast["height"]) == int(booked["y"])
+    totals = [c.total_cents for c in _cycles()]
+    assert int(booked["height"]) + int(forecast["height"]) == columns(totals, 80)[6]
+    assert int(booked["y"]) + int(booked["height"]) == 80
+    assert "25 Sep \u2013 24 Oct" in booked.find("title").get_text()
+    assert "1.060,00\u00a0€" in booked.find("title").get_text()
+
+
+def test_cycle_columns_macro_actual_columns_are_booked_and_forecast_columns_forecast(render):
+    svg = _cycle_chart(render).find("svg")
+    for group in svg.select("[data-kind=actual]"):
+        assert group.select("rect[data-part=forecast]") == []
+        assert len(group.select("rect[data-part=booked]")) == 1
+    for group in svg.select("[data-kind=forecast]"):
+        assert group.select("rect[data-part=booked]") == []
+        assert len(group.select("rect[data-part=forecast]")) == 1
+
+
+def test_cycle_columns_macro_marks_the_estimate_date_and_has_a_legend(render):
+    soup = _cycle_chart(render)
     svg = soup.find("svg")
-    values = svg.select("[data-part=value]")
-    assert [v.get_text(strip=True) for v in values] == ["0\u00a0€", "100\u00a0€", "50\u00a0€"]
-    assert [v["data-cents"] for v in values] == ["0", "-10000", "-5000"]
-    _, min_y, _, _ = _viewbox(svg)
-    for value, rect in zip(values, svg.find_all("rect"), strict=True):
-        assert float(value["y"]) < float(rect["y"])
-        assert float(value["y"]) >= min_y
-
-
-def test_month_columns_macro_value_labels_are_rotated_and_readable(render):
-    months = [
-        SimpleNamespace(month=date(2026, 10, 1), total_cents=0),
-        SimpleNamespace(month=date(2026, 11, 1), total_cents=-10000),
-        SimpleNamespace(month=date(2026, 12, 1), total_cents=-5000),
+    markers = svg.select("[data-part=estimate]")
+    assert len(markers) == 1
+    assert markers[0].find_parent(attrs={"data-kind": True})["data-kind"] == "current"
+    assert "7 Oct" in markers[0].find("text").get_text()
+    assert markers[0].find("title").get_text() == "Booked up to 7 Oct 2026, forecast after"
+    assert [li["data-legend"] for li in soup.select("[data-legend]")] == [
+        "actual",
+        "forecast",
+        "estimate",
     ]
-    soup = render("month_columns", "month_columns(months)", months=months)
-    svg = soup.find("svg")
+
+
+def test_cycle_columns_macro_axis_labels_are_rotated_and_inside_the_viewbox(render):
+    svg = _cycle_chart(render).find("svg")
     _, min_y, _, box_height = _viewbox(svg)
-    assert min_y <= -38
-    values = svg.select("[data-part=value]")
-    for value, rect in zip(values, svg.find_all("rect"), strict=True):
-        assert value["font-size"] == "10"
-        assert value["transform"] == f"rotate(-90 {value['x']} {value['y']})"
-        rect_x = float(rect["x"])
-        assert rect_x <= float(value["x"]) <= rect_x + float(rect["width"])
-        assert min_y + 36 <= float(value["y"]) < float(rect["y"])
-    month_labels = [t for t in svg.find_all("text") if not t.has_attr("data-part")]
-    assert len(month_labels) == len(months)
-    for label in month_labels:
-        assert label["font-size"] == "10"
+    labels = svg.select("text[data-part=axis]")
+    assert [label.get_text() for label in labels][6] == "25 Sep \u2013 24 Oct"
+    assert len(labels) == 13
+    for label in labels:
+        assert label["transform"] == f"rotate(-90 {label['x']} {label['y']})"
         assert min_y <= float(label["y"]) <= min_y + box_height
 
 

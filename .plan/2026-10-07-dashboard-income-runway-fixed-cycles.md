@@ -1,5 +1,5 @@
 # Dashboard income runway and fixed-cost pay cycles
-status: WAITING
+status: RUNNING
 created: 2026-10-07 · updated: 2026-10-07
 goal: The runway bar reaches out to the expected monthly income instead of shrinking with a negative balance, and the Fixed costs chart shows actual and forecast fixed costs per pay cycle instead of 12 calendar months.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -16,7 +16,7 @@ In scope: a pure expected-income function in `cashflow` that reuses the salary-d
 
 Out of scope: the Payoff page (it works from rows), the Keep the lights on forecast, Settings, the projection and traffic-light rules, the fixed-cost rows table and the Monthly equivalent figure (it stays as computed today).
 
-Constraints: AGENTS.md rules: strict TDD, integer cents, the estimate date and `today` passed in as parameters, pure core with a thin service, `tests/test_architecture.py` import rules, components macros, no inline `<style>`, `eur`/`date` display, page tests through `tests/html.py` hooks, `sonar.css` rebuilt and committed after template changes, ruff clean, no dead code. Decisions D1-D12 below.
+Constraints: AGENTS.md rules: strict TDD, integer cents, the estimate date and `today` passed in as parameters, pure core with a thin service, `tests/test_architecture.py` import rules, components macros, no inline `<style>`, `eur`/`date` display, page tests through `tests/html.py` hooks, `sonar.css` rebuilt and committed after template changes, ruff clean, no dead code. Decisions D1-D13 below.
 
 Definition of done: Pure tests prove the worked income and cycle examples in N02 and N03. The dashboard and `/api/dashboard` expose the expected income and 13 pay-cycle totals. The runway and Fixed costs card pass the visual gate at desktop and 375px, light and dark, on the real sample. SPEC §13 states the new rules. The final check passes `verify` and SPEC §11 and §12.
 
@@ -34,13 +34,13 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 - D10 Chart look: actual and the current cycle's booked part are solid sky; forecast parts are amber at lower opacity; the peak highlight is dropped because amber now means forecast. The current column stacks booked under forecast. A marker over the current column (`data-part="estimate"`) is labelled with the short estimate date, titled "Booked up to <date>, forecast after". Axis labels are rotated cycle ranges such as "25 Sep – 24 Oct". The legend has Actual, Forecast and the estimate marker | confirmed
 - D11 The table: summary "Pay-cycle totals as table", id `cycles`, columns Cycle (range), Type (Actual, Current, Forecast), Booked, Forecast, Total, one `data-row` per cycle with `data-field` hooks | confirmed
 - D12 Pre-authorized mid-run: rebuild and commit `src/sonar/web/static/sonar.css` after template changes; start the app on a temp DB with the real sample, salary day and balance set, for smoke and visual runs (N05, N06, N08, N09) | confirmed
-- D13 `samples/` does not exist in this checkout (gitignored, `.gitignore:1`), and the only fixture (`tests/fixtures/db_girokonto.csv`, 4 days of rows) cannot fill 6 actual pay cycles. The N08 gate needs a real export covering at least 7 months | proposed · recommend: the owner copies a Deutsche Bank Girokonto CSV export (at least 7 months) into `samples/`, then N01 is re-run unchanged · alt: N08 writes an anonymized synthetic export spanning 7 months under `$TMPDIR` (never tracked) and imports that instead, and N01 drops C4
+- D13 The N08 gate needs a real export covering at least 7 months to fill 6 actual pay cycles; the only fixture (`tests/fixtures/db_girokonto.csv`, 4 days of rows) cannot. The owner copied a Deutsche Bank export (2026-01-01 to 2026-10-07, about 9 months) into `samples/` (gitignored, `.gitignore:1`); N08 uses it and N01 is re-run unchanged | confirmed
 
 ## Graph
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | preflight | check | - | -/haiku | 1 | 1 | WAITING | ask: D13 |
+| N01 | preflight | check | - | -/haiku | 1 | 1 | DONE | |
 | N02 | expected monthly income | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -183,3 +183,9 @@ check: FAIL C4
 plan: ASK D13
 - C4 failed: samples/ is absent (gitignored); AGENTS.md makes an empty samples/ a human checkpoint
 - Added D13 proposed: owner supplies an export of at least 7 months (recommended) or N08 uses a synthetic one in TMPDIR; brief unchanged until answered
+plan: REPLANNED
+- D13 confirmed: owner copied a Deutsche Bank export (2026-01-01 to 2026-10-07, ~9 months) into samples/
+- Brief unchanged; C4 now passes, N08 uses that sample
+
+### N01 try 1 · 2026-10-07
+check: PASS 4/4

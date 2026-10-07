@@ -41,8 +41,8 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 1 | DONE | |
-| N02 | expected monthly income | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
-| N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | expected monthly income | exec | N01 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N05 | runway to income | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
 | N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
@@ -189,3 +189,24 @@ plan: REPLANNED
 
 ### N01 try 1 · 2026-10-07
 check: PASS 4/4
+
+### N02 try 1 · 2026-10-07
+exec: DONE · 1279 passed
+- Added cashflow/income.py: ExpectedIncome, expected_income (best salary of 3 complete cycles by payday distance + recurring monthly equivalent, None without salary)
+- Recurring: yearly sum amount*12//interval, one half-up rounding on total/12
+
+### N03 try 1 · 2026-10-07
+exec: DONE · 1282 passed
+- payday.next_cycles; forecast.CycleCost, cycle_costs (6 actual, current, 6 forecast), FixedCosts.cycles default ()
+- booked = fixed-group debits; current cycle capped at estimate date; forecast via fixed_due from estimate+1
+
+### N02 try 1 · 2026-10-07
+check: PASS 2/2
+
+### N03 try 1 · 2026-10-07
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-07
+verify: FAIL C3
+- C3 src/sonar/cashflow/income.py:23-24 - public module constants CYCLES_LOOKED_AT and MONTHS_PER_YEAR are added besides ExpectedIncome and expected_income - expected no other public name (underscore-private or inlined)

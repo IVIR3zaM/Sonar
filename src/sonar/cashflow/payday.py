@@ -90,6 +90,17 @@ def complete_cycles(today: date, salary_day: int, count: int) -> tuple[Cycle, ..
     return tuple(cycles)
 
 
+def next_cycles(today: date, salary_day: int, count: int) -> tuple[Cycle, ...]:
+    """The `count` cycles after the current one, oldest first, contiguous."""
+    cycles = []
+    start = current_cycle(today, salary_day).end + timedelta(days=1)
+    for _ in range(count):
+        end = next_payday(start, salary_day) - timedelta(days=1)
+        cycles.append(Cycle(start, end))
+        start = end + timedelta(days=1)
+    return tuple(cycles)
+
+
 def _add_months(year: int, month: int, offset: int) -> tuple[int, int]:
     # 0-based month arithmetic so it carries across year boundaries cleanly.
     total = (month - 1) + offset

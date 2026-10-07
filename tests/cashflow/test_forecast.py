@@ -3,11 +3,13 @@ from datetime import date
 import pytest
 
 from sonar.cashflow.forecast import (
+    CycleCost,
     DueItem,
     FixedCostRow,
     FixedSource,
     MonthTotal,
     Projection,
+    cycle_costs,
     fixed_costs,
     fixed_due,
     fixed_range,
@@ -16,6 +18,7 @@ from sonar.cashflow.forecast import (
 )
 from sonar.debts.model import Installment, MatchRule, debt_schedule, installment_status
 from sonar.recurring.schedule import SchedulePeriod, pause_after, resume_on
+from sonar.transactions import ParsedTransaction
 
 
 def _water(last_paid: date | None = date(2026, 9, 15)) -> FixedSource:
@@ -188,3 +191,101 @@ def test_project_raises_both_ends_by_the_inflow_total_with_a_variable_range():
 )
 def test_traffic_light_boundaries(worst, best, limit, expected):
     assert traffic_light(Projection(worst, best), limit) == expected
+
+
+CATEGORY_TYPES = {
+    "rent": "fixed",
+    "insurance": "fixed",
+    "groceries": "lights_on",
+    "refund": "fixed",
+}
+
+
+def _booking(day: date, cents: int, category: str) -> tuple[ParsedTransaction, str]:
+    tx = ParsedTransaction(
+        account="DE00 0000 0000 0000 0000 00",
+        booking_date=day,
+        value_date=day,
+        amount_cents=cents,
+        currency="EUR",
+        counterparty="Example",
+        purpose="",
+        raw_row="",
+    )
+    return tx, category
+
+
+def _cycle_example_sources() -> tuple[FixedSource, ...]:
+    return (
+        FixedSource(
+            "Rent",
+            (SchedulePeriod(date(2026, 1, 1), None, 100000, 1, 1),),
+            date(2026, 10, 1),
+        ),
+        FixedSource(
+            "Insurance",
+            (SchedulePeriod(date(2026, 1, 15), None, 45000, 3, 15),),
+            date(2026, 7, 15),
+        ),
+        FixedSource(
+            "Phone",
+            (SchedulePeriod(date(2026, 1, 10), date(2026, 11, 30), 5000, 1, 10),),
+            date(2026, 9, 10),
+        ),
+    )
+
+
+def test_cycle_costs_worked_example_spans_13_cycles():
+    rows = [
+        _booking(date(2026, 9, 1), -100000, "rent"),
+        _booking(date(2026, 9, 10), -5000, "rent"),
+        _booking(date(2026, 10, 1), -100000, "rent"),
+        _booking(date(2026, 9, 5), -8000, "groceries"),
+        _booking(date(2026, 9, 20), 2000, "refund"),
+    ]
+
+    costs = cycle_costs(_cycle_example_sources(), rows, CATEGORY_TYPES, 25, date(2026, 10, 7))
+
+    def cycle(start, end, kind, booked=0, forecast=0):
+        return CycleCost(start, end, kind, booked, forecast)
+
+    assert costs == (
+        cycle(date(2026, 3, 25), date(2026, 4, 23), "actual"),
+        cycle(date(2026, 4, 24), date(2026, 5, 24), "actual"),
+        cycle(date(2026, 5, 25), date(2026, 6, 24), "actual"),
+        cycle(date(2026, 6, 25), date(2026, 7, 23), "actual"),
+        cycle(date(2026, 7, 24), date(2026, 8, 24), "actual"),
+        cycle(date(2026, 8, 25), date(2026, 9, 24), "actual", 105000),
+        cycle(date(2026, 9, 25), date(2026, 10, 22), "current", 100000, 50000),
+        cycle(date(2026, 10, 23), date(2026, 11, 24), "forecast", 0, 105000),
+        cycle(date(2026, 11, 25), date(2026, 12, 24), "forecast", 0, 100000),
+        cycle(date(2026, 12, 25), date(2027, 1, 24), "forecast", 0, 145000),
+        cycle(date(2027, 1, 25), date(2027, 2, 24), "forecast", 0, 100000),
+        cycle(date(2027, 2, 25), date(2027, 3, 24), "forecast", 0, 100000),
+        cycle(date(2027, 3, 25), date(2027, 4, 22), "forecast", 0, 145000),
+    )
+
+
+def test_cycle_costs_early_payment_in_the_current_cycle_is_not_forecast_again():
+    rent = FixedSource(
+        "Rent", (SchedulePeriod(date(2026, 1, 1), None, 100000, 1, 10),), date(2026, 10, 8)
+    )
+    rows = [_booking(date(2026, 10, 8), -100000, "rent")]
+
+    costs = cycle_costs((rent,), rows, CATEGORY_TYPES, 25, date(2026, 10, 9))
+
+    current = costs[6]
+    assert (current.kind, current.booked_cents, current.forecast_cents) == ("current", 100000, 0)
+    assert current.total_cents == 100000
+    assert costs[7].forecast_cents == 100000
+
+
+def test_cycle_costs_current_cycle_ignores_bookings_after_the_estimate_date():
+    rows = [
+        _booking(date(2026, 10, 7), -1000, "rent"),
+        _booking(date(2026, 10, 8), -2000, "rent"),
+    ]
+
+    costs = cycle_costs((), rows, CATEGORY_TYPES, 25, date(2026, 10, 7))
+
+    assert costs[6].booked_cents == 1000

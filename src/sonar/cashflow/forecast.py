@@ -11,10 +11,16 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
+from sonar.cashflow import payday
+from sonar.cashflow.payday import Cycle
+from sonar.categorization import groups
 from sonar.recurring import schedule
+from sonar.recurring.detect import Row
 from sonar.recurring.schedule import SchedulePeriod
 
 MONTHS_SHOWN = 12
+ACTUAL_CYCLES = 6
+FORECAST_CYCLES = 6
 
 
 @dataclass(frozen=True)
@@ -53,10 +59,26 @@ class MonthTotal:
 
 
 @dataclass(frozen=True)
+class CycleCost:
+    """Fixed costs of one pay cycle: what is booked and what is still expected."""
+
+    start: date
+    end: date
+    kind: Literal["actual", "current", "forecast"]
+    booked_cents: int
+    forecast_cents: int
+
+    @property
+    def total_cents(self) -> int:
+        return self.booked_cents + self.forecast_cents
+
+
+@dataclass(frozen=True)
 class FixedCosts:
     monthly_equivalent_cents: int
     rows: tuple[FixedCostRow, ...]
     months: tuple[MonthTotal, ...]
+    cycles: tuple[CycleCost, ...] = ()
 
 
 def fixed_due(sources: tuple[FixedSource, ...], start: date, end: date) -> list[DueItem]:
@@ -73,6 +95,35 @@ def fixed_due(sources: tuple[FixedSource, ...], start: date, end: date) -> list[
                 continue
             items.append(DueItem(source.name, occurrence.due_date, occurrence.amount_cents))
     return sorted(items, key=lambda item: (item.due_date, item.name))
+
+
+def cycle_costs(
+    sources: tuple[FixedSource, ...],
+    rows: Sequence[Row],
+    category_types: dict[str, str],
+    salary_day: int,
+    estimate_date: date,
+) -> tuple[CycleCost, ...]:
+    """Fixed costs per pay cycle: 6 actual, the current and 6 forecast cycles, oldest first."""
+    past = tuple(reversed(payday.complete_cycles(estimate_date, salary_day, ACTUAL_CYCLES)))
+    current = payday.current_cycle(estimate_date, salary_day)
+    ahead = payday.next_cycles(estimate_date, salary_day, FORECAST_CYCLES)
+    debits = _fixed_debits(rows, category_types)
+    due = fixed_due(sources, estimate_date + timedelta(days=1), ahead[-1].end)
+
+    def booked(cycle: Cycle, until: date) -> int:
+        return sum(cents for day, cents in debits if cycle.start <= day <= min(cycle.end, until))
+
+    def forecast(cycle: Cycle) -> int:
+        return sum(i.amount_cents for i in due if cycle.start <= i.due_date <= cycle.end)
+
+    return (
+        *(CycleCost(c.start, c.end, "actual", booked(c, c.end), 0) for c in past),
+        CycleCost(
+            current.start, current.end, "current", booked(current, estimate_date), forecast(current)
+        ),
+        *(CycleCost(c.start, c.end, "forecast", 0, forecast(c)) for c in ahead),
+    )
 
 
 def project(
@@ -139,6 +190,14 @@ def month_totals(sources: tuple[FixedSource, ...], today: date) -> tuple[MonthTo
         for occurrence in schedule.occurrences(source.periods, first, end):
             totals[occurrence.due_date.replace(day=1)] += occurrence.amount_cents
     return tuple(MonthTotal(month, totals[month]) for month in firsts)
+
+
+def _fixed_debits(rows: Sequence[Row], category_types: dict[str, str]) -> list[tuple[date, int]]:
+    return [
+        (tx.booking_date, -tx.amount_cents)
+        for tx, category in rows
+        if tx.amount_cents < 0 and category_types.get(category or "") == groups.FIXED
+    ]
 
 
 def _row(source: FixedSource, today: date) -> FixedCostRow | None:

@@ -1,5 +1,5 @@
 # Dashboard income runway and fixed-cost pay cycles
-status: READY
+status: WAITING
 created: 2026-10-07 · updated: 2026-10-07
 goal: The runway bar reaches out to the expected monthly income instead of shrinking with a negative balance, and the Fixed costs chart shows actual and forecast fixed costs per pay cycle instead of 12 calendar months.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -34,12 +34,13 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 - D10 Chart look: actual and the current cycle's booked part are solid sky; forecast parts are amber at lower opacity; the peak highlight is dropped because amber now means forecast. The current column stacks booked under forecast. A marker over the current column (`data-part="estimate"`) is labelled with the short estimate date, titled "Booked up to <date>, forecast after". Axis labels are rotated cycle ranges such as "25 Sep – 24 Oct". The legend has Actual, Forecast and the estimate marker | confirmed
 - D11 The table: summary "Pay-cycle totals as table", id `cycles`, columns Cycle (range), Type (Actual, Current, Forecast), Booked, Forecast, Total, one `data-row` per cycle with `data-field` hooks | confirmed
 - D12 Pre-authorized mid-run: rebuild and commit `src/sonar/web/static/sonar.css` after template changes; start the app on a temp DB with the real sample, salary day and balance set, for smoke and visual runs (N05, N06, N08, N09) | confirmed
+- D13 `samples/` does not exist in this checkout (gitignored, `.gitignore:1`), and the only fixture (`tests/fixtures/db_girokonto.csv`, 4 days of rows) cannot fill 6 actual pay cycles. The N08 gate needs a real export covering at least 7 months | proposed · recommend: the owner copies a Deutsche Bank Girokonto CSV export (at least 7 months) into `samples/`, then N01 is re-run unchanged · alt: N08 writes an anonymized synthetic export spanning 7 months under `$TMPDIR` (never tracked) and imports that instead, and N01 drops C4
 
 ## Graph
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | preflight | check | - | -/haiku | 0 | 0 | TODO | |
+| N01 | preflight | check | - | -/haiku | 1 | 1 | WAITING | ask: D13 |
 | N02 | expected monthly income | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -173,3 +174,12 @@ Done when:
 - C5 [smoke] Start `uv run python -c` with `create_app` on a temp DB under `$TMPDIR`. `curl -s http://127.0.0.1:8000/api/dashboard` returns JSON with `expected_income` null and `fixed_costs.cycles` [] and no `months` key. `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/` prints 200. Stop the app.
 
 ## Log
+
+### N01 try 1 · 2026-10-07
+check: FAIL C4
+- C4 exit 1: ls: cannot access 'samples/': No such file or directory
+
+### N01 replan 1 · 2026-10-07
+plan: ASK D13
+- C4 failed: samples/ is absent (gitignored); AGENTS.md makes an empty samples/ a human checkpoint
+- Added D13 proposed: owner supplies an export of at least 7 months (recommended) or N08 uses a synthetic one in TMPDIR; brief unchanged until answered

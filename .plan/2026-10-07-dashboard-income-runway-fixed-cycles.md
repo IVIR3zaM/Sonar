@@ -1,5 +1,5 @@
 # Dashboard income runway and fixed-cost pay cycles
-status: RUNNING
+status: WAITING
 created: 2026-10-07 · updated: 2026-10-07
 goal: The runway bar reaches out to the expected monthly income instead of shrinking with a negative balance, and the Fixed costs chart shows actual and forecast fixed costs per pay cycle instead of 12 calendar months.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -46,7 +46,7 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 2 | 0 | DONE | |
 | N05 | runway to income | exec | N04 | opus/sonnet | 1 | 0 | DONE | |
 | N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 1 | 1 | DONE | |
-| N07 | SPEC amendment | exec | N06 | haiku/sonnet | 0 | 1 | TODO | |
+| N07 | SPEC amendment | exec | N06 | sonnet/sonnet | 1 | 2 | DONE | |
 | N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
 
@@ -139,19 +139,29 @@ Done when:
 - C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N07 SPEC amendment
-Do: SPEC §13 ends with exactly one bullet "Dashboard income runway and pay-cycle fixed costs (§9, §11, §12)" right after the Payoff ladder bullet (`SPEC.md:255`). It states D1-D11 in plain words and changes no other line of SPEC. If the working tree already has that bullet, check it against this brief and complete it in place; never add a second one.
-Context: D1 the salary rule per complete cycle and its max over 3; D2 the recurring monthly equivalent; D3 the no-salary fallback; D4 the runway's right end, the balance→income segment, the scale mark and the legend.
-  D5-D7: 13 pay-cycle columns from the estimate date: 6 actual fixed debits, the current cycle booked to the estimate date plus forecast, and 6 forecast cycles of every fixed row due, debts until their end.
-  D8: no salary day → a settings hint. D10/D11: the chart look and the table columns. D9: `/api/dashboard` `expected_income` and `fixed_costs.cycles` replace `fixed_costs.months`.
-  Say it overrides §9's "per-month totals for the next 12 months", §11's "the next 12 months per month" and §12's "12-month SVG column chart" and "spanning overdraft limit, 0 and balance". The Monthly equivalent is unchanged. Use the style of the existing §13 bullets (`SPEC.md:249`): one paragraph, no real names.
-  Runs after N06, so verify sees the finished runway and cycle-chart code; touch nothing outside SPEC.md.
-Read: `SPEC.md:118-148`, `SPEC.md:170-205`, `SPEC.md:240-260`, `git diff SPEC.md`
+Do: SPEC §13 holds exactly one bullet "Dashboard income runway and pay-cycle fixed costs (§9, §11, §12)" right after the Payoff ladder bullet (`SPEC.md:255`). It is at `SPEC.md:256` now: rewrite that line in place so it states F1-F11 below and the overrides, and nothing else (no per-row or per-debt cycle amounts, no "Income before payday" card, no income-series list in the API: those are not this feature). Never add a second bullet; change no other SPEC line.
+Context: the facts the bullet states, in plain words, as one paragraph in the style of `SPEC.md:249`, no real names:
+  F1 (D1) Expected salary = the highest, over the 3 complete pay cycles before the estimate date's cycle, of the sum of credits in `income`-group categories booked within 7 days of that cycle's starting payday; a salary booked a few days early counts for its payday's cycle.
+  F2 (D2) Recurring income per month = the sum over the detected recurring income series (§13 Recurring income) of amount × 12 / interval months, divided by 12 and rounded half up once; expected monthly income = expected salary + recurring income per month.
+  F3 (D3) Expected salary 0 → no expected income, even with recurring income; the runway then is unchanged (no income segment, mark or legend item).
+  F4 (D4) Runway: left end unchanged; right end = the highest of 0, balance, worst, best and expected income. When income > balance, a violet segment from the balance to the income is drawn over the zones; an "income" scale mark labels the right end; the legend reads "Expected monthly income X", with "(salary Y + recurring Z)" when there is recurring income; the bar's label and title name the income.
+  F5 (D5) Fixed costs per pay cycle: 13 columns oldest first, anchored on the estimate date (the balance's as-of date, else today): 6 actual (the complete cycles), 1 current, 6 forecast (the next cycles).
+  F6 (D6) Booked = the sum of the absolute debits in `fixed`-group categories (debt categories included) inside the cycle; for the current cycle only up to and including the estimate date; credits and refunds are ignored.
+  F7 (D7) Forecast = every fixed payment due from the day after the estimate date to the end of the 6th next cycle, by cycle: every recurring row and every debt schedule until its end, at every interval; a payment already booked early is not counted twice. Actual cycles have no forecast, forecast cycles no booked part.
+  F8 (D8) No salary day → no cycles: the card hides the chart and table and shows a hint linking to the settings; the Monthly equivalent and the rows table stay.
+  F9 (D9) The Monthly equivalent is unchanged. `/api/dashboard` drops `fixed_costs.months` and gains `fixed_costs.cycles` (each `start`, `end` as ISO dates, `kind` actual|current|forecast, `booked_cents`, `forecast_cents`) and `expected_income` (`salary_cents`, `recurring_cents`, `total_cents`, or null).
+  F10 (D10) Chart: actual columns and the current column's booked part solid sky; forecast parts translucent amber; no peak highlight; the current column stacks booked under forecast; a marker over it is labelled with the short estimate date and titled "Booked up to <date>, forecast after"; axis labels are rotated cycle ranges such as "25 Sep – 24 Oct"; the legend has Actual, Forecast and the estimate marker.
+  F11 (D11) A table under "Pay-cycle totals as table" with the columns Cycle, Type (Actual, Current, Forecast), Booked, Forecast and Total, one row per cycle.
+  Overrides, quoted in the bullet: §9 "per-month totals for the next 12 months" (`SPEC.md:138`), §11 "the next 12 months per month" (`SPEC.md:174`), §12 "12-month SVG column chart" and "spanning overdraft limit, 0 and balance" (`SPEC.md:202`).
+  Code is finished (N02-N06); touch nothing outside SPEC.md.
+Read: `SPEC.md:136-140`, `SPEC.md:174`, `SPEC.md:202`, `SPEC.md:249-256`, `git diff SPEC.md`
 Write: `SPEC.md`
 Test first: -
 Done when:
-- C1 [cmd] `git diff --numstat SPEC.md | awk '{exit !($1>=1 && $2==0)}' && grep -q "pay-cycle" SPEC.md`
-- C2 [review] The new bullet covers every Decision D1-D11 listed above and names each overridden §9, §11 and §12 clause; no other SPEC line changed.
-- C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
+- C1 [cmd] `git diff --numstat SPEC.md | awk '{exit !($1==1 && $2==0)}' && test "$(grep -c '^- Dashboard income runway and pay-cycle fixed costs' SPEC.md)" = 1 && sed -n 256p SPEC.md | grep -q 'fixed_costs.cycles'`
+- C2 [cmd] `L="$(sed -n 256p SPEC.md)"; for w in 'expected_income' 'fixed_costs.months' 'half up' '13' 'violet' 'Pay-cycle totals as table' 'Booked up to' 'per-month totals for the next 12 months' 'the next 12 months per month' '12-month SVG column chart' 'spanning overdraft limit, 0 and balance'; do printf '%s' "$L" | grep -qF "$w" || { echo "missing: $w"; exit 1; }; done; ! printf '%s' "$L" | grep -qiE 'per-debt|Income before payday'`
+- C3 [review] `SPEC.md:256` states each of F1-F11 above without contradicting it, quotes the four overridden clauses, and states nothing beyond them; the diff adds only that line.
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N08 visual check of the dashboard
 Do: Check `/` in the browser pane at desktop and 375px, light and dark, following the config `visual_recipe` on a temp DB. Use the newest sample, salary day 26 and a balance dated at the sample's last booking.
@@ -273,4 +283,35 @@ exec: DONE · 1309 passed, 4 skipped
 - charts.month_label kept: still used by monthly and lights-on pages; sonar.css rebuilt
 - estimate marker falls back to 'today' when no balance date
 check: PASS 4/4
+verify: PASS
+
+### N07 try 1 · 2026-10-07
+exec: DONE · tests: 1309 passed
+- Added SPEC §13 bullet describing dashboard income runway and pay-cycle fixed costs
+- Covers D1-D11: salary rule, monthly equivalent, no-salary fallback, runway features, 13 pay-cycle columns, settings hint, API structure with expected_income, chart and table columns
+- Explicitly overrides §9 per-month view, §11 12-month monthly view, §12 column chart and scale spanning
+check: PASS 2/2
+verify: FAIL C2
+- C2 SPEC.md:256 - Decisions D1-D11 are not in the verify brief, so coverage of each decision is not evidenced; the 4 quoted overridden clauses do exist verbatim (SPEC.md:138,174,202) and only one line was added - expected the brief to carry D1-D11 so each can be checked against the bullet
+
+### N07 try 2 · 2026-10-07
+exec: DONE · 1309 tests passed
+- SPEC.md line 256 adds bullet covering pay-cycle fixed costs amendment
+- Covers all decisions D1-D11: salary rule, monthly equivalent, no-salary fallback, runway bar design, 13-cycle columns, settings hint, API changes, chart and table structure
+- Names all overridden clauses from §9, §11, §12
+check: PASS 2/2
+verify: FAIL C2
+- C2 SPEC.md:256 - Decisions D1-D11 are not in the verify brief, so coverage of each cannot be evidenced (overridden clauses at SPEC.md:138, 174, 202 do exist and the diff is one added line only) - brief must list the decisions for the verifier
+
+### N07 replan 2 · 2026-10-07
+plan: REPLANNED
+- Cause: brief named D1-D11 only by topic, so verify could not check coverage; the SPEC.md:256 line also misstates the feature (per-debt cycle amounts, Income before payday card, salary rule, expected_income shape)
+- Brief now restates D1-D11 as facts F1-F11 with the overridden clauses and their lines; rewrite SPEC.md:256 in place, nothing beyond F1-F11
+- New [cmd] C1/C2: one added line, one bullet, key terms and quoted clauses present, per-debt/Income before payday absent; C3 review checks F1-F11; model haiku/sonnet -> sonnet/sonnet
+
+### N07 try 1 · 2026-10-07
+exec: DONE · 1309 passed
+- Rewrote SPEC.md:256 in place to state F1-F11 and quote the four overridden clauses
+- Removed per-row/per-debt cycle amounts and the Income before payday card from the bullet
+check: PASS 3/3
 verify: PASS

@@ -7,7 +7,6 @@ from sonar.cashflow.forecast import (
     DueItem,
     FixedCostRow,
     FixedSource,
-    MonthTotal,
     Projection,
     cycle_costs,
     fixed_costs,
@@ -42,22 +41,14 @@ def _insurance() -> FixedSource:
     return FixedSource("Insurance", periods, date(2026, 3, 1))
 
 
-def _months(*totals: int, start: date = date(2026, 9, 1)) -> tuple[MonthTotal, ...]:
-    result = []
-    for offset, total in enumerate(totals):
-        year, month = divmod(start.year * 12 + start.month - 1 + offset, 12)
-        result.append(MonthTotal(date(year, month + 1, 1), total))
-    return tuple(result)
-
-
-def test_fixed_costs_water_example_by_month():
+def test_fixed_costs_water_example_monthly_equivalent():
     costs = fixed_costs((_water(),), date(2026, 9, 23))
 
     # Sep 2026 .. Aug 2027; Sep 15 counts although it is already paid.
-    assert costs.months == _months(24000, 0, 24000, 0, 0, 26000, 0, 26000, 0, 26000, 0, 26000)
     # 2 * 24000 + 4 * 26000 = 152000; 152000 / 12 = 12666.67
     assert costs.monthly_equivalent_cents == 12667
     assert costs.rows == (FixedCostRow("Water", 15, 2, 24000, date(2026, 11, 15)),)
+    assert costs.cycles == ()
 
 
 def test_fixed_costs_rows_sorted_by_day_then_name_and_annual_month_stands_out():
@@ -70,7 +61,6 @@ def test_fixed_costs_rows_sorted_by_day_then_name_and_annual_month_stands_out():
         FixedCostRow("Rent", 1, 1, 100000, date(2026, 10, 1)),
         FixedCostRow("Water", 15, 2, 24000, date(2026, 11, 15)),
     )
-    assert costs.months[6] == MonthTotal(date(2027, 3, 1), 220000)
     # (152000 + 12 * 100000 + 120000) / 12 = 122666.67
     assert costs.monthly_equivalent_cents == 122667
 
@@ -89,7 +79,6 @@ def test_fixed_costs_omits_a_source_that_ended_before_today():
     costs = fixed_costs((ended,), date(2026, 9, 23))
 
     assert costs.rows == ()
-    assert costs.months == _months(*[0] * 12)
     assert costs.monthly_equivalent_cents == 0
 
 

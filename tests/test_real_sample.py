@@ -136,8 +136,8 @@ def test_real_sample_dashboard_load(conn: sqlite3.Connection, sample_path: Path)
         f"Dashboard payday should be 2026-09-25, got {dashboard.payday}"
     )
 
-    assert len(dashboard.fixed_costs.months) == 12, (
-        f"Fixed costs should have 12 months, got {len(dashboard.fixed_costs.months)}"
+    assert len(dashboard.fixed_costs.cycles) == 13, (
+        f"Fixed costs should have 13 pay cycles, got {len(dashboard.fixed_costs.cycles)}"
     )
 
     assert dashboard.light in {"green", "yellow", "red"}, (

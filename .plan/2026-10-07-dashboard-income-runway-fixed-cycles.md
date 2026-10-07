@@ -45,7 +45,7 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 2 | 0 | DONE | |
 | N05 | runway to income | exec | N04 | opus/sonnet | 1 | 0 | DONE | |
-| N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
+| N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 1 | 1 | DONE | |
 | N07 | SPEC amendment | exec | N06 | haiku/sonnet | 0 | 1 | TODO | |
 | N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
 | N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
@@ -126,7 +126,7 @@ Context: D10: a new macro `cycle_columns(cycles, estimate_date)` replaces `month
   The current column has a `data-part="estimate"` marker labelled with the short estimate date and titled "Booked up to <date>, forecast after". Axis labels come from a pure `charts.cycle_label(start, end)` → "25 Sep – 24 Oct" and are rotated. The aria-label says 6 past, current and 6 next pay cycles. An HTML legend under the SVG has `data-legend` actual, forecast and estimate.
   D11: `<details>` summary "Pay-cycle totals as table", `<table id="cycles">` with Cycle, Type (Actual, Current, Forecast), Booked, Forecast and Total, each a `data-field`, amounts via `amount(..., colored=false)`. The chart wrapper id becomes `cycle-columns`.
   D8: cycles empty with no salary day → `<p id="cycles-hint">` linking to `/settings`.
-  D9: `FixedCosts` keeps `monthly_equivalent_cents`, `rows` and `cycles` only. The 12-month basis of the Monthly equivalent (`src/sonar/cashflow/forecast.py:107-141`) stays as a private helper with unchanged results. `cycles` loses its default. Delete `MonthTotal`, `month_columns` and `charts.month_label` if unused, with their tests. Update `tests/test_real_sample.py:139` to 13 cycles.
+  D9: `FixedCosts` keeps `monthly_equivalent_cents`, `rows` and `cycles` only. The 12-month basis of the Monthly equivalent (`src/sonar/cashflow/forecast.py:107-141`) stays as a private helper with unchanged results. `cycles` loses its default. Delete `MonthTotal`, `month_columns` and `charts.month_label` if unused, with their tests; the Lights-on `#months-used` hook is unrelated and stays. Update `tests/test_real_sample.py:139` to 13 cycles.
 Read: `src/sonar/web/templates/components/charts.html`, `src/sonar/web/templates/index.html:205-260`, `src/sonar/web/charts.py:145-215`, `src/sonar/cashflow/forecast.py`, `tests/web/test_charts.py:120-300`, `tests/web/test_dashboard_page.py:340-380`, `tests/cashflow/test_forecast.py`, `tests/html.py`
 Write: `src/sonar/web/charts.py`, `src/sonar/web/templates/components/charts.html`, `src/sonar/web/templates/index.html`, `src/sonar/cashflow/forecast.py`, `tests/web/test_charts.py`, `tests/web/test_dashboard_page.py`, `tests/cashflow/test_forecast.py`, `tests/web/test_api_dashboard.py`, `tests/test_real_sample.py`, `src/sonar/web/static/sonar.css`
 Test first: `cycle_label(date(2026, 9, 25), date(2026, 10, 24)) == "25 Sep – 24 Oct"`. The page test reads `#cycles` through `records` and gets 13 rows whose Type runs Actual ×6, Current, Forecast ×6.
@@ -134,7 +134,7 @@ Done when:
 - C1 [cmd] `uv run pytest -q tests/web/test_charts.py tests/web/test_dashboard_page.py tests/cashflow/test_forecast.py tests/web/test_api_dashboard.py`
 - C2 [review] Macro tests: 13 `data-kind` groups. The current group has one booked and one forecast rect, stacked, whose heights sum to the column height. Actual groups have no forecast rect and forecast groups no booked rect. There is one `estimate` marker, and the legend items are present.
 - C3 [review] Page tests: `#cycles` rows have the Booked, Forecast and Total of the fixture; `#cycle-columns` is present with a salary day; `#cycles-hint` links to `/settings` without one; `#monthly-equivalent` is unchanged. The API test asserts that `fixed_costs` has no `months` key.
-- C4 [cmd] `! grep -rnE "MonthTotal|month_columns|fixed_costs\.months|#months" src tests --include=*.py --include=*.html`
+- C4 [cmd] `! grep -rnE "MonthTotal|month_columns|fixed_costs\.months|month-columns|#months([^-_a-zA-Z0-9]|$)|id=\"months\"" src tests --include=*.py --include=*.html`
 - C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && grep -q 'fill-amber-500\\/60' src/sonar/web/static/sonar.css`
 - C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
@@ -248,4 +248,29 @@ exec: DONE · 1301 passed, 4 skipped
 - income scale part uses categorization.groups.INCOME constant because test_no_hardcoded_type_strings forbids the literal 'income' outside groups.py
 - aria-label names income whenever given; to-income rect only when income > balance; SPEC.md diff in tree is not from this node
 check: PASS 3/3
+verify: PASS
+
+### N06 try 1 · 2026-10-07
+exec: DONE · 1309 passed, 4 skipped
+- cycle_columns macro + charts.stacked_columns/cycle_label/day_month; #cycle-columns, #cycles table, #cycles-hint in index.html; FixedCosts.months, MonthTotal, month_totals, month_columns removed (month_label kept: used by monthly/lights_on); sonar.css rebuilt
+- Without a balance estimated_from is None, so the estimate marker reads 'today' (estimate date = today then); per-column value labels dropped per D10
+- C4 grep also hits the unrelated pre-existing #months-used hook in tests/web/test_lights_on_page.py:212 (outside Write); no fixed-costs months references remain
+check: FAIL C4
+- C4 exit 1: tests/web/test_lights_on_page.py:212:    used = page.select_one("#months-used")
+
+### N06 try 2 · 2026-10-07
+exec: BLOCKED · C4 regex '#months' also matches the unrelated Lights-on id '#months-used' (tests/web/test_lights_on_page.py:212, src/sonar/web/templates/lights_on.html:45), outside Write; all Write-scope work done, 1309 passed, ruff clean; fix C4 to e.g. '#months\b' or '#months"'
+
+### N06 replan 1 · 2026-10-07
+plan: REPLANNED
+- Cause: C4 regex '#months' also matched the unrelated Lights-on hook '#months-used' (tests/web/test_lights_on_page.py:212)
+- C4 now matches only the old fixed-costs hooks: '#months' not followed by an id character, id="months", month-columns; checked: passes on the current tree, hits the committed old tests
+- Context notes '#months-used' stays; Do, Write and other criteria unchanged
+
+### N06 try 1 · 2026-10-07
+exec: DONE · 1309 passed, 4 skipped
+- cycle_columns macro (stacked booked/forecast via charts.stacked_columns, estimate marker, legend), #cycles table, #cycles-hint; FixedCosts.months, MonthTotal, month_totals removed; 12-month basis kept as _year_total
+- charts.month_label kept: still used by monthly and lights-on pages; sonar.css rebuilt
+- estimate marker falls back to 'today' when no balance date
+check: PASS 4/4
 verify: PASS

@@ -58,31 +58,61 @@
 </div>
 {%- endmacro %}
 
-{% macro month_columns(months) %}
+{#- cycles: oldest first, each with start, end, kind ("actual", "current" or
+    "forecast"), booked_cents, forecast_cents and total_cents. estimate_date is
+    None without a balance, when the estimate starts from today. #}
+{% macro cycle_columns(cycles, estimate_date) %}
 {%- set height = 80 -%}
 {%- set slot = 24 -%}
-{%- set heights = charts.columns(months|map(attribute="total_cents")|list, height) -%}
-{%- set peak = heights|max if heights else 0 -%}
-<svg role="img" aria-label="Fixed costs per month for the next {{ months|length }} months"
-     viewBox="0 -40 {{ months|length * slot }} {{ height + 54 }}" class="block h-36 w-full sm:h-48">
-  <title>Fixed costs per month</title>
-  {%- for m in months %}
-  {%- set h = heights[loop.index0] %}
-  {%- set label = charts.month_label(m.month) %}
-  <rect x="{{ loop.index0 * slot + 4 }}" y="{{ height - h }}" width="{{ slot - 8 }}" height="{{ h }}"
-        class="{{ 'fill-amber-500 dark:fill-amber-400' if h == peak and peak > 0 else 'fill-sky-500 dark:fill-sky-400' }}"
-        data-cents="{{ m.total_cents }}">
-    <title>{{ label }}: {{ m.total_cents|eur }}</title>
-  </rect>
-  {%- set value_x = loop.index0 * slot + slot // 2 %}
-  {%- set value_y = height - h - 3 %}
-  <text x="{{ value_x }}" y="{{ value_y }}" text-anchor="start" dominant-baseline="central" font-size="10"
-        transform="rotate(-90 {{ value_x }} {{ value_y }})"
-        class="fill-gray-500 dark:fill-gray-400" data-part="value" data-cents="{{ m.total_cents }}">{{ charts.compact_eur(m.total_cents) }}</text>
-  <text x="{{ loop.index0 * slot + slot // 2 }}" y="{{ height + 10 }}" text-anchor="middle" font-size="10"
-        class="fill-gray-500 dark:fill-gray-400">{{ label[:3] }}</text>
+{%- set top = 14 -%}
+{%- set bottom = 76 -%}
+{%- set stacks = charts.stacked_columns(cycles|map(attribute="booked_cents")|list, cycles|map(attribute="forecast_cents")|list, height) -%}
+{%- set past = cycles|selectattr("kind", "equalto", "actual")|list|length -%}
+{%- set ahead = cycles|selectattr("kind", "equalto", "forecast")|list|length -%}
+{%- set summary = "Fixed costs for " ~ past ~ " past, the current and " ~ ahead ~ " next pay cycles" -%}
+{%- set estimate_short = charts.day_month(estimate_date) if estimate_date else "today" -%}
+{%- set estimate_long = estimate_date|date if estimate_date else "today" -%}
+<svg role="img" aria-label="{{ summary }}"
+     viewBox="0 {{ -top }} {{ cycles|length * slot }} {{ top + height + bottom }}" class="block h-44 w-full sm:h-56">
+  <title>{{ summary }}</title>
+  {%- for c in cycles %}
+  {%- set s = stacks[loop.index0] %}
+  {%- set x = loop.index0 * slot %}
+  {%- set center = x + slot // 2 %}
+  {%- set label = charts.cycle_label(c.start, c.end) %}
+  <g data-kind="{{ c.kind }}">
+    {%- if c.kind != "forecast" %}
+    <rect data-part="booked" x="{{ x + 4 }}" y="{{ height - s.booked_height }}" width="{{ slot - 8 }}" height="{{ s.booked_height }}"
+          class="fill-sky-500 dark:fill-sky-400" data-cents="{{ c.booked_cents }}">
+      <title>{{ label }}: booked {{ c.booked_cents|eur }}</title>
+    </rect>
+    {%- endif %}
+    {%- if c.kind != "actual" %}
+    <rect data-part="forecast" x="{{ x + 4 }}" y="{{ height - s.booked_height - s.forecast_height }}" width="{{ slot - 8 }}" height="{{ s.forecast_height }}"
+          class="fill-amber-500/60 dark:fill-amber-400/60" data-cents="{{ c.forecast_cents }}">
+      <title>{{ label }}: forecast {{ c.forecast_cents|eur }}</title>
+    </rect>
+    {%- endif %}
+    {%- if c.kind == "current" %}
+    <g data-part="estimate">
+      <title>Booked up to {{ estimate_long }}, forecast after</title>
+      <rect x="{{ x + 1 }}" y="{{ height - s.booked_height - 1 }}" width="{{ slot - 2 }}" height="2"
+            class="fill-gray-900 dark:fill-white"></rect>
+      <text x="{{ center }}" y="{{ height - s.booked_height - s.forecast_height - 4 }}" text-anchor="middle" font-size="8"
+            class="fill-gray-900 dark:fill-white">{{ estimate_short }}</text>
+    </g>
+    {%- endif %}
+    <text data-part="axis" x="{{ center }}" y="{{ height + 4 }}" text-anchor="end" dominant-baseline="central" font-size="8"
+          transform="rotate(-90 {{ center }} {{ height + 4 }})"
+          class="fill-gray-500 dark:fill-gray-400">{{ label }}</text>
+  </g>
   {%- endfor %}
 </svg>
+<ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+  <li data-legend="actual" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500 dark:bg-sky-400" aria-hidden="true"></span>Booked</li>
+  <li data-legend="forecast" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-amber-500/60 dark:bg-amber-400/60" aria-hidden="true"></span>Forecast</li>
+  <li data-legend="estimate" class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3 bg-gray-900 dark:bg-white" aria-hidden="true"></span>Booked up to {{ estimate_short }}</li>
+</ul>
 {%- endmacro %}
 
 {% macro category_bars(categories) %}

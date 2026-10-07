@@ -5,7 +5,6 @@ Feeds the dashboard (SPEC §9). Pure functions only: `today` is always passed in
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -18,7 +17,8 @@ from sonar.recurring import schedule
 from sonar.recurring.detect import Row
 from sonar.recurring.schedule import SchedulePeriod
 
-MONTHS_SHOWN = 12
+# The monthly equivalent averages the plan over a year, so yearly payments count.
+EQUIVALENT_MONTHS = 12
 ACTUAL_CYCLES = 6
 FORECAST_CYCLES = 6
 
@@ -53,12 +53,6 @@ class FixedCostRow:
 
 
 @dataclass(frozen=True)
-class MonthTotal:
-    month: date  # first of the month
-    total_cents: int
-
-
-@dataclass(frozen=True)
 class CycleCost:
     """Fixed costs of one pay cycle: what is booked and what is still expected."""
 
@@ -77,8 +71,7 @@ class CycleCost:
 class FixedCosts:
     monthly_equivalent_cents: int
     rows: tuple[FixedCostRow, ...]
-    months: tuple[MonthTotal, ...]
-    cycles: tuple[CycleCost, ...] = ()
+    cycles: tuple[CycleCost, ...]
 
 
 def fixed_due(sources: tuple[FixedSource, ...], start: date, end: date) -> list[DueItem]:
@@ -156,16 +149,18 @@ def traffic_light(p: Projection, limit_cents: int) -> Literal["green", "yellow",
 
 
 def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
-    """Monthly equivalent, one row per current payment, and 12 monthly totals."""
-    months = month_totals(sources, today)
-    total = sum(m.total_cents for m in months)
+    """Monthly equivalent and one row per current payment; no pay cycles yet.
+
+    The pay cycles need a salary day, so the caller adds them with `cycle_costs`.
+    """
+    total = _year_total(sources, today)
     # Integer round half up; totals are never negative, so this is exact.
-    monthly_equivalent = (total * 2 + MONTHS_SHOWN) // (MONTHS_SHOWN * 2)
+    monthly_equivalent = (total * 2 + EQUIVALENT_MONTHS) // (EQUIVALENT_MONTHS * 2)
     rows = [row for source in sources if (row := _row(source, today)) is not None]
     return FixedCosts(
         monthly_equivalent_cents=monthly_equivalent,
         rows=tuple(sorted(rows, key=lambda r: (r.day, r.name))),
-        months=months,
+        cycles=(),
     )
 
 
@@ -179,25 +174,25 @@ def fixed_range(rows: Sequence[FixedCostRow]) -> tuple[int, int]:
     return low, sum(row.amount_cents for row in rows)
 
 
-def month_totals(sources: tuple[FixedSource, ...], today: date) -> tuple[MonthTotal, ...]:
-    first = today.replace(day=1)
-    firsts = [schedule.add_months(first, offset, 1) for offset in range(MONTHS_SHOWN)]
-    end = schedule.add_months(first, MONTHS_SHOWN, 1) - timedelta(days=1)
-    totals: defaultdict[date, int] = defaultdict(int)
-    for source in sources:
-        # No last_paid filter: this is a calendar view of the plan, so a
-        # payment already made this month still belongs to this month.
-        for occurrence in schedule.occurrences(source.periods, first, end):
-            totals[occurrence.due_date.replace(day=1)] += occurrence.amount_cents
-    return tuple(MonthTotal(month, totals[month]) for month in firsts)
-
-
 def _fixed_debits(rows: Sequence[Row], category_types: dict[str, str]) -> list[tuple[date, int]]:
     return [
         (tx.booking_date, -tx.amount_cents)
         for tx, category in rows
         if tx.amount_cents < 0 and category_types.get(category or "") == groups.FIXED
     ]
+
+
+def _year_total(sources: tuple[FixedSource, ...], today: date) -> int:
+    """Fixed payments due in the 12 calendar months from today's month."""
+    first = today.replace(day=1)
+    end = schedule.add_months(first, EQUIVALENT_MONTHS, 1) - timedelta(days=1)
+    # No last_paid filter: this averages the plan, so a payment already made
+    # this month still belongs to this month.
+    return sum(
+        occurrence.amount_cents
+        for source in sources
+        for occurrence in schedule.occurrences(source.periods, first, end)
+    )
 
 
 def _row(source: FixedSource, today: date) -> FixedCostRow | None:

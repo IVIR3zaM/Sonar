@@ -5,7 +5,7 @@
 {% from "components/button.html" import button %}
 {% from "components/empty.html" import empty %}
 {% from "components/amount.html" import amount, date %}
-{% from "components/charts.html" import runway_bar, month_columns, category_bars %}
+{% from "components/charts.html" import runway_bar, cycle_columns, category_bars %}
 
 {#- Shared table styling; the wrapper scrolls so a wide table never widens the page at 375px. -#}
 {% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
@@ -218,26 +218,32 @@
   <div class="min-w-0 lg:col-span-2">
   {% call card(title="Fixed costs", subtitle="Recurring payments, installments and loans", id="fixed-card") %}
     {{ stat("Monthly equivalent", value=amount(dashboard.fixed_costs.monthly_equivalent_cents, colored=false), id="monthly-equivalent") }}
-    {% if dashboard.fixed_costs.months %}
-    <div id="month-columns" class="mt-4">
-      {{ month_columns(dashboard.fixed_costs.months) }}
+    {% set cycles = dashboard.fixed_costs.cycles %}
+    {% if cycles %}
+    <div id="cycle-columns" class="mt-4">
+      {{ cycle_columns(cycles, dashboard.estimated_from) }}
     </div>
     <details class="mt-3">
-      <summary class="{{ details_summary }}">Monthly totals as table</summary>
+      <summary class="{{ details_summary }}">Pay-cycle totals as table</summary>
       <div class="{{ table_wrap }} mt-2">
-        <table id="months" class="{{ table }}">
-          <thead><tr><th class="{{ th }}">Month</th><th class="{{ th_num }}">Total</th></tr></thead>
+        <table id="cycles" class="{{ table }}">
+          <thead><tr><th class="{{ th }}">Cycle</th><th class="{{ th }}">Type</th><th class="{{ th_num }}">Booked</th><th class="{{ th_num }}">Forecast</th><th class="{{ th_num }}">Total</th></tr></thead>
           <tbody>
-          {% for m in dashboard.fixed_costs.months %}
+          {% for c in cycles %}
             <tr data-row class="{{ tr }}">
-              <td class="{{ td }}" data-field="month"><time datetime="{{ m.month.strftime("%Y-%m") }}">{{ charts.month_label(m.month) }}</time></td>
-              <td class="{{ td_num }}" data-field="total">{{ amount(m.total_cents, colored=false) }}</td>
+              <td class="{{ td }} whitespace-nowrap" data-field="cycle">{{ charts.cycle_label(c.start, c.end) }}</td>
+              <td class="{{ td }} text-ink-muted" data-field="type">{{ c.kind|capitalize }}</td>
+              <td class="{{ td_num }}" data-field="booked">{{ amount(c.booked_cents, colored=false) }}</td>
+              <td class="{{ td_num }}" data-field="forecast">{{ amount(c.forecast_cents, colored=false) }}</td>
+              <td class="{{ td_num }}" data-field="total">{{ amount(c.total_cents, colored=false) }}</td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
     </details>
+    {% elif dashboard.salary_day is none %}
+    <p id="cycles-hint" class="mt-4 text-sm text-ink-muted">Set your <a href="/settings" class="font-medium text-accent underline-offset-2 hover:underline">salary day</a> to see fixed costs per pay cycle.</p>
     {% endif %}
     {% if dashboard.fixed_costs.rows %}
     <div class="{{ table_wrap }} mt-4">

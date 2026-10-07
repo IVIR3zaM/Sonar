@@ -137,6 +137,7 @@ def test_expected_income_and_cycles_match_load_dashboard(tmp_path):
         "recurring_cents": board.expected_income.recurring_cents,
         "total_cents": board.expected_income.total_cents,
     }
+    assert "months" not in body["fixed_costs"]
     cycles = body["fixed_costs"]["cycles"]
     assert len(cycles) == 13
     assert cycles == [
@@ -157,3 +158,4 @@ def test_without_a_salary_day_expected_income_is_null_and_cycles_are_empty(tmp_p
 
     assert body["expected_income"] is None
     assert body["fixed_costs"]["cycles"] == []
+    assert "months" not in body["fixed_costs"]

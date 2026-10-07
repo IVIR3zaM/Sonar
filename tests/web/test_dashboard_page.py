@@ -133,6 +133,34 @@ def test_nothing_set_links_to_settings_and_has_no_traffic_light(tmp_path):
     assert page.select_one("#runway") is None
 
 
+def test_fixed_costs_without_a_salary_day_hint_at_settings_instead_of_cycles(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    card = page.select_one("#fixed-card")
+    assert card.select_one('#cycles-hint a[href="/settings"]') is not None
+    assert card.select_one("#cycle-columns") is None
+    assert card.select_one("#cycles") is None
+    assert cents(card.select_one("#monthly-equivalent")) == 0
+
+
+def test_cycles_without_a_balance_are_booked_up_to_today(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        client.post("/settings", data={"salary_day": "26", "overdraft_limit": "-500.00"})
+        page = soup(client.get("/"))
+
+    assert len(records(page.select_one("#cycles"))) == 13
+    assert page.select_one("#cycles-hint") is None
+    marker = page.select_one("#cycle-columns [data-part=estimate]")
+    assert text(marker.find("title")) == "Booked up to today, forecast after"
+
+
 def test_overdrawn_balance_is_green_at_default_limit_and_red_at_zero(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path)
@@ -351,24 +379,17 @@ def test_full_dashboard_row_scoped(tmp_path):
             },
         ]
 
-        months = records(page.select_one("#months"))
-        assert [m["month"] for m in months] == [
-            "2026-09",
-            "2026-10",
-            "2026-11",
-            "2026-12",
-            "2027-01",
-            "2027-02",
-            "2027-03",
-            "2027-04",
-            "2027-05",
-            "2027-06",
-            "2027-07",
-            "2027-08",
-        ]
-        assert [m["total"] for m in months] == [60_000] * 4 + [50_000] * 8
-        columns = page.select("#month-columns svg[role=img] rect[data-cents]")
-        assert [int(c["data-cents"]) for c in columns] == [60_000] * 4 + [50_000] * 8
+        cycles = records(page.select_one("#cycles"))
+        assert [c["type"] for c in cycles] == ["Actual"] * 6 + ["Current"] + ["Forecast"] * 6
+        assert cycles[6] == {
+            "cycle": "26 Aug \u2013 24 Sep",
+            "type": "Current",
+            "booked": 0,
+            "forecast": 60_000,
+            "total": 60_000,
+        }
+        assert [c["total"] for c in cycles[7:]] == [60_000] * 3 + [50_000] * 3
+        assert page.select_one("#cycle-columns svg[role=img]") is not None
 
         assert records(page.select_one("#debts")) == [{"name": "Sofa", "remaining": 120_000}]
         assert cents(page.select_one("#debts-total")) == 120_000

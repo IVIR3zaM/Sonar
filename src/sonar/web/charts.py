@@ -164,6 +164,27 @@ def columns(values: Sequence[int], height: int) -> list[int]:
     return _scale(values, height)
 
 
+@dataclass(frozen=True)
+class Stack:
+    booked_height: int
+    forecast_height: int
+
+
+def stacked_columns(booked: Sequence[int], forecast: Sequence[int], height: int) -> list[Stack]:
+    """Booked and forecast parts of each column, on the scale of the column totals.
+
+    The forecast part is what is left of the column, so the two parts always
+    add up to exactly the column's height.
+    """
+    totals = [b + f for b, f in zip(booked, forecast, strict=True)]
+    peak = max(totals, default=0)
+    stacks = []
+    for part, column in zip(booked, columns(totals, height), strict=True):
+        booked_height = round(part * height / peak) if peak else 0
+        stacks.append(Stack(booked_height, column - booked_height))
+    return stacks
+
+
 def bars(values: Sequence[int], width: int) -> list[int]:
     """Bar widths, with the largest magnitude filling `width`."""
     return _scale(values, width)
@@ -210,6 +231,16 @@ def compact_eur(cents: int) -> str:
 def month_label(month: date) -> str:
     """Axis label "Sep 2026" for a first-of-month date."""
     return display_date(month).split(" ", 1)[1]
+
+
+def day_month(day: date) -> str:
+    """Short label "7 Oct", without the year."""
+    return display_date(day).rsplit(" ", 1)[0]
+
+
+def cycle_label(start: date, end: date) -> str:
+    """Axis label "25 Sep – 24 Oct" for a pay cycle."""
+    return f"{day_month(start)} \u2013 {day_month(end)}"
 
 
 def _scale(values: Sequence[int], extent: int) -> list[int]:

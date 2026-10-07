@@ -43,7 +43,7 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 | N01 | preflight | check | - | -/haiku | 1 | 1 | DONE | |
 | N02 | expected monthly income | exec | N01 | sonnet/sonnet | 2 | 0 | DONE | |
 | N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 0 | 0 | TODO | |
+| N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 2 | 0 | DONE | |
 | N05 | runway to income | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
 | N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
 | N07 | SPEC amendment | exec | N04 | haiku/sonnet | 0 | 0 | TODO | |
@@ -214,5 +214,20 @@ verify: FAIL C3
 ### N02 try 2 · 2026-10-07
 exec: DONE · 1282 passed
 - income.py: made CYCLES_LOOKED_AT and MONTHS_PER_YEAR underscore-private (C3 finding)
+check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-10-07
+exec: DONE · 1287 passed
+- Dashboard.expected_income (forecast branch only) and fixed_costs.cycles (when salary day set) wired in service.py via income.expected_income and forecast.cycle_costs
+- cycles built once in _fixed_costs helper using replace(); API carries both via _jsonable unchanged
+check: PASS 2/2
+verify: FAIL C3
+- C3 tests/web/test_api_dashboard.py:140-146 - cycles are only checked for length, key set, one 'current' count and cycles[6].start; end, kind, booked_cents and forecast_cents are never compared with load_dashboard's cycles - expected the API cycles asserted equal to board.fixed_costs.cycles
+
+### N04 try 2 · 2026-10-07
+exec: DONE · 1287 passed
+- API test now asserts all 13 cycles equal load_dashboard's (start,end,kind,booked_cents,forecast_cents)
+- fixed C3 finding; no source change
 check: PASS 2/2
 verify: PASS

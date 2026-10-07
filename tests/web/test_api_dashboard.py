@@ -93,3 +93,67 @@ def test_debts_are_objects_with_name_and_remaining_cents(tmp_path):
     assert [d["name"] for d in body["debts"]] == ["Car loan"]
     assert set(body["debts"][0]) == {"name", "remaining_cents"}
     assert body["debts_total_cents"] == sum(d["remaining_cents"] for d in body["debts"])
+
+
+def _add_salary_credits(db_path: Path) -> None:
+    conn = connect(db_path)
+    try:
+        for n, (booked, cents) in enumerate(
+            (("2026-06-26", 200_000), ("2026-07-24", 250_000), ("2026-08-26", 230_000))
+        ):
+            conn.execute(
+                """
+                INSERT INTO transactions (
+                    source, account, booking_date, value_date, amount_cents, currency,
+                    counterparty, purpose, iban, mandate_ref, creditor_id, raw_row,
+                    fingerprint, occurrence, category
+                ) VALUES ('test', 'acc', ?, ?, ?, 'EUR', 'Employer', '', NULL, NULL, NULL,
+                    'raw', ?, 1, 'Salary')
+                """,
+                (booked, booked, cents, f"fp{n}"),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_expected_income_and_cycles_match_load_dashboard(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(
+        db_path,
+        '[[category]]\nname = "Salary"\ntype = "income"\n'
+        '[[rule]]\ncategory = "Salary"\ncounterparty = "Employer"\n',
+    )
+    _add_salary_credits(db_path)
+    with TestClient(create_app(db_path, today=lambda: TODAY)) as client:
+        client.put("/api/settings", json={"salary_day": 26})
+        client.post("/api/settings/balance", json={"amount_cents": 100_000, "as_of": "2026-09-10"})
+        body = client.get("/api/dashboard").json()
+    board = _expected_board(db_path)
+
+    assert board.expected_income is not None
+    assert body["expected_income"] == {
+        "salary_cents": 250_000,
+        "recurring_cents": board.expected_income.recurring_cents,
+        "total_cents": board.expected_income.total_cents,
+    }
+    cycles = body["fixed_costs"]["cycles"]
+    assert len(cycles) == 13
+    assert cycles == [
+        {
+            "start": c.start.isoformat(),
+            "end": c.end.isoformat(),
+            "kind": c.kind,
+            "booked_cents": c.booked_cents,
+            "forecast_cents": c.forecast_cents,
+        }
+        for c in board.fixed_costs.cycles
+    ]
+
+
+def test_without_a_salary_day_expected_income_is_null_and_cycles_are_empty(tmp_path):
+    with _client(tmp_path) as client:
+        body = client.get("/api/dashboard").json()
+
+    assert body["expected_income"] is None
+    assert body["fixed_costs"]["cycles"] == []

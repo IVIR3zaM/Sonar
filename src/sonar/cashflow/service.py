@@ -12,9 +12,10 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Literal
 
-from sonar.cashflow import forecast, lights_on, payday
+from sonar.cashflow import forecast, income, lights_on, payday
 from sonar.cashflow.balance import BalanceEntry
 from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection
+from sonar.cashflow.income import ExpectedIncome
 from sonar.cashflow.lights_on import LightsOnForecast
 from sonar.cashflow.monthly import (
     MonthlySpending,
@@ -62,6 +63,8 @@ class Dashboard:
     expected_cents: int | None
     projection: Projection | None
     light: Literal["green", "yellow", "red"] | None
+    # Best recent salary plus recurring income per month; None without salary history.
+    expected_income: ExpectedIncome | None
     fixed_costs: FixedCosts
     debts: list[tuple[str, int]]
     debts_total_cents: int
@@ -146,7 +149,8 @@ def load_dashboard(
         expected_cents=None,
         projection=None,
         light=None,
-        fixed_costs=forecast.fixed_costs(sources, estimate_date),
+        expected_income=None,
+        fixed_costs=_fixed_costs(sources, rows, category_types, settings.salary_day, estimate_date),
         debts=remaining,
         debts_total_cents=sum(cents for _, cents in remaining),
         uncategorized_count=uncategorized_count(conn),
@@ -191,7 +195,24 @@ def load_dashboard(
         expected_cents=balance.amount_cents + inflow_total - due_total - lights_expected,
         projection=projection,
         light=forecast.traffic_light(projection, settings.overdraft_limit_cents),
+        expected_income=income.expected_income(
+            rows, category_types, settings.salary_day, estimate_date
+        ),
     )
+
+
+def _fixed_costs(
+    sources: tuple[FixedSource, ...],
+    rows: list[Row],
+    category_types: dict[str, str],
+    salary_day: int | None,
+    estimate_date: date,
+) -> FixedCosts:
+    costs = forecast.fixed_costs(sources, estimate_date)
+    if salary_day is None:
+        return costs
+    cycles = forecast.cycle_costs(sources, rows, category_types, salary_day, estimate_date)
+    return replace(costs, cycles=cycles)
 
 
 @dataclass(frozen=True)

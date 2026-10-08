@@ -12,7 +12,7 @@ from typing import Protocol
 
 from sonar.transactions import ParsedTransaction
 
-from . import deutsche_bank_giro
+from . import consors_finanz_card, deutsche_bank_giro
 
 
 class Importer(Protocol):
@@ -35,7 +35,7 @@ class UnknownFormatError(Exception):
 
 
 # Add a source by appending its module here; nothing else in this file changes.
-IMPORTERS: list[Importer] = [deutsche_bank_giro]
+IMPORTERS: list[Importer] = [deutsche_bank_giro, consors_finanz_card]
 
 
 def pick_importer(content: bytes, importers: list[Importer] = IMPORTERS) -> Importer:

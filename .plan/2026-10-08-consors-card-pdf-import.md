@@ -39,7 +39,7 @@ Definition of done: the plan `verify` passes; all 8 PDFs in `samples/consors/` i
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
 | N02 | consors card PDF parser | exec | N01 | opus/sonnet | 1 | 0 | DONE | |
-| N03 | register importer and amend SPEC | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
+| N03 | register importer and amend SPEC | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | plan acceptance | check | N03 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
@@ -102,5 +102,12 @@ exec: DONE · 1285 passed
 - pypdf==6.19.0 pinned; consors_finanz_card.py importer (unregistered) with layout docstring; synthetic PDF builder tests/importing/consors_pdf.py; 12 tests
 - sections end at GESAMTUMSAETZE (July sample lacks NEUER SALDO); section titles matched as exact lines so page-1 summary lines never open a table; detect catches Exception since truncated PDFs raise non-pypdf errors
 - C4 smoke: all 8 samples parse, one label each, row sums equal GESAMTUMSAETZE minus UMB rows
+check: PASS 2/2
+verify: PASS
+
+### N03 try 1 · 2026-10-08
+exec: DONE · 1295 passed
+- Registered consors_finanz_card after deutsche_bank_giro; registry tests for both pickers and the two-NAME error; store tests in test_store_consors.py
+- SPEC §13: new Consors card import bullet and Accounts line rewritten in place; §4 untouched
 check: PASS 2/2
 verify: PASS

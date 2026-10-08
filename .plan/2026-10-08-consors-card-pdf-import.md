@@ -1,5 +1,5 @@
 # Consors card PDF import
-status: RUNNING
+status: DONE
 created: 2026-10-08 · updated: 2026-10-08
 goal: Consors Finanz Mastercard monthly statement PDFs uploaded on /import land in Sonar as transactions with the card as their source label, deduplicated like the Girokonto CSV; no new account, no balance.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -40,7 +40,7 @@ Definition of done: the plan `verify` passes; all 8 PDFs in `samples/consors/` i
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
 | N02 | consors card PDF parser | exec | N01 | opus/sonnet | 1 | 0 | DONE | |
 | N03 | register importer and amend SPEC | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | plan acceptance | check | N03 | -/sonnet | 0 | 0 | TODO | |
+| N04 | plan acceptance | check | N03 | -/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: the untouched tree passes verify, the repo is writable for the per-node commits, PyPI answers for pypdf, and the 8 real statements are present for N02's smoke and N04.
@@ -110,4 +110,8 @@ exec: DONE · 1295 passed
 - Registered consors_finanz_card after deutsche_bank_giro; registry tests for both pickers and the two-NAME error; store tests in test_store_consors.py
 - SPEC §13: new Consors card import bullet and Accounts line rewritten in place; §4 untouched
 check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-10-08
+check: PASS 1/1
 verify: PASS

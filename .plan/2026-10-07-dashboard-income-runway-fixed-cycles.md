@@ -1,5 +1,5 @@
 # Dashboard income runway and fixed-cost pay cycles
-status: READY
+status: DONE
 created: 2026-10-07 · updated: 2026-10-07
 goal: The runway bar reaches out to the expected monthly income instead of shrinking with a negative balance, and the Fixed costs chart shows actual and forecast fixed costs per pay cycle instead of 12 calendar months.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -16,7 +16,7 @@ In scope: a pure expected-income function in `cashflow` that reuses the salary-d
 
 Out of scope: the Payoff page (it works from rows), the Keep the lights on forecast, Settings, the projection and traffic-light rules, the fixed-cost rows table and the Monthly equivalent figure (it stays as computed today).
 
-Constraints: AGENTS.md rules: strict TDD, integer cents, the estimate date and `today` passed in as parameters, pure core with a thin service, `tests/test_architecture.py` import rules, components macros, no inline `<style>`, `eur`/`date` display, page tests through `tests/html.py` hooks, `sonar.css` rebuilt and committed after template changes, ruff clean, no dead code. Decisions D1-D12 below.
+Constraints: AGENTS.md rules: strict TDD, integer cents, the estimate date and `today` passed in as parameters, pure core with a thin service, `tests/test_architecture.py` import rules, components macros, no inline `<style>`, `eur`/`date` display, page tests through `tests/html.py` hooks, `sonar.css` rebuilt and committed after template changes, ruff clean, no dead code. Decisions D1-D13 below.
 
 Definition of done: Pure tests prove the worked income and cycle examples in N02 and N03. The dashboard and `/api/dashboard` expose the expected income and 13 pay-cycle totals. The runway and Fixed costs card pass the visual gate at desktop and 375px, light and dark, on the real sample. SPEC §13 states the new rules. The final check passes `verify` and SPEC §11 and §12.
 
@@ -34,20 +34,21 @@ Definition of done: Pure tests prove the worked income and cycle examples in N02
 - D10 Chart look: actual and the current cycle's booked part are solid sky; forecast parts are amber at lower opacity; the peak highlight is dropped because amber now means forecast. The current column stacks booked under forecast. A marker over the current column (`data-part="estimate"`) is labelled with the short estimate date, titled "Booked up to <date>, forecast after". Axis labels are rotated cycle ranges such as "25 Sep – 24 Oct". The legend has Actual, Forecast and the estimate marker | confirmed
 - D11 The table: summary "Pay-cycle totals as table", id `cycles`, columns Cycle (range), Type (Actual, Current, Forecast), Booked, Forecast, Total, one `data-row` per cycle with `data-field` hooks | confirmed
 - D12 Pre-authorized mid-run: rebuild and commit `src/sonar/web/static/sonar.css` after template changes; start the app on a temp DB with the real sample, salary day and balance set, for smoke and visual runs (N05, N06, N08, N09) | confirmed
+- D13 The N08 gate needs a real export covering at least 7 months to fill 6 actual pay cycles; the only fixture (`tests/fixtures/db_girokonto.csv`, 4 days of rows) cannot. The owner copied a Deutsche Bank export (2026-01-01 to 2026-10-07, about 9 months) into `samples/` (gitignored, `.gitignore:1`); N08 uses it and N01 is re-run unchanged | confirmed
 
 ## Graph
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | preflight | check | - | -/haiku | 0 | 0 | TODO | |
-| N02 | expected monthly income | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
-| N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
-| N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 0 | 0 | TODO | |
-| N05 | runway to income | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
-| N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
-| N07 | SPEC amendment | exec | N04 | haiku/sonnet | 0 | 0 | TODO | |
-| N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | TODO | |
-| N09 | plan acceptance | check | N08 | -/sonnet | 0 | 0 | TODO | |
+| N01 | preflight | check | - | -/haiku | 1 | 1 | DONE | |
+| N02 | expected monthly income | exec | N01 | sonnet/sonnet | 2 | 0 | DONE | |
+| N03 | fixed costs per pay cycle | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
+| N04 | dashboard and API wiring | exec | N02,N03 | sonnet/sonnet | 2 | 0 | DONE | |
+| N05 | runway to income | exec | N04 | opus/sonnet | 1 | 0 | DONE | |
+| N06 | pay-cycle chart and table | exec | N05 | opus/sonnet | 1 | 1 | DONE | |
+| N07 | SPEC amendment | exec | N06 | sonnet/sonnet | 1 | 2 | DONE | |
+| N08 | visual check of the dashboard | gate | N06,N07 | -/sonnet | 0 | 0 | DONE | gate approved by owner as is; known: 375px income legend overflow, legend Booked vs Actual |
+| N09 | plan acceptance | check | N08 | -/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work. The untouched tree passes verify, the Tailwind build runs, the repo is writable for the per-node commits, and `samples/` has a file for the visual gate.
@@ -125,7 +126,7 @@ Context: D10: a new macro `cycle_columns(cycles, estimate_date)` replaces `month
   The current column has a `data-part="estimate"` marker labelled with the short estimate date and titled "Booked up to <date>, forecast after". Axis labels come from a pure `charts.cycle_label(start, end)` → "25 Sep – 24 Oct" and are rotated. The aria-label says 6 past, current and 6 next pay cycles. An HTML legend under the SVG has `data-legend` actual, forecast and estimate.
   D11: `<details>` summary "Pay-cycle totals as table", `<table id="cycles">` with Cycle, Type (Actual, Current, Forecast), Booked, Forecast and Total, each a `data-field`, amounts via `amount(..., colored=false)`. The chart wrapper id becomes `cycle-columns`.
   D8: cycles empty with no salary day → `<p id="cycles-hint">` linking to `/settings`.
-  D9: `FixedCosts` keeps `monthly_equivalent_cents`, `rows` and `cycles` only. The 12-month basis of the Monthly equivalent (`src/sonar/cashflow/forecast.py:107-141`) stays as a private helper with unchanged results. `cycles` loses its default. Delete `MonthTotal`, `month_columns` and `charts.month_label` if unused, with their tests. Update `tests/test_real_sample.py:139` to 13 cycles.
+  D9: `FixedCosts` keeps `monthly_equivalent_cents`, `rows` and `cycles` only. The 12-month basis of the Monthly equivalent (`src/sonar/cashflow/forecast.py:107-141`) stays as a private helper with unchanged results. `cycles` loses its default. Delete `MonthTotal`, `month_columns` and `charts.month_label` if unused, with their tests; the Lights-on `#months-used` hook is unrelated and stays. Update `tests/test_real_sample.py:139` to 13 cycles.
 Read: `src/sonar/web/templates/components/charts.html`, `src/sonar/web/templates/index.html:205-260`, `src/sonar/web/charts.py:145-215`, `src/sonar/cashflow/forecast.py`, `tests/web/test_charts.py:120-300`, `tests/web/test_dashboard_page.py:340-380`, `tests/cashflow/test_forecast.py`, `tests/html.py`
 Write: `src/sonar/web/charts.py`, `src/sonar/web/templates/components/charts.html`, `src/sonar/web/templates/index.html`, `src/sonar/cashflow/forecast.py`, `tests/web/test_charts.py`, `tests/web/test_dashboard_page.py`, `tests/cashflow/test_forecast.py`, `tests/web/test_api_dashboard.py`, `tests/test_real_sample.py`, `src/sonar/web/static/sonar.css`
 Test first: `cycle_label(date(2026, 9, 25), date(2026, 10, 24)) == "25 Sep – 24 Oct"`. The page test reads `#cycles` through `records` and gets 13 rows whose Type runs Actual ×6, Current, Forecast ×6.
@@ -133,23 +134,34 @@ Done when:
 - C1 [cmd] `uv run pytest -q tests/web/test_charts.py tests/web/test_dashboard_page.py tests/cashflow/test_forecast.py tests/web/test_api_dashboard.py`
 - C2 [review] Macro tests: 13 `data-kind` groups. The current group has one booked and one forecast rect, stacked, whose heights sum to the column height. Actual groups have no forecast rect and forecast groups no booked rect. There is one `estimate` marker, and the legend items are present.
 - C3 [review] Page tests: `#cycles` rows have the Booked, Forecast and Total of the fixture; `#cycle-columns` is present with a salary day; `#cycles-hint` links to `/settings` without one; `#monthly-equivalent` is unchanged. The API test asserts that `fixed_costs` has no `months` key.
-- C4 [cmd] `! grep -rnE "MonthTotal|month_columns|fixed_costs\.months|#months" src tests --include=*.py --include=*.html`
+- C4 [cmd] `! grep -rnE "MonthTotal|month_columns|fixed_costs\.months|month-columns|#months([^-_a-zA-Z0-9]|$)|id=\"months\"" src tests --include=*.py --include=*.html`
 - C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && grep -q 'fill-amber-500\\/60' src/sonar/web/static/sonar.css`
 - C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N07 SPEC amendment
-Do: Append one §13 bullet "Dashboard income runway and pay-cycle fixed costs (§9, §11, §12)" after the Payoff ladder bullet (`SPEC.md:255`). It states D1-D11 in plain words and changes no other line of SPEC.
-Context: D1 the salary rule per complete cycle and its max over 3; D2 the recurring monthly equivalent; D3 the no-salary fallback; D4 the runway's right end, the balance→income segment, the scale mark and the legend.
-  D5-D7: 13 pay-cycle columns from the estimate date: 6 actual fixed debits, the current cycle booked to the estimate date plus forecast, and 6 forecast cycles of every fixed row due, debts until their end.
-  D8: no salary day → a settings hint. D10/D11: the chart look and the table columns. D9: `/api/dashboard` `expected_income` and `fixed_costs.cycles` replace `fixed_costs.months`.
-  Say it overrides §9's "per-month totals for the next 12 months", §11's "the next 12 months per month" and §12's "12-month SVG column chart" and "spanning overdraft limit, 0 and balance". The Monthly equivalent is unchanged. Use the style of the existing §13 bullets (`SPEC.md:249`): one paragraph, no real names.
-Read: `SPEC.md:118-148`, `SPEC.md:170-205`, `SPEC.md:240-255`
+Do: SPEC §13 holds exactly one bullet "Dashboard income runway and pay-cycle fixed costs (§9, §11, §12)" right after the Payoff ladder bullet (`SPEC.md:255`). It is at `SPEC.md:256` now: rewrite that line in place so it states F1-F11 below and the overrides, and nothing else (no per-row or per-debt cycle amounts, no "Income before payday" card, no income-series list in the API: those are not this feature). Never add a second bullet; change no other SPEC line.
+Context: the facts the bullet states, in plain words, as one paragraph in the style of `SPEC.md:249`, no real names:
+  F1 (D1) Expected salary = the highest, over the 3 complete pay cycles before the estimate date's cycle, of the sum of credits in `income`-group categories booked within 7 days of that cycle's starting payday; a salary booked a few days early counts for its payday's cycle.
+  F2 (D2) Recurring income per month = the sum over the detected recurring income series (§13 Recurring income) of amount × 12 / interval months, divided by 12 and rounded half up once; expected monthly income = expected salary + recurring income per month.
+  F3 (D3) Expected salary 0 → no expected income, even with recurring income; the runway then is unchanged (no income segment, mark or legend item).
+  F4 (D4) Runway: left end unchanged; right end = the highest of 0, balance, worst, best and expected income. When income > balance, a violet segment from the balance to the income is drawn over the zones; an "income" scale mark labels the right end; the legend reads "Expected monthly income X", with "(salary Y + recurring Z)" when there is recurring income; the bar's label and title name the income.
+  F5 (D5) Fixed costs per pay cycle: 13 columns oldest first, anchored on the estimate date (the balance's as-of date, else today): 6 actual (the complete cycles), 1 current, 6 forecast (the next cycles).
+  F6 (D6) Booked = the sum of the absolute debits in `fixed`-group categories (debt categories included) inside the cycle; for the current cycle only up to and including the estimate date; credits and refunds are ignored.
+  F7 (D7) Forecast = every fixed payment due from the day after the estimate date to the end of the 6th next cycle, by cycle: every recurring row and every debt schedule until its end, at every interval; a payment already booked early is not counted twice. Actual cycles have no forecast, forecast cycles no booked part.
+  F8 (D8) No salary day → no cycles: the card hides the chart and table and shows a hint linking to the settings; the Monthly equivalent and the rows table stay.
+  F9 (D9) The Monthly equivalent is unchanged. `/api/dashboard` drops `fixed_costs.months` and gains `fixed_costs.cycles` (each `start`, `end` as ISO dates, `kind` actual|current|forecast, `booked_cents`, `forecast_cents`) and `expected_income` (`salary_cents`, `recurring_cents`, `total_cents`, or null).
+  F10 (D10) Chart: actual columns and the current column's booked part solid sky; forecast parts translucent amber; no peak highlight; the current column stacks booked under forecast; a marker over it is labelled with the short estimate date and titled "Booked up to <date>, forecast after"; axis labels are rotated cycle ranges such as "25 Sep – 24 Oct"; the legend has Actual, Forecast and the estimate marker.
+  F11 (D11) A table under "Pay-cycle totals as table" with the columns Cycle, Type (Actual, Current, Forecast), Booked, Forecast and Total, one row per cycle.
+  Overrides, quoted in the bullet: §9 "per-month totals for the next 12 months" (`SPEC.md:138`), §11 "the next 12 months per month" (`SPEC.md:174`), §12 "12-month SVG column chart" and "spanning overdraft limit, 0 and balance" (`SPEC.md:202`).
+  Code is finished (N02-N06); touch nothing outside SPEC.md.
+Read: `SPEC.md:136-140`, `SPEC.md:174`, `SPEC.md:202`, `SPEC.md:249-256`, `git diff SPEC.md`
 Write: `SPEC.md`
 Test first: -
 Done when:
-- C1 [cmd] `git diff --numstat SPEC.md | awk '{exit !($1>=1 && $2==0)}' && grep -q "pay-cycle" SPEC.md`
-- C2 [review] The new bullet covers every Decision D1-D11 listed above and names each overridden §9, §11 and §12 clause; no other SPEC line changed.
-- C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
+- C1 [cmd] `git diff --numstat SPEC.md | awk '{exit !($1==1 && $2==0)}' && test "$(grep -c '^- Dashboard income runway and pay-cycle fixed costs' SPEC.md)" = 1 && sed -n 256p SPEC.md | grep -q 'fixed_costs.cycles'`
+- C2 [cmd] `L="$(sed -n 256p SPEC.md)"; for w in 'expected_income' 'fixed_costs.months' 'half up' '13' 'violet' 'Pay-cycle totals as table' 'Booked up to' 'per-month totals for the next 12 months' 'the next 12 months per month' '12-month SVG column chart' 'spanning overdraft limit, 0 and balance'; do printf '%s' "$L" | grep -qF "$w" || { echo "missing: $w"; exit 1; }; done; ! printf '%s' "$L" | grep -qiE 'per-debt|Income before payday'`
+- C3 [review] `SPEC.md:256` states each of F1-F11 above without contradicting it, quotes the four overridden clauses, and states nothing beyond them; the diff adds only that line.
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N08 visual check of the dashboard
 Do: Check `/` in the browser pane at desktop and 375px, light and dark, following the config `visual_recipe` on a temp DB. Use the newest sample, salary day 26 and a balance dated at the sample's last booking.
@@ -173,3 +185,137 @@ Done when:
 - C5 [smoke] Start `uv run python -c` with `create_app` on a temp DB under `$TMPDIR`. `curl -s http://127.0.0.1:8000/api/dashboard` returns JSON with `expected_income` null and `fixed_costs.cycles` [] and no `months` key. `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/` prints 200. Stop the app.
 
 ## Log
+
+### N01 try 1 · 2026-10-07
+check: FAIL C4
+- C4 exit 1: ls: cannot access 'samples/': No such file or directory
+
+### N01 replan 1 · 2026-10-07
+plan: ASK D13
+- C4 failed: samples/ is absent (gitignored); AGENTS.md makes an empty samples/ a human checkpoint
+- Added D13 proposed: owner supplies an export of at least 7 months (recommended) or N08 uses a synthetic one in TMPDIR; brief unchanged until answered
+plan: REPLANNED
+- D13 confirmed: owner copied a Deutsche Bank export (2026-01-01 to 2026-10-07, ~9 months) into samples/
+- Brief unchanged; C4 now passes, N08 uses that sample
+
+### N01 try 1 · 2026-10-07
+check: PASS 4/4
+
+### N02 try 1 · 2026-10-07
+exec: DONE · 1279 passed
+- Added cashflow/income.py: ExpectedIncome, expected_income (best salary of 3 complete cycles by payday distance + recurring monthly equivalent, None without salary)
+- Recurring: yearly sum amount*12//interval, one half-up rounding on total/12
+
+### N03 try 1 · 2026-10-07
+exec: DONE · 1282 passed
+- payday.next_cycles; forecast.CycleCost, cycle_costs (6 actual, current, 6 forecast), FixedCosts.cycles default ()
+- booked = fixed-group debits; current cycle capped at estimate date; forecast via fixed_due from estimate+1
+
+### N02 try 1 · 2026-10-07
+check: PASS 2/2
+
+### N03 try 1 · 2026-10-07
+check: PASS 2/2
+verify: PASS
+
+### N02 try 1 · 2026-10-07
+verify: FAIL C3
+- C3 src/sonar/cashflow/income.py:23-24 - public module constants CYCLES_LOOKED_AT and MONTHS_PER_YEAR are added besides ExpectedIncome and expected_income - expected no other public name (underscore-private or inlined)
+
+### N02 try 2 · 2026-10-07
+exec: DONE · 1282 passed
+- income.py: made CYCLES_LOOKED_AT and MONTHS_PER_YEAR underscore-private (C3 finding)
+check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-10-07
+exec: DONE · 1287 passed
+- Dashboard.expected_income (forecast branch only) and fixed_costs.cycles (when salary day set) wired in service.py via income.expected_income and forecast.cycle_costs
+- cycles built once in _fixed_costs helper using replace(); API carries both via _jsonable unchanged
+check: PASS 2/2
+verify: FAIL C3
+- C3 tests/web/test_api_dashboard.py:140-146 - cycles are only checked for length, key set, one 'current' count and cycles[6].start; end, kind, booked_cents and forecast_cents are never compared with load_dashboard's cycles - expected the API cycles asserted equal to board.fixed_costs.cycles
+
+### N04 try 2 · 2026-10-07
+exec: DONE · 1287 passed
+- API test now asserts all 13 cycles equal load_dashboard's (start,end,kind,booked_cents,forecast_cents)
+- fixed C3 finding; no source change
+check: PASS 2/2
+verify: PASS
+
+### N07 try 1 · 2026-10-07
+exec: BLOCKED · Dependency: N05 incomplete changes in working tree cause test failure (hardcoded 'income' string in charts.py:85 violates test_no_hardcoded_type_strings; N07 Write scope is SPEC.md only)
+
+### N07 replan 1 · 2026-10-07
+plan: REPLANNED
+- Cause: N07 ran in parallel with N05 in a shared working tree; verify_fast (C3) failed on N05's in-flight charts.py, not on SPEC.md
+- Deps N04 -> N06 so verify runs after all code nodes that touch charts.py and tests
+- Brief: keep the existing working-tree bullet and complete it in place, never add a second; Read adds git diff SPEC.md
+
+### N05 try 1 · 2026-10-07
+exec: DONE · 1301 passed, 4 skipped
+- charts.runway/runway_scale take income (Runway.income_x, income scale mark, 4 label rows); runway_bar draws violet to-income rect + aria text; index.html passes expected_income and adds income legend; sonar.css rebuilt
+- income scale part uses categorization.groups.INCOME constant because test_no_hardcoded_type_strings forbids the literal 'income' outside groups.py
+- aria-label names income whenever given; to-income rect only when income > balance; SPEC.md diff in tree is not from this node
+check: PASS 3/3
+verify: PASS
+
+### N06 try 1 · 2026-10-07
+exec: DONE · 1309 passed, 4 skipped
+- cycle_columns macro + charts.stacked_columns/cycle_label/day_month; #cycle-columns, #cycles table, #cycles-hint in index.html; FixedCosts.months, MonthTotal, month_totals, month_columns removed (month_label kept: used by monthly/lights_on); sonar.css rebuilt
+- Without a balance estimated_from is None, so the estimate marker reads 'today' (estimate date = today then); per-column value labels dropped per D10
+- C4 grep also hits the unrelated pre-existing #months-used hook in tests/web/test_lights_on_page.py:212 (outside Write); no fixed-costs months references remain
+check: FAIL C4
+- C4 exit 1: tests/web/test_lights_on_page.py:212:    used = page.select_one("#months-used")
+
+### N06 try 2 · 2026-10-07
+exec: BLOCKED · C4 regex '#months' also matches the unrelated Lights-on id '#months-used' (tests/web/test_lights_on_page.py:212, src/sonar/web/templates/lights_on.html:45), outside Write; all Write-scope work done, 1309 passed, ruff clean; fix C4 to e.g. '#months\b' or '#months"'
+
+### N06 replan 1 · 2026-10-07
+plan: REPLANNED
+- Cause: C4 regex '#months' also matched the unrelated Lights-on hook '#months-used' (tests/web/test_lights_on_page.py:212)
+- C4 now matches only the old fixed-costs hooks: '#months' not followed by an id character, id="months", month-columns; checked: passes on the current tree, hits the committed old tests
+- Context notes '#months-used' stays; Do, Write and other criteria unchanged
+
+### N06 try 1 · 2026-10-07
+exec: DONE · 1309 passed, 4 skipped
+- cycle_columns macro (stacked booked/forecast via charts.stacked_columns, estimate marker, legend), #cycles table, #cycles-hint; FixedCosts.months, MonthTotal, month_totals removed; 12-month basis kept as _year_total
+- charts.month_label kept: still used by monthly and lights-on pages; sonar.css rebuilt
+- estimate marker falls back to 'today' when no balance date
+check: PASS 4/4
+verify: PASS
+
+### N07 try 1 · 2026-10-07
+exec: DONE · tests: 1309 passed
+- Added SPEC §13 bullet describing dashboard income runway and pay-cycle fixed costs
+- Covers D1-D11: salary rule, monthly equivalent, no-salary fallback, runway features, 13 pay-cycle columns, settings hint, API structure with expected_income, chart and table columns
+- Explicitly overrides §9 per-month view, §11 12-month monthly view, §12 column chart and scale spanning
+check: PASS 2/2
+verify: FAIL C2
+- C2 SPEC.md:256 - Decisions D1-D11 are not in the verify brief, so coverage of each decision is not evidenced; the 4 quoted overridden clauses do exist verbatim (SPEC.md:138,174,202) and only one line was added - expected the brief to carry D1-D11 so each can be checked against the bullet
+
+### N07 try 2 · 2026-10-07
+exec: DONE · 1309 tests passed
+- SPEC.md line 256 adds bullet covering pay-cycle fixed costs amendment
+- Covers all decisions D1-D11: salary rule, monthly equivalent, no-salary fallback, runway bar design, 13-cycle columns, settings hint, API changes, chart and table structure
+- Names all overridden clauses from §9, §11, §12
+check: PASS 2/2
+verify: FAIL C2
+- C2 SPEC.md:256 - Decisions D1-D11 are not in the verify brief, so coverage of each cannot be evidenced (overridden clauses at SPEC.md:138, 174, 202 do exist and the diff is one added line only) - brief must list the decisions for the verifier
+
+### N07 replan 2 · 2026-10-07
+plan: REPLANNED
+- Cause: brief named D1-D11 only by topic, so verify could not check coverage; the SPEC.md:256 line also misstates the feature (per-debt cycle amounts, Income before payday card, salary rule, expected_income shape)
+- Brief now restates D1-D11 as facts F1-F11 with the overridden clauses and their lines; rewrite SPEC.md:256 in place, nothing beyond F1-F11
+- New [cmd] C1/C2: one added line, one bullet, key terms and quoted clauses present, per-debt/Income before payday absent; C3 review checks F1-F11; model haiku/sonnet -> sonnet/sonnet
+
+### N07 try 1 · 2026-10-07
+exec: DONE · 1309 passed
+- Rewrote SPEC.md:256 in place to state F1-F11 and quote the four overridden clauses
+- Removed per-row/per-debt cycle amounts and the Income before payday card from the bullet
+check: PASS 3/3
+verify: PASS
+
+### N09 try 1 · 2026-10-07
+check: PASS 2/2
+verify: PASS

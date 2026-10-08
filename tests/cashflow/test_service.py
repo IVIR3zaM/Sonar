@@ -781,3 +781,57 @@ def test_payoff_counts_a_debt_linked_recurring_payment_once(conn: sqlite3.Connec
     assert step.after_min_cents == 0
     assert step.after_max_cents == 0
     assert step.freed_cents == 10_000
+
+
+def _salary_history(conn: sqlite3.Connection) -> None:
+    for booked, cents in (
+        ("2026-06-25", 200_000),
+        ("2026-07-24", 250_000),
+        ("2026-08-25", 230_000),
+    ):
+        _insert_tx(conn, booked, cents, counterparty="Employer", category="Salary")
+
+
+def test_salary_day_gives_expected_income_and_thirteen_fixed_cost_cycles(
+    conn: sqlite3.Connection,
+) -> None:
+    today = date(2026, 10, 7)
+    save_settings(conn, 25, -50_000)
+    set_manual_balance(conn, today, 100_000, today)
+    _salary_history(conn)
+    _monthly(conn, "Rent", 1, 50_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, today)
+
+    assert board.expected_income is not None
+    assert board.expected_income.salary_cents == 200_000
+    assert board.expected_income.total_cents == (
+        board.expected_income.salary_cents + board.expected_income.recurring_cents
+    )
+    cycles = board.fixed_costs.cycles
+    assert [c.kind for c in cycles] == ["actual"] * 6 + ["current"] + ["forecast"] * 6
+    assert cycles[6].start == date(2026, 9, 25)
+    assert cycles[-1].forecast_cents == 50_000
+
+
+def test_without_a_salary_day_there_are_no_cycles_and_no_expected_income(
+    conn: sqlite3.Connection,
+) -> None:
+    set_manual_balance(conn, TODAY, 100_000, TODAY)
+    _salary_history(conn)
+    _monthly(conn, "Rent", 1, 50_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.fixed_costs.cycles == ()
+    assert board.expected_income is None
+
+
+def test_without_income_credits_there_is_no_expected_income(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _monthly(conn, "Rent", 1, 50_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.expected_income is None
+    assert len(board.fixed_costs.cycles) == 13

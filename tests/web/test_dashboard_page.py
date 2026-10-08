@@ -695,9 +695,9 @@ def test_runway_reaches_the_expected_monthly_income(tmp_path):
     page = _dashboard(db_path)
 
     legend = page.select_one("#runway [data-legend=income]")
-    assert cents(legend) == 250_000
+    assert cents(legend) == 200_000
     assert "salary" not in text(legend)
-    assert cents(page.select_one("#runway [data-part=to-income]")) == 250_000
+    assert cents(page.select_one("#runway [data-part=to-income]")) == 200_000
 
 
 def test_runway_has_no_income_without_income_credits(tmp_path):
@@ -721,7 +721,7 @@ def test_income_legend_splits_salary_and_recurring_income(tmp_path):
     legend = _dashboard(db_path).select_one("#runway [data-legend=income]")
 
     total, salary, recurring = (int(el["data-cents"]) for el in legend.select("[data-cents]"))
-    assert salary == 250_000
+    assert salary == 200_000
     assert recurring > 0
     assert total == salary + recurring
     assert "recurring" in text(legend)

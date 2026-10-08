@@ -1,6 +1,7 @@
 """Expected monthly income (SPEC §13 Recurring income).
 
-Expected income is the best salary of the last 3 complete pay cycles plus the
+Expected income is the lowest salary of the last 3 complete pay cycles (those with a
+salary credit) plus the
 monthly equivalent of the detected recurring income (benefits and similar).
 
 The salary is matched by distance to payday, not by the cycle a credit is booked
@@ -36,14 +37,14 @@ def expected_income(
 ) -> ExpectedIncome | None:
     """None without salary history: recurring income alone is no income estimate."""
     rows = list(rows)
-    salary = _best_salary(rows, category_types, salary_day, estimate_date)
+    salary = _lowest_salary(rows, category_types, salary_day, estimate_date)
     if salary == 0:
         return None
     recurring = _recurring_monthly(rows, category_types, salary_day, estimate_date)
     return ExpectedIncome(salary, recurring, salary + recurring)
 
 
-def _best_salary(
+def _lowest_salary(
     rows: list[Row], category_types: dict[str, str], salary_day: int, estimate_date: date
 ) -> int:
     credits = [
@@ -54,17 +55,14 @@ def _best_salary(
     paydays = [
         cycle.start for cycle in complete_cycles(estimate_date, salary_day, _CYCLES_LOOKED_AT)
     ]
-    return max(
-        (
-            sum(
-                cents
-                for booked, cents in credits
-                if abs((booked - payday).days) <= SALARY_DAY_DISTANCE
-            )
-            for payday in paydays
-        ),
-        default=0,
+    per_cycle = (
+        sum(
+            cents for booked, cents in credits if abs((booked - payday).days) <= SALARY_DAY_DISTANCE
+        )
+        for payday in paydays
     )
+    # A cycle without salary credit (history starts later) must not pull the estimate to 0.
+    return min((total for total in per_cycle if total > 0), default=0)
 
 
 def _recurring_monthly(

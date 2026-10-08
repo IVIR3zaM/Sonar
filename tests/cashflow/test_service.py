@@ -804,7 +804,7 @@ def test_salary_day_gives_expected_income_and_thirteen_fixed_cost_cycles(
     board = load_dashboard(conn, CATEGORY_TYPES, today)
 
     assert board.expected_income is not None
-    assert board.expected_income.salary_cents == 250_000
+    assert board.expected_income.salary_cents == 200_000
     assert board.expected_income.total_cents == (
         board.expected_income.salary_cents + board.expected_income.recurring_cents
     )

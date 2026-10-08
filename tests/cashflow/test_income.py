@@ -33,7 +33,7 @@ def _expected(rows) -> ExpectedIncome | None:
     return expected_income(rows, TYPES, SALARY_DAY, ESTIMATE_DATE)
 
 
-def test_worked_example_adds_best_salary_and_recurring_income():
+def test_worked_example_adds_lowest_salary_and_recurring_income():
     rows = [
         _credit(date(2026, 6, 25), 300000),
         _credit(date(2026, 7, 24), 320000),
@@ -46,8 +46,24 @@ def test_worked_example_adds_best_salary_and_recurring_income():
     ]
 
     assert _expected(rows) == ExpectedIncome(
-        salary_cents=330000, recurring_cents=25500, total_cents=355500
+        salary_cents=300000, recurring_cents=25500, total_cents=325500
     )
+
+
+def test_lowest_salary_of_three_different_cycles_is_expected():
+    rows = [
+        _credit(date(2026, 6, 25), 330000),
+        _credit(date(2026, 7, 24), 290000),
+        _credit(date(2026, 8, 25), 310000),
+    ]
+
+    assert _expected(rows).salary_cents == 290000
+
+
+def test_lowest_salary_skips_cycles_without_salary():
+    rows = [_credit(date(2026, 7, 24), 320000)]
+
+    assert _expected(rows).salary_cents == 320000
 
 
 def test_quarterly_income_counts_a_third_rounded_half_up_on_the_total():

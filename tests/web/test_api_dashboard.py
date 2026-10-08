@@ -133,7 +133,7 @@ def test_expected_income_and_cycles_match_load_dashboard(tmp_path):
 
     assert board.expected_income is not None
     assert body["expected_income"] == {
-        "salary_cents": 250_000,
+        "salary_cents": 200_000,
         "recurring_cents": board.expected_income.recurring_cents,
         "total_cents": board.expected_income.total_cents,
     }

@@ -5,10 +5,12 @@ import pytest
 from sonar.recurring.schedule import (
     Occurrence,
     SchedulePeriod,
+    ScheduleStatus,
     next_due_date,
     occurrences,
     pause_after,
     resume_on,
+    schedule_status,
 )
 
 
@@ -175,3 +177,36 @@ def test_invalid_periods_raise(amount_cents, interval_months, day):
         resume_on((), date(2026, 1, 1), amount_cents, interval_months, day=day)
     with pytest.raises(ValueError):
         _period(date(2026, 1, 1), amount_cents, interval_months, day)
+
+
+def test_status_is_none_for_an_active_payment():
+    periods = (_period(date(2026, 1, 1)),)
+
+    assert schedule_status(periods, date(2026, 9, 23)) is None
+
+
+def test_status_is_paused_until_the_earliest_future_start():
+    periods = (
+        _period(date(2026, 1, 1), until=date(2026, 8, 31)),
+        _period(date(2027, 1, 5)),
+        _period(date(2026, 11, 5)),
+    )
+
+    assert schedule_status(periods, date(2026, 9, 23)) == ScheduleStatus(
+        "paused", date(2026, 11, 5)
+    )
+
+
+def test_status_is_ended_on_the_latest_until():
+    periods = (
+        _period(date(2025, 1, 1), until=date(2025, 12, 31)),
+        _period(date(2026, 1, 1), until=date(2026, 8, 31)),
+    )
+
+    assert schedule_status(periods, date(2026, 9, 23)) == ScheduleStatus("ended", date(2026, 8, 31))
+
+
+def test_status_is_none_when_every_period_starts_after_today():
+    periods = (_period(date(2026, 11, 5)), _period(date(2027, 1, 5)))
+
+    assert schedule_status(periods, date(2026, 9, 23)) is None

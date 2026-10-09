@@ -169,9 +169,9 @@ def test_invalid_input_returns_400_and_leaves_payment_unchanged(tmp_path):
             f"/recurring/{payment_id}/resume",
             data={
                 "starts_on": "not-a-date",
-                "amount": "50.00",
-                "interval_months": "1",
-                "day": "1",
+                "amount": "77.00",
+                "interval_months": "3",
+                "day": "9",
             },
         )
         assert resumed_bad_starts.status_code == 400
@@ -181,6 +181,10 @@ def test_invalid_input_returns_400_and_leaves_payment_unchanged(tmp_path):
         resume_form = row.select_one('form[action$="/resume"]')
         assert resume_form.select_one("#form-error") is not None
         assert resume_form.select_one('input[name="starts_on"]')["value"] == "not-a-date"
+        # The posted values win over the prefill from the latest period.
+        assert resume_form.select_one('input[name="amount"]')["value"] == "77.00"
+        assert resume_form.select_one('input[name="interval_months"]')["value"] == "3"
+        assert resume_form.select_one('input[name="day"]')["value"] == "9"
         _assert_only_drawer_open(page, payment_id, other_id)
 
         resumed_bad_amount = client.post(

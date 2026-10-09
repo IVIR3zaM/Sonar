@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from sonar.db import connect
 from sonar.debts.store import debt_overview
 from sonar.money import parse_cents
-from sonar.recurring.schedule import SchedulePeriod, next_due_date
+from sonar.recurring.schedule import SchedulePeriod, next_due_date, schedule_status
 from sonar.recurring.store import (
     add_manual,
     dismiss,
@@ -50,6 +50,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                     "payment": payment,
                     "latest": payment.periods[-1],
                     "next_due": next_due_date(payment.periods, payment.last_paid_date, today()),
+                    "status": schedule_status(payment.periods, today()),
                     "debt_name": debt_names_by_payment_id.get(payment.id),
                     "edit_error": forms.row_error(errors, "edit", payment.id),
                     "pause_error": forms.row_error(errors, "pause", payment.id),

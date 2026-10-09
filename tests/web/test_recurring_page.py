@@ -10,7 +10,7 @@ from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.recurring.schedule import occurrences
 from sonar.recurring.store import list_payments
 from sonar.web.app import _format_cents, create_app
-from tests.html import cents, fields, soup
+from tests.html import cents, fields, soup, text
 from tests.seed import seed
 
 TODAY = date(2026, 9, 23)
@@ -502,3 +502,69 @@ def test_edit_form_saves_and_prefills_the_description(tmp_path):
 
     assert fields(row)["description"] == "Pays the studio"
     assert row.select_one('input[name="description"]')["value"] == "Pays the studio"
+
+
+def _add_payment(client, name: str, starts_on: str = "2026-01-05", **overrides) -> None:
+    client.post(
+        "/recurring",
+        data={**_ADD_DATA, "name": name, "starts_on": starts_on, **overrides},
+    )
+
+
+def _payment_row_by_name(client, name: str):
+    [row] = [r for r in _payment_rows(client.get("/recurring")) if fields(r)["name"] == name]
+    return row
+
+
+def test_status_badge_shows_paused_ended_and_nothing_for_active(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        for name in ("Paused", "Ended", "Active"):
+            _add_payment(client, name)
+        conn = sqlite3.connect(db_path)
+        try:
+            ids = {p.name: p.id for p in list_payments(conn)}
+        finally:
+            conn.close()
+        client.post(f"/recurring/{ids['Paused']}/pause", data={"last_date": "2026-08-31"})
+        client.post(
+            f"/recurring/{ids['Paused']}/resume",
+            data={"starts_on": "2026-11-05", "amount": "50.00", "interval_months": "1", "day": ""},
+        )
+        client.post(f"/recurring/{ids['Ended']}/pause", data={"last_date": "2026-08-31"})
+
+        paused = _payment_row_by_name(client, "Paused")
+        ended = _payment_row_by_name(client, "Ended")
+        active = _payment_row_by_name(client, "Active")
+
+    paused_badge = paused.select_one('[data-field="status"]')
+    assert paused_badge["data-status"] == "paused"
+    assert text(paused_badge).startswith("Paused · resumes")
+    assert paused_badge.select_one("time[datetime='2026-11-05']") is not None
+    assert paused.select_one('[data-field="next_due"] time')["datetime"] == "2026-11-05"
+
+    ended_badge = ended.select_one('[data-field="status"]')
+    assert ended_badge["data-status"] == "ended"
+    assert ended_badge.select_one("time[datetime='2026-08-31']") is not None
+
+    assert active.select_one('[data-field="status"]') is None
+
+
+def test_resume_form_prefills_amount_interval_and_day_from_the_latest_period(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        _add_payment(client, "Water", amount="240.00", interval_months="2", day="15")
+        payment_id = _payment_id(db_path)
+        row = _payment_row_by_name(client, "Water")
+
+    resume_form = row.select_one('form[action$="/resume"]')
+    assert resume_form.select_one('input[name="amount"]')["value"] == _format_cents(24_000)
+    assert resume_form.select_one('input[name="interval_months"]')["value"] == "2"
+    assert resume_form.select_one('input[name="day"]')["value"] == "15"
+    assert resume_form.select_one('input[name="amount"]')["id"] == (
+        f"resume-amount-payment-{payment_id}"
+    )

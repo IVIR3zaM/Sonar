@@ -71,6 +71,15 @@
             {% if row.debt_name %}
             <div class="mt-1">{{ badge(row.debt_name, tone="accent", attrs={"data-field": "debt"}) }}</div>
             {% endif %}
+            {% if row.status %}
+            <div class="mt-1">
+              {%- if row.status.kind == "paused" -%}
+              {{ badge("Paused · resumes " ~ date(row.status.on), tone="warn", attrs={"data-field": "status", "data-status": "paused"}) }}
+              {%- else -%}
+              {{ badge("Ended " ~ date(row.status.on), tone="neutral", attrs={"data-field": "status", "data-status": "ended"}) }}
+              {%- endif -%}
+            </div>
+            {% endif %}
           </td>
           <td class="{{ td }} {{ td_hide }}" data-field="category">
             {% if payment.category %}{{ badge(payment.category) }}{% endif %}
@@ -129,9 +138,9 @@
                 <form method="post" action="/recurring/{{ payment.id }}/resume" class="{{ form_grid }}">
                   {{ form_error(row.resume_error) }}
                   <div class="col-span-2">{{ field("starts_on", "Resumes on", type="date", value=(row.resume_error.fields.starts_on if row.resume_error else ""), id="resume-starts-on-" ~ uid, required=true) }}</div>
-                  {{ field("amount", "Amount", value=(row.resume_error.fields.amount if row.resume_error else ""), id="resume-amount-" ~ uid, required=true, attrs={"placeholder": "Amount"}) }}
-                  {{ field("interval_months", "Every (months)", type="number", value=(row.resume_error.fields.interval_months if row.resume_error else ""), id="resume-interval-" ~ uid, required=true, attrs={"min": 1, "placeholder": "N"}) }}
-                  <div class="col-span-2">{{ field("day", "Day (optional)", type="number", value=(row.resume_error.fields.day if row.resume_error else ""), id="resume-day-" ~ uid, attrs={"min": 1, "max": 31}) }}</div>
+                  {{ field("amount", "Amount", value=(row.resume_error.fields.amount if row.resume_error else (row.latest.amount_cents | money)), id="resume-amount-" ~ uid, required=true, attrs={"placeholder": "Amount"}) }}
+                  {{ field("interval_months", "Every (months)", type="number", value=(row.resume_error.fields.interval_months if row.resume_error else row.latest.interval_months), id="resume-interval-" ~ uid, required=true, attrs={"min": 1, "placeholder": "N"}) }}
+                  <div class="col-span-2">{{ field("day", "Day (optional)", type="number", value=(row.resume_error.fields.day if row.resume_error else row.latest.day), id="resume-day-" ~ uid, attrs={"min": 1, "max": 31}) }}</div>
                   <div class="col-span-2">{{ button("Resume", variant="secondary", size="sm") }}</div>
                 </form>
               </section>

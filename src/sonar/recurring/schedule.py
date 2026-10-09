@@ -38,6 +38,12 @@ class SchedulePeriod:
 
 
 @dataclass(frozen=True)
+class ScheduleStatus:
+    kind: str  # "paused" (on = resume date) or "ended" (on = last until)
+    on: date
+
+
+@dataclass(frozen=True)
 class Occurrence:
     due_date: date
     amount_cents: int
@@ -61,6 +67,19 @@ def next_due_date(
     earliest = today if last_paid is None else max(today, last_paid + TOLERANCE + timedelta(days=1))
     upcoming = occurrences(periods, earliest, add_months(today, SEARCH_MONTHS, today.day))
     return upcoming[0].due_date if upcoming else None
+
+
+def schedule_status(periods: tuple[SchedulePeriod, ...], today: date) -> ScheduleStatus | None:
+    """None while the payment is active or has not started yet, else why it is silent."""
+    if not periods or any(p.is_valid_on(today) for p in periods):
+        return None
+    later_starts = [p.starts_on for p in periods if p.starts_on > today]
+    if later_starts:
+        # A payment whose periods all lie ahead is just new, not paused.
+        if len(later_starts) == len(periods):
+            return None
+        return ScheduleStatus("paused", min(later_starts))
+    return ScheduleStatus("ended", max(p.until for p in periods if p.until is not None))
 
 
 def pause_after(periods: tuple[SchedulePeriod, ...], last_date: date) -> tuple[SchedulePeriod, ...]:

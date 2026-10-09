@@ -1,5 +1,5 @@
 # Paused and ended payments on Fixed payments
-status: WAITING
+status: DONE
 created: 2026-10-09 · updated: 2026-10-09
 goal: On /recurring a paused or ended payment carries a status badge, and the Resume form arrives prefilled so only a date is needed.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -34,7 +34,7 @@ Definition of done: tests for the status function (active, paused, ended, not ye
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | status badge and resume prefill | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N02 | visual check | gate | N01 | -/- | 0 | 0 | TODO | |
+| N02 | visual check | gate | N01 | -/- | 0 | 0 | DONE | |
 
 ## N01 status badge and resume prefill
 Do: Add a pure `schedule_status(periods, today)` to `src/sonar/recurring/schedule.py` returning None for an

@@ -45,7 +45,7 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 | N02 | sign-in code store | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
-| N05 | visual check | gate | N04 | -/- | 0 | 0 | TODO | |
+| N05 | visual check | gate | N04 | -/- | 0 | 0 | DONE | |
 | N06 | owner iPhone check | gate | N05 | -/- | 0 | 0 | TODO | |
 | N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
 

@@ -1,5 +1,5 @@
 # iOS home-screen sign-in code
-status: RUNNING
+status: DONE
 created: 2026-10-12 · updated: 2026-10-12
 goal: The iPhone home-screen Sonar app signs in with the plain Google flow and keeps its 14-day session across launches, the site scoped to the app by a web app manifest; the code sign-in is removed.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -49,7 +49,7 @@ Definition of done: no code sign-in remains in `src/`, `tests/` or SPEC; every p
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | DONE | |
 | N06 | owner iPhone check | gate | N10 | -/- | 0 | 2 | DONE | |
-| N07 | plan acceptance | check | N11 | -/sonnet | 0 | 1 | TODO | |
+| N07 | plan acceptance | check | N11 | -/sonnet | 1 | 1 | DONE | |
 | N08 | web app manifest | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 | N09 | drop code mode | exec | N08 | sonnet/sonnet | 2 | 0 | DONE | |
 | N10 | login visual check | gate | N09 | -/- | 0 | 0 | DONE | |
@@ -390,4 +390,8 @@ exec: DONE · tests: 1347 passed
 - app.css line 1 now imports tailwindcss with source(../../..) plus a why-comment; sonar.css rebuilt and equals HEAD, leaking text-4xl and tracking-widest gone
 - Choice: restored the committed sonar.css before the final build, since a rebuild over a polluted output keeps scanning its own leaked classes
 check: PASS 4/4
+verify: PASS
+
+### N07 try 1 · 2026-10-12
+check: PASS 3/3
 verify: PASS

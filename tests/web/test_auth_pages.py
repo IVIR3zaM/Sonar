@@ -268,3 +268,32 @@ def test_default_google_client_needs_no_network_to_start(tmp_path):
         response = client.get("/auth/login")
 
     assert response.status_code == 200
+
+
+def test_login_page_has_an_always_visible_code_form(tmp_path):
+    with _client(tmp_path) as client:
+        page = soup(client.get("/auth/login"))
+
+    form = page.select_one("#code-sign-in")
+    assert form is not None
+    assert form["method"].lower() == "post"
+    assert form["action"] == "/auth/code"
+    field = form.select_one("input[name=code]")
+    assert field["inputmode"] == "numeric"
+    assert field["autocomplete"] == "one-time-code"
+    assert field["pattern"] == "[0-9]{6}"
+    assert field["maxlength"] == "6"
+    assert field.has_attr("required")
+    assert page.select_one("#google-sign-in")["href"] == "/auth/google"
+
+
+def test_login_page_loads_the_sign_in_script_without_inline_script(tmp_path):
+    with _client(tmp_path) as client:
+        page = soup(client.get("/auth/login"))
+        script = client.get("/static/sign_in.js")
+
+    tags = page.select('script[src="/static/sign_in.js"]')
+    assert len(tags) == 1
+    assert tags[0].has_attr("defer")
+    assert page.select("#login script") == []
+    assert script.status_code == 200

@@ -1,5 +1,5 @@
 # iOS home-screen sign-in code
-status: RUNNING
+status: WAITING
 created: 2026-10-12 · updated: 2026-10-12
 goal: The iPhone home-screen Sonar app gets its own 14-day session by typing a one-time 6-digit code that the Google sign-in panel shows, while normal browsers keep the direct redirect.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -44,7 +44,7 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | sign-in code store | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 0 | 0 | TODO | |
+| N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | TODO | |
 | N06 | owner iPhone check | gate | N05 | -/- | 0 | 0 | TODO | |
 | N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
@@ -213,4 +213,11 @@ exec: DONE · 1375 passed
 - /auth/google?mode=code flags the session; code-mode callback checks the access list, issues a code, renders bare sign_in_code.html with no-store
 - create_app gains now clock and one SignInCodes; access._is_allowed made public as is_allowed_email; sonar.css rebuilt
 check: PASS 3/3
+verify: PASS
+
+### N04 try 1 · 2026-10-12
+exec: DONE · 1390 passed
+- POST /auth/code (Origin/Referer check before redeem, 303/400/403/429), login code form, static/sign_in.js, SPEC §13 bullet, tests
+- sonar.css rebuilt, unchanged: no new classes; 403/429 reuse the same inline error text
+check: PASS 5/5
 verify: PASS

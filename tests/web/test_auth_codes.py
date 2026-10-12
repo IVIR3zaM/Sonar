@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime, timedelta
 
+import pytest
+from fastapi.testclient import TestClient
+
+from sonar.web.app import create_app
 from tests.html import soup, text
+from tests.seed import seed
 from tests.web.fake_google import FakeGoogle
-from tests.web.test_auth_pages import _allow, _client, _session
+from tests.web.test_auth_pages import AUTH, _allow, _client, _revoke, _session
 
 
 def _code_mode_sign_in(client, google: FakeGoogle, email: str, verified: bool | None = True):
@@ -105,3 +110,173 @@ def test_code_mode_with_an_unverified_email_is_not_allowed(tmp_path, verified):
     page = soup(callback)
     assert page.select_one("#not-allowed") is not None
     assert page.select_one("#sign-in-code") is None
+
+
+# --- exchanging a code for a session in the browser that posts it ---
+
+ERROR_TEXT = "That code did not work. Sign in with Google again to get a new one."
+ORIGIN = {"Origin": "http://testserver"}
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.at = datetime(2026, 10, 12, 9, 0, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+class Pair:
+    """One server with two browsers: Safari signs in with Google, the home-screen app posts."""
+
+    def __init__(self, tmp_path, google: FakeGoogle, clock: Clock) -> None:
+        seed(tmp_path / "t.db")
+        server = create_app(tmp_path / "t.db", auth=AUTH, google=google, now=clock)
+        self.google = google
+        self.safari = TestClient(server, follow_redirects=False)
+        self.app = TestClient(server, follow_redirects=False)
+
+    def code_for(self, email: str) -> str:
+        callback = _code_mode_sign_in(self.safari, self.google, email)
+        return text(soup(callback).select_one("#sign-in-code"))
+
+
+@pytest.fixture
+def pair(tmp_path):
+    both = Pair(tmp_path, FakeGoogle(), Clock())
+    _allow(tmp_path, "owner@example.com")
+    with both.safari, both.app:
+        yield both
+
+
+def _post_code(client: TestClient, code: str, headers: dict | None = ORIGIN):
+    return client.post("/auth/code", data={"code": code}, headers=headers)
+
+
+def _wrong(code: str) -> str:
+    return f"{(int(code) + 1) % 10**6:06d}"
+
+
+def _error_text(response) -> str:
+    return text(soup(response).select_one("#field-code-error"))
+
+
+def test_exchange_code_signs_in_the_posting_client(pair):
+    code = pair.code_for("owner@example.com")
+    response = _post_code(pair.app, code)
+    home = pair.app.get("/")
+    api = pair.app.get("/api/categories")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert home.status_code == 200
+    assert api.status_code == 200
+    assert "Max-Age=1209600" in response.headers["set-cookie"]
+    assert _session(pair.app) == {"email": "owner@example.com"}
+    assert _session(pair.safari) == {}
+
+
+def _assert_rejected(response, app: TestClient, code: str) -> None:
+    assert response.status_code == 400
+    assert _error_text(response) == ERROR_TEXT
+    assert soup(response).select_one("#field-code")["value"] == code
+    assert _session(app) == {}
+    assert app.get("/").status_code == 302
+
+
+def test_wrong_code_is_rejected(pair):
+    code = pair.code_for("owner@example.com")
+    bad = _wrong(code)
+    _assert_rejected(_post_code(pair.app, bad), pair.app, bad)
+
+
+def test_malformed_code_is_rejected_with_the_same_error(pair):
+    pair.code_for("owner@example.com")
+    _assert_rejected(_post_code(pair.app, "12ab"), pair.app, "12ab")
+
+
+def test_expired_code_is_rejected(tmp_path):
+    clock = Clock()
+    pair = Pair(tmp_path, FakeGoogle(), clock)
+    _allow(tmp_path, "owner@example.com")
+    with pair.safari, pair.app:
+        code = pair.code_for("owner@example.com")
+        clock.at += timedelta(minutes=5)
+        _assert_rejected(_post_code(pair.app, code), pair.app, code)
+
+
+def test_reused_code_is_rejected(pair):
+    code = pair.code_for("owner@example.com")
+    assert _post_code(pair.app, code).status_code == 303
+    pair.app.cookies.clear()
+    _assert_rejected(_post_code(pair.app, code), pair.app, code)
+
+
+def test_revoked_email_code_is_rejected(tmp_path, pair):
+    code = pair.code_for("owner@example.com")
+    _revoke(tmp_path, "owner@example.com")
+    _assert_rejected(_post_code(pair.app, code), pair.app, code)
+
+
+def test_all_rejections_share_one_error_text(tmp_path):
+    clock = Clock()
+    pair = Pair(tmp_path, FakeGoogle(), clock)
+    _allow(tmp_path, "owner@example.com")
+    with pair.safari, pair.app:
+        code = pair.code_for("owner@example.com")
+        texts = {
+            _error_text(_post_code(pair.app, _wrong(code))),
+            _error_text(_post_code(pair.app, "abc")),
+        }
+        clock.at += timedelta(minutes=5)
+        texts.add(_error_text(_post_code(pair.app, code)))
+
+    assert texts == {ERROR_TEXT}
+
+
+def test_rate_limit_sixth_post_in_the_window_is_429_even_with_a_valid_code(pair):
+    code = pair.code_for("owner@example.com")
+    for _ in range(5):
+        assert _post_code(pair.app, _wrong(code)).status_code == 400
+    # Five failures void the pending code, so issue a fresh, valid one.
+    fresh = pair.code_for("owner@example.com")
+    limited = _post_code(pair.app, fresh)
+
+    assert limited.status_code == 429
+    assert pair.app.get("/").status_code == 302
+
+
+def test_rate_limit_five_wrong_codes_void_a_pending_valid_code(pair):
+    code = pair.code_for("owner@example.com")
+    for _ in range(5):
+        _post_code(pair.app, _wrong(code))
+    elsewhere = TestClient(pair.app.app, follow_redirects=False, client=("203.0.113.9", 50000))
+    with elsewhere:
+        response = _post_code(elsewhere, code)
+
+    assert response.status_code == 400
+    assert _session(elsewhere) == {}
+
+
+def test_foreign_origin_is_403_and_costs_no_attempt(pair):
+    code = pair.code_for("owner@example.com")
+    foreign = _post_code(pair.app, code, {"Origin": "http://evil.example"})
+    neither = _post_code(pair.app, code, {})
+
+    assert foreign.status_code == 403
+    assert neither.status_code == 403
+    assert _error_text(foreign) == ERROR_TEXT
+    assert _post_code(pair.app, code).status_code == 303
+
+
+def test_referer_under_the_base_url_stands_in_for_origin(pair):
+    code = pair.code_for("owner@example.com")
+    lookalike = _post_code(pair.app, code, {"Referer": "http://testserver.evil.example/auth/login"})
+    legit = _post_code(pair.app, code, {"Referer": "http://testserver/auth/login"})
+
+    assert lookalike.status_code == 403
+    assert legit.status_code == 303
+
+
+def test_get_auth_code_is_405(pair):
+    assert pair.app.get("/auth/code").status_code == 405

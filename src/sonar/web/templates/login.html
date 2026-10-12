@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "components/card.html" import card %}
 {% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
 {% set bare = true %}
 
 {% block content %}
@@ -10,6 +11,12 @@
   <div id="login-error" role="alert" class="rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ error }}</div>
   {%- endif %}
   {{ button("Sign in with Google", href="/auth/google", id="google-sign-in") }}
+  <form id="code-sign-in" method="post" action="/auth/code" class="flex flex-col gap-3">
+    {{ field("code", "Have a sign-in code?", value=code_value, error=code_error, required=true,
+             attrs={"inputmode": "numeric", "autocomplete": "one-time-code", "pattern": "[0-9]{6}", "maxlength": "6"}) }}
+    {{ button("Sign in with code", variant="secondary") }}
+  </form>
 </div>
 {% endcall %}
+<script src="/static/sign_in.js" defer></script>
 {% endblock %}

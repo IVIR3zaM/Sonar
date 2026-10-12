@@ -52,7 +52,7 @@ Definition of done: no code sign-in remains in `src/`, `tests/` or SPEC; every p
 | N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | web app manifest | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 | N09 | drop code mode | exec | N08 | sonnet/sonnet | 2 | 0 | DONE | |
-| N10 | login visual check | gate | N09 | -/- | 0 | 0 | TODO | |
+| N10 | login visual check | gate | N09 | -/- | 0 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the auth and form

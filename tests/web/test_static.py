@@ -57,18 +57,6 @@ def test_static_payoff_script_returns_200(tmp_path):
     assert "payoff-slider" in response.text
 
 
-def test_sign_in_js_only_rewrites_the_google_link_in_standalone_display(tmp_path):
-    """sign_in.js switches #google-sign-in to code mode under the standalone checks only."""
-    app = create_app(db_path=tmp_path / "test.db")
-    with TestClient(app) as client:
-        response = client.get("/static/sign_in.js")
-    assert response.status_code == 200
-    assert "navigator.standalone === true" in response.text
-    assert "(display-mode: standalone)" in response.text
-    assert "google-sign-in" in response.text
-    assert "mode=code" in response.text
-
-
 def test_index_links_web_app_manifest_with_whole_site_scope(tmp_path):
     """GET / links a manifest scoped to the whole site for the home-screen app."""
     app = create_app(db_path=tmp_path / "test.db")

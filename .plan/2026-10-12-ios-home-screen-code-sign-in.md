@@ -1,7 +1,7 @@
 # iOS home-screen sign-in code
 status: WAITING
 created: 2026-10-12 · updated: 2026-10-12
-goal: The iPhone home-screen Sonar app gets its own 14-day session by typing a one-time 6-digit code that the Google sign-in panel shows, while normal browsers keep the direct redirect.
+goal: The iPhone home-screen Sonar app signs in with the plain Google flow and keeps its 14-day session across launches, the site scoped to the app by a web app manifest; the code sign-in is removed.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
 commit: per-node
 push: none
@@ -10,33 +10,34 @@ tier: M
 
 ## Intent
 
-Goal: On iOS the home-screen (standalone) app opens Google sign-in in an in-app Safari panel whose cookies the app never sees, so the panel ends up signed in and the app stays signed out on every launch. The app should instead start a "code" sign-in: once Google confirms a verified, allow-listed email, the panel shows a short one-time code, the owner closes the panel and types the code into the app's login page, and the app gets the same 14-day rolling session a browser sign-in gives.
+Goal: On iOS the home-screen (standalone) app kept ending up signed out, because without a manifest its scope was the folder it was added from and the Google round trip left it. With a manifest whose scope is the whole site, the Google callback returns into the standalone app and sets the session in the app's own cookie jar, so the plain Google sign-in is enough: the owner taps Sign in with Google, finishes Google, lands on the dashboard inside the app, and stays signed in on the next launch for the usual 14-day rolling session.
 
-In scope: an in-memory one-time code store in `src/sonar/auth/codes.py`; a code mode on `/auth/google` and `/auth/callback` with a bare code page; an always-visible "Have a sign-in code?" form on the login page and a `POST /auth/code` exchange in `src/sonar/web/pages/auth.py`; a small static `sign_in.js` that switches the Google button to code mode only in standalone display; an injectable clock on `create_app`; a public `static/manifest.webmanifest` linked from `base.html` so the home-screen app's scope is the whole site and the 303 to `/` stays inside it; tests first for all of it; a SPEC §13 bullet; the rebuilt `sonar.css`.
+In scope: the public `static/manifest.webmanifest` linked from `base.html` (done in N08); removing the whole code sign-in built earlier in this plan (the code store `src/sonar/auth/codes.py`, the code mode on `/auth/google` and `/auth/callback`, `sign_in_code.html`, the login page's code form, `POST /auth/code`, `static/sign_in.js`, the `now` clock on `create_app`, their tests); a regression test that a leftover `?mode=code` still signs in normally; the SPEC home-screen bullet cut down to the manifest; the rebuilt `sonar.css`.
 
-Out of scope: automatic handoff without typing, Google Identity Services or popups, a service worker or offline mode, session length, API token behaviour, any DB table or migration, and the normal browser callback (it keeps redirecting to /).
+Out of scope: one-time codes or any other handoff, Google Identity Services or popups, a service worker or offline mode, session length, API token behaviour, any DB table or migration, and changes to the normal Google flow itself.
 
-Constraints: AGENTS.md rules: strict TDD, KISS, pure auth logic without sqlite or web imports (`tests/test_architecture.py`), routes only in `web/pages/auth.py`, page tests on ids through `tests/html.py`, no inline `<style>` or new inline script, `sonar.css` rebuilt and committed, ruff clean. Security: CSPRNG codes stored only as keyed hashes, single use, 5-minute TTL, re-checked against the access list, per-IP limit plus mass invalidation, one generic error, Origin-checked POST, codes never in URLs, redirects or logs. Decisions D1-D14.
+Constraints: AGENTS.md rules: strict TDD, KISS, routes only in `web/pages/auth.py`, page tests on ids through `tests/html.py`, no inline `<style>` or script, `sonar.css` rebuilt and committed, ruff clean. After the removal the code under `src/` and `tests/` differs from the pre-plan tree (57a4928^) only by the manifest work and the regression test. Decisions D11-D16; D1-D10 are void by D16.
 
-Definition of done: tests cover issue, exchange, expiry, single use, the rate limit, invalidation, the generic error, the Origin check and code mode against the normal callback; SPEC §13 has the code-flow bullet; the visual gate passes on the login and code pages at desktop and 375px, light and dark; every page links the manifest; the owner re-adds the icon and confirms on the iPhone home-screen app that the typed code lands on the dashboard and the next launch stays signed in; the final check passes verify and SPEC §11 and §12.
+Definition of done: no code sign-in remains in `src/`, `tests/` or SPEC; every page links the manifest; the SPEC §13 home-screen bullet describes only the manifest; the login page passes the visual gate at desktop and 375px, light and dark; the owner re-adds the icon and confirms on the iPhone that plain Google sign-in lands on the dashboard inside the app and the next launch stays signed in; the final check passes verify and SPEC §11 and §12.
 
 ## Decisions
 
-- D1 Trigger: in standalone display (`navigator.standalone === true` or `matchMedia("(display-mode: standalone)").matches`) `static/sign_in.js` rewrites `#google-sign-in` href to `/auth/google?mode=code`; `/auth/google` sets `session["code_mode"] = True` only for `mode=code` and removes it otherwise; the callback reads it before `session.clear()` | confirmed
-- D2 Code-mode callback: after the existing `email_verified` check, check the access list; listed → issue a code and render bare `sign_in_code.html` (200, `Cache-Control: no-store`), the panel session keeps no email; unverified or unlisted → the existing not-allowed page, no code. The normal callback is unchanged | confirmed
-- D3 Store: `src/sonar/auth/codes.py`, one in-memory instance per `create_app`; code `f"{secrets.randbelow(10**6):06d}"`; kept only as HMAC-SHA256 under a per-instance `secrets.token_bytes(32)` key; valid while `now < issued_at + 5 min`; single use; one pending code per email (a new one replaces the old); expired entries pruned on every call; a restart loses pending codes | confirmed
-- D4 Limits: at most 5 exchange attempts per client IP in a sliding 15 minutes (every attempt counts, success included); the 6th answers 429 without looking at the code; separately every 5th rejected attempt from any IP drops all pending codes. The IP is `request.client.host`, which uvicorn already resolves from the local proxy (`src/sonar/__main__.py:63-66`); the app never reads X-Forwarded-For itself. Anyone can void a pending code by guessing 5 times; the owner then signs in again | confirmed
-- D5 Exchange: `POST /auth/code`, form field `code`, trimmed, exactly 6 ASCII digits. Success → `session.clear()`, `session["email"] = email`, 303 to `/` (same SessionMiddleware cookie, 14-day rolling `max_age`). Wrong, malformed, expired, used, or the email no longer listed → login page 400 with the one inline error "That code did not work. Sign in with Google again to get a new one." on the code field (SPEC §12 inline error, entered value kept) | confirmed
-- D6 CSRF: the POST needs `Origin` equal to the origin of `SONAR_BASE_URL`, or, without Origin, a `Referer` starting with base_url + `/`; otherwise 403 login page with the generic error, counted as no attempt. SameSite=Lax stays | confirmed
-- D7 Clock: `create_app` gains `now: Callable[[], datetime]` (default timezone-aware UTC now), passed to the auth router; `codes.py` methods take `now: datetime` and never read the clock | confirmed
-- D8 Login form: under the Google button, always shown (works without JS): `<form id="code-sign-in" method="post" action="/auth/code">`, the `field` macro with name `code`, label "Have a sign-in code?", `inputmode="numeric"`, `autocomplete="one-time-code"`, `pattern="[0-9]{6}"`, `maxlength="6"`, required; button "Sign in with code" | confirmed
-- D9 Code page text: the code in `#sign-in-code` (six digits, large, tabular), "Tap ✕ and type this code in Sonar.", "It works once, within 5 minutes." | confirmed
-- D10 Logging: no app logging is added (the app has none); uvicorn's access log already records method, path, status and IP of every attempt, and the code travels only in the POST body and the code page | confirmed
-- D11 SPEC: one new §13 bullet "Sign-in code (§13 Sign-in)" after SPEC.md:245 describing D1-D6, plus one manifest sentence on that bullet (D15, N08); no other SPEC line changes | confirmed
+- D1 Trigger: in standalone display (`navigator.standalone === true` or `matchMedia("(display-mode: standalone)").matches`) `static/sign_in.js` rewrites `#google-sign-in` href to `/auth/google?mode=code`; `/auth/google` sets `session["code_mode"] = True` only for `mode=code` and removes it otherwise; the callback reads it before `session.clear()` | confirmed · void by D16
+- D2 Code-mode callback: after the existing `email_verified` check, check the access list; listed → issue a code and render bare `sign_in_code.html` (200, `Cache-Control: no-store`), the panel session keeps no email; unverified or unlisted → the existing not-allowed page, no code. The normal callback is unchanged | confirmed · void by D16
+- D3 Store: `src/sonar/auth/codes.py`, one in-memory instance per `create_app`; code `f"{secrets.randbelow(10**6):06d}"`; kept only as HMAC-SHA256 under a per-instance `secrets.token_bytes(32)` key; valid while `now < issued_at + 5 min`; single use; one pending code per email (a new one replaces the old); expired entries pruned on every call; a restart loses pending codes | confirmed · void by D16
+- D4 Limits: at most 5 exchange attempts per client IP in a sliding 15 minutes (every attempt counts, success included); the 6th answers 429 without looking at the code; separately every 5th rejected attempt from any IP drops all pending codes. The IP is `request.client.host`, which uvicorn already resolves from the local proxy (`src/sonar/__main__.py:63-66`); the app never reads X-Forwarded-For itself. Anyone can void a pending code by guessing 5 times; the owner then signs in again | confirmed · void by D16
+- D5 Exchange: `POST /auth/code`, form field `code`, trimmed, exactly 6 ASCII digits. Success → `session.clear()`, `session["email"] = email`, 303 to `/` (same SessionMiddleware cookie, 14-day rolling `max_age`). Wrong, malformed, expired, used, or the email no longer listed → login page 400 with the one inline error "That code did not work. Sign in with Google again to get a new one." on the code field (SPEC §12 inline error, entered value kept) | confirmed · void by D16
+- D6 CSRF: the POST needs `Origin` equal to the origin of `SONAR_BASE_URL`, or, without Origin, a `Referer` starting with base_url + `/`; otherwise 403 login page with the generic error, counted as no attempt. SameSite=Lax stays | confirmed · void by D16
+- D7 Clock: `create_app` gains `now: Callable[[], datetime]` (default timezone-aware UTC now), passed to the auth router; `codes.py` methods take `now: datetime` and never read the clock | confirmed · void by D16
+- D8 Login form: under the Google button, always shown (works without JS): `<form id="code-sign-in" method="post" action="/auth/code">`, the `field` macro with name `code`, label "Have a sign-in code?", `inputmode="numeric"`, `autocomplete="one-time-code"`, `pattern="[0-9]{6}"`, `maxlength="6"`, required; button "Sign in with code" | confirmed · void by D16
+- D9 Code page text: the code in `#sign-in-code` (six digits, large, tabular), "Tap ✕ and type this code in Sonar.", "It works once, within 5 minutes." | confirmed · void by D16
+- D10 Logging: no app logging is added (the app has none); uvicorn's access log already records method, path, status and IP of every attempt, and the code travels only in the POST body and the code page | confirmed · void by D16
+- D11 SPEC: the §13 code-flow bullet (SPEC.md:246) becomes one manifest-only bullet: every page links `static/manifest.webmanifest` with `scope` and `start_url` "/", so a home-screen app keeps the Google round trip and the redirect to `/` in its standalone window and signs in with the normal Google flow; no other SPEC line changes | confirmed
 - D12 Order: the owner iPhone gate (N06) comes before the whole-plan check (N07), since a plan's last node is that check | confirmed
 - D13 Visual gate setup (pre-authorized): a scratch launcher in the session scratchpad (never in the repo) runs `create_app` on a temp DB with sign-in settings for `http://127.0.0.1:8000` and a stand-in Google that redirects straight to `/auth/callback` and returns a verified `owner@example.com`, allowed with `uv run sonar allow-email owner@example.com --db <tmp db>` | confirmed
 - D14 The owner deploys to the server themselves at N06; the plan never pushes or deploys (`push: none`) | confirmed
 - D15 App scope: base.html (src/sonar/web/templates/base.html:6-23) links no manifest, so iOS scopes the home-screen app to the folder of the URL it was added from; added while signed out, that URL is /auth/login (the gate redirects there, src/sonar/web/access.py:51), so the scope is /auth/ and the 303 from `POST /auth/code` to `/` (src/sonar/web/pages/auth.py:133) leaves it and opens the in-app browser. Fix: serve a public `/static/manifest.webmanifest` (`name`/`short_name` "Sonar", `start_url` "/", `scope` "/", `display` "standalone", the apple-touch icon) and link it from base.html with `<link rel="manifest">`; this moves "a web app manifest" from Out of scope to In scope; the owner then deletes the home-screen icon and adds it again from Safari, as part of the N06 gate | confirmed
+- D16 Code mode after the manifest: with scope "/" the Google callback came back into the standalone app (its own cookie jar; the state check passed, the code page rendered there with no ✕), so the plain Google flow should now set the session inside the home-screen app and code mode has no remaining use. Drop code mode: remove `static/sign_in.js` and its link, `mode=code` and the code-mode callback branch with `sign_in_code.html`, the login "Have a sign-in code?" form, `POST /auth/code`, `src/sonar/auth/codes.py`, the `now` clock on `create_app` and their tests (introduced by 57a4928, 42cfffb, 3978bad); keep the manifest (D15, b27a292); the SPEC.md:246 bullet shrinks to the manifest sentence; D1-D10 become void, the goal and Intent change to "home-screen app signs in with plain Google", N07 drops its code criteria; N06 then checks plain Google sign-in in the home-screen app and relaunch | confirmed
 
 ## Graph
 
@@ -47,9 +48,11 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 | N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | DONE | |
-| N06 | owner iPhone check | gate | N08 | -/- | 0 | 1 | TODO | |
+| N06 | owner iPhone check | gate | N10 | -/- | 0 | 2 | TODO | |
 | N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | web app manifest | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
+| N09 | drop code mode | exec | N08 | sonnet/sonnet | 2 | 0 | DONE | |
+| N10 | login visual check | gate | N09 | -/- | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the auth and form
@@ -203,31 +206,76 @@ Done when:
   SPEC.md changes only by the one sentence on the home-screen bullet; sonar.css is rebuilt and unchanged
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
-## N06 owner iPhone check
-Do: gate for the owner (D14, D15): the owner deploys the committed tree to the server themselves, deletes the
-  Sonar icon from the iPhone home screen and adds it again from Safari (Share, Add to Home Screen), so iOS reads
-  the new manifest. Then in the home-screen app: tap Sign in with Google, finish Google in the panel, read the
-  code, tap ✕, type the code, then close and relaunch the app; finally sign in once from plain Safari.
+## N09 drop code mode
+Do: Remove the whole code sign-in, now unused: since the manifest (scope "/") the Google callback returns into
+  the home-screen app, so the plain Google flow signs it in. Delete the code store, code mode, code page, code
+  form, `POST /auth/code`, `sign_in.js`, the `now` clock and their tests; keep the manifest. Cut the SPEC
+  bullet down to the manifest. Rebuild `sonar.css`.
+Context: D16 the target is the pre-plan tree `57a4928^` plus only N08's manifest work (b27a292) and this
+  node's regression test; `git show 57a4928^:<path>` gives the before state of each file. Delete
+  `src/sonar/auth/codes.py`, `tests/auth/test_codes.py`, `tests/web/test_auth_codes.py`,
+  `src/sonar/web/templates/sign_in_code.html`, `src/sonar/web/static/sign_in.js`. In pages/auth.py drop
+  `CODE_*`, `_code_page`, `_code_rejected`, `_from_this_site`, `_origin`, the `mode` param and branch
+  (auth.py:88-95,107,112-113), `exchange_code` (auth.py:118-133), and `codes`/`db_path`/`now` from
+  `build_router` (auth.py:45-52); the normal callback stays as is (302 to `/`). app.py: drop the `now`
+  param, its docstring line, the `SignInCodes` import and argument (app.py:7,19,88,100,129-131). access.py:
+  `is_allowed_email` back to private `_is_allowed` (access.py:52,81). login.html: drop the form and the
+  script tag (login.html:14-18,21). Tests: drop test_auth_pages.py:273-300 and test_static.py:60-70; keep
+  the manifest tests (test_static.py:72-100, test_auth_pages.py:302-310). D11 SPEC.md:246 becomes the
+  manifest-only bullet "Home-screen app (§13 Sign-in)": every page links `static/manifest.webmanifest` with
+  `scope` and `start_url` "/", so a home-screen app keeps the Google round trip and the redirect to `/` in
+  its standalone window and signs in with the normal Google flow.
+Read: `src/sonar/web/pages/auth.py`, `src/sonar/web/app.py:1-20,80-140`, `src/sonar/web/access.py:45-85`, `src/sonar/web/templates/login.html`, `tests/web/test_auth_pages.py`, `tests/web/test_static.py`, `SPEC.md:244-247`
+Write: `src/sonar/auth/codes.py`, `tests/auth/test_codes.py`, `tests/web/test_auth_codes.py`, `src/sonar/web/templates/sign_in_code.html`, `src/sonar/web/static/sign_in.js`, `src/sonar/web/pages/auth.py`, `src/sonar/web/app.py`, `src/sonar/web/access.py`, `src/sonar/web/templates/login.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_auth_pages.py`, `tests/web/test_static.py`, `SPEC.md`
+Test first: in test_auth_pages.py, `/auth/google?mode=code` then the callback for a listed verified email
+  gives 302 to `/` and GET / answers 200 (a leftover cached link still signs in); today it renders the code
+  page, so it fails.
 Done when:
-- C1 [human] after typing the code the home-screen app shows the dashboard inside the app, with no Safari
-  chrome, status bar overlay or close button
+- C1 [cmd] `uv run pytest -q tests/web/test_auth_pages.py tests/web/test_static.py` passes, the new mode=code
+  regression test and the manifest tests included
+- C2 [cmd] `test "$(git diff --name-only 57a4928^ -- src tests ':!src/sonar/web/static/sonar.css' | tr '\n' ' ')" = "src/sonar/web/static/manifest.webmanifest src/sonar/web/templates/base.html tests/web/test_auth_pages.py tests/web/test_static.py "`
+- C3 [cmd] `! git grep -n -i -E "sign_in_code|sign_in\.js|SignInCodes|code_mode|mode=code|/auth/code|one-time-code" -- src tests SPEC.md ':!tests/web/test_auth_pages.py'`
+- C4 [review] `git diff 57a4928^ -- tests/web/test_auth_pages.py` holds only the manifest test and the mode=code
+  regression test; `git diff 57a4928^ -- SPEC.md` is exactly one added manifest-only bullet as in D11;
+  sonar.css is rebuilt
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check . && uv run ruff format --check .`
+
+## N10 login visual check
+Do: gate, pre-authorized (D13). Start the scratch launcher (session scratchpad, never the repo): `create_app`
+  on a temp DB with `AuthSettings` (dummy client id and secret, a random 32+ character session secret,
+  base_url http://127.0.0.1:8000) and a stand-in Google whose `authorize_redirect` stores a state key in the
+  session and redirects to /auth/callback, and whose `authorize_access_token` returns a verified
+  owner@example.com; serve it on 127.0.0.1:8000 and run `uv run sonar allow-email owner@example.com --db <tmp db>`.
+  Open /auth/login, then tap Sign in with Google. Check the login page at desktop and 375px, light and dark
+  (read_page first; scaled screenshots only where layout matters).
+Done when:
+- C1 [visual] /auth/login shows the card with only the "Sign in with Google" button: no code field, no "Have a
+  sign-in code?" text, no overflow at 375px, legible in light and dark
+- C2 [visual] Sign in with Google lands on the dashboard signed in as owner@example.com
+
+## N06 owner iPhone check
+Do: gate for the owner (D14, D15, D16): the owner deploys the committed tree to the server themselves, deletes
+  the Sonar icon from the iPhone home screen and adds it again from Safari (Share, Add to Home Screen), so iOS
+  reads the current manifest. Then in the home-screen app: tap Sign in with Google, finish Google, then close
+  the app fully and relaunch it; finally sign in once from plain Safari.
+Done when:
+- C1 [human] after Google the home-screen app shows the dashboard inside the app, with no Safari chrome,
+  status bar overlay or close button
 - C2 [human] relaunching the home-screen app opens signed in, without the login page
-- C3 [human] sign-in from plain Safari goes straight to the dashboard, with no code page
+- C3 [human] sign-in from plain Safari goes straight to the dashboard
 
 ## N07 plan acceptance
 Do: Whole-plan check: the full verify, the CSS against a fresh build, SPEC §11 (SPEC.md:162) and §12
-  (SPEC.md:178) for the two changed pages, and the security Decisions D3-D6 in the code.
+  (SPEC.md:178) for the login page, and that no code sign-in is left (D16).
 Done when:
 - C1 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 - C2 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
-- C3 [review] SPEC §11 and §12 hold for login.html and sign_in_code.html: extend base.html, compose the
-  component macros, no inline `<style>`, form errors inline with status 400 keeping the entered value
-- C4 [review] D3-D6 hold in src/sonar/auth/codes.py and src/sonar/web/pages/auth.py: CSPRNG codes, keyed-hash
-  storage only, single use, 5-minute TTL, access list re-checked at exchange, per-IP limit, invalidation after
-  5 rejections, one generic error, Origin/Referer check, no code in a URL, redirect or log
-- C5 [review] the SPEC §13 bullet matches the behaviour, manifest sentence included; base.html links
-  /static/manifest.webmanifest with scope and start_url "/"; no migration was added; the normal callback, session
-  length and API token handling are unchanged (tests/web/test_auth_pages.py, tests/web/test_auth_api_token.py)
+- C3 [cmd] `test "$(git diff --name-only 57a4928^ -- src ':!src/sonar/web/static/sonar.css' | tr '\n' ' ')" = "src/sonar/web/static/manifest.webmanifest src/sonar/web/templates/base.html "`
+- C4 [review] SPEC §11 and §12 hold for login.html: extends base.html, composes the component macros, no
+  inline `<style>` or `<script>`
+- C5 [review] the SPEC §13 home-screen bullet describes only the manifest (D11) and matches
+  manifest.webmanifest and base.html; no migration was added; the normal callback, session length and API
+  token handling are unchanged (tests/web/test_auth_pages.py, tests/web/test_auth_api_token.py)
 
 ## Log
 
@@ -272,4 +320,33 @@ exec: DONE · tests: 1393 passed
 - Added static manifest.webmanifest (D15 keys, scope and start_url /), a rel=manifest link in base.html, manifest tests in test_static.py and test_auth_pages.py, and one sentence on the SPEC home-screen bullet
 - sonar.css rebuilt with no diff; the apple-touch-icon test was added as support and passed on first run since the icon already exists
 check: PASS 3/3
+verify: PASS
+
+### N06 try 1 · 2026-10-12
+human: FAIL: code page has no close button after the manifest
+- Owner retested on iPhone after b27a292 (manifest, scope /) was deployed and the icon re-added. Now, after Google, the code page shows inside the standalone app with no close button, so the owner cannot get back to the login page to type the code. Likely reason: with scope / the Google callback comes back in scope, so iOS ends the in-app browser and finishes the round trip in the standalone app, using the app's own cookie jar (the OAuth state check passed, since the code page rendered). If so, the normal Google flow (session cookie set on callback) now works in the home-screen app, and code mode is no longer needed. Owner suggests removing the code display, i.e. drop code mode (sign_in.js standalone switch, mode=code, the code page and maybe POST /auth/code) and let the standalone app use the plain Google sign-in. Checks 2 and 3 were not reached.
+
+### N06 replan 2 · 2026-10-12
+plan: ASK D16
+- cause: with manifest scope / the Google callback returns into the standalone app, so the code page renders there with no close button; plain Google sign-in likely works in the home-screen app now
+- D16 proposed: drop code mode fully (sign_in.js, mode=code, code page, code form, POST /auth/code, codes.py, now clock, SPEC bullet to manifest only), keep the manifest; alt: remove only sign_in.js and keep the code flow dormant
+- no brief, graph or intent change until D16 is answered; N06 is at rp 2 of the 2-replan budget
+plan: REPLANNED +N09,N10
+- D16 confirmed: drop code mode fully; with manifest scope / the Google callback returns into the standalone app, so plain Google sign-in suffices
+- N09 removes codes.py, code mode, code page, code form, POST /auth/code, sign_in.js, the now clock and their tests, keeps the manifest, cuts the SPEC bullet to the manifest, adds a mode=code regression test
+- N10 visual gate on the login page; N06 now depends on N10 and checks plain Google sign-in plus relaunch in the home-screen app; N07 drops the code criteria; Intent and goal rewritten, D1-D10 void
+
+### N09 try 1 · 2026-10-12
+exec: DONE · 1347 passed
+- Removed code store, code mode, code page/form, POST /auth/code, sign_in.js, now clock and tests; restored pre-plan auth.py, app.py, access.py, login.html
+- Added mode=code regression test; SPEC bullet cut to manifest-only; sonar.css rebuilt
+check: PASS 4/4
+verify: FAIL C4
+- C4 src/sonar/web/static/sonar.css:2 - not fully rebuilt: a fresh build with the AGENTS.md command differs, the committed file still carries --text-4xl, --text-4xl--line-height and --tracking-widest theme variables that no template or source uses - expected output identical to a rebuild from the current tree
+
+### N09 try 2 · 2026-10-12
+exec: DONE · 1347 passed
+- Rebuilt sonar.css from src only; the plan file mentions text-4xl and tracking-widest and tailwind auto-scans it
+- Build run on a copy of src so .plan does not leak classes in
+check: PASS 4/4
 verify: PASS

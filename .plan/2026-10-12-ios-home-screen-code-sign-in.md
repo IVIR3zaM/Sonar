@@ -1,5 +1,5 @@
 # iOS home-screen sign-in code
-status: WAITING
+status: RUNNING
 created: 2026-10-12 · updated: 2026-10-12
 goal: The iPhone home-screen Sonar app signs in with the plain Google flow and keeps its 14-day session across launches, the site scoped to the app by a web app manifest; the code sign-in is removed.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -48,7 +48,7 @@ Definition of done: no code sign-in remains in `src/`, `tests/` or SPEC; every p
 | N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | DONE | |
-| N06 | owner iPhone check | gate | N10 | -/- | 0 | 2 | TODO | |
+| N06 | owner iPhone check | gate | N10 | -/- | 0 | 2 | DONE | |
 | N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | web app manifest | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 | N09 | drop code mode | exec | N08 | sonnet/sonnet | 2 | 0 | DONE | |

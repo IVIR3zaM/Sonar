@@ -297,3 +297,13 @@ def test_login_page_loads_the_sign_in_script_without_inline_script(tmp_path):
     assert tags[0].has_attr("defer")
     assert page.select("#login script") == []
     assert script.status_code == 200
+
+
+def test_manifest_stays_public_and_login_page_links_it(tmp_path):
+    with _client(tmp_path) as client:
+        manifest = client.get("/static/manifest.webmanifest")
+        page = soup(client.get("/auth/login"))
+
+    assert manifest.status_code == 200
+    assert manifest.json()["scope"] == "/"
+    assert page.select_one('link[rel="manifest"][href="/static/manifest.webmanifest"]') is not None

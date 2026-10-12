@@ -12,13 +12,13 @@ tier: M
 
 Goal: On iOS the home-screen (standalone) app opens Google sign-in in an in-app Safari panel whose cookies the app never sees, so the panel ends up signed in and the app stays signed out on every launch. The app should instead start a "code" sign-in: once Google confirms a verified, allow-listed email, the panel shows a short one-time code, the owner closes the panel and types the code into the app's login page, and the app gets the same 14-day rolling session a browser sign-in gives.
 
-In scope: an in-memory one-time code store in `src/sonar/auth/codes.py`; a code mode on `/auth/google` and `/auth/callback` with a bare code page; an always-visible "Have a sign-in code?" form on the login page and a `POST /auth/code` exchange in `src/sonar/web/pages/auth.py`; a small static `sign_in.js` that switches the Google button to code mode only in standalone display; an injectable clock on `create_app`; tests first for all of it; a SPEC §13 bullet; the rebuilt `sonar.css`.
+In scope: an in-memory one-time code store in `src/sonar/auth/codes.py`; a code mode on `/auth/google` and `/auth/callback` with a bare code page; an always-visible "Have a sign-in code?" form on the login page and a `POST /auth/code` exchange in `src/sonar/web/pages/auth.py`; a small static `sign_in.js` that switches the Google button to code mode only in standalone display; an injectable clock on `create_app`; a public `static/manifest.webmanifest` linked from `base.html` so the home-screen app's scope is the whole site and the 303 to `/` stays inside it; tests first for all of it; a SPEC §13 bullet; the rebuilt `sonar.css`.
 
-Out of scope: automatic handoff without typing, Google Identity Services or popups, a web app manifest, session length, API token behaviour, any DB table or migration, and the normal browser callback (it keeps redirecting to /).
+Out of scope: automatic handoff without typing, Google Identity Services or popups, a service worker or offline mode, session length, API token behaviour, any DB table or migration, and the normal browser callback (it keeps redirecting to /).
 
 Constraints: AGENTS.md rules: strict TDD, KISS, pure auth logic without sqlite or web imports (`tests/test_architecture.py`), routes only in `web/pages/auth.py`, page tests on ids through `tests/html.py`, no inline `<style>` or new inline script, `sonar.css` rebuilt and committed, ruff clean. Security: CSPRNG codes stored only as keyed hashes, single use, 5-minute TTL, re-checked against the access list, per-IP limit plus mass invalidation, one generic error, Origin-checked POST, codes never in URLs, redirects or logs. Decisions D1-D14.
 
-Definition of done: tests cover issue, exchange, expiry, single use, the rate limit, invalidation, the generic error, the Origin check and code mode against the normal callback; SPEC §13 has the code-flow bullet; the visual gate passes on the login and code pages at desktop and 375px, light and dark; the owner confirms on the iPhone home-screen app that the typed code lands on the dashboard and the next launch stays signed in; the final check passes verify and SPEC §11 and §12.
+Definition of done: tests cover issue, exchange, expiry, single use, the rate limit, invalidation, the generic error, the Origin check and code mode against the normal callback; SPEC §13 has the code-flow bullet; the visual gate passes on the login and code pages at desktop and 375px, light and dark; every page links the manifest; the owner re-adds the icon and confirms on the iPhone home-screen app that the typed code lands on the dashboard and the next launch stays signed in; the final check passes verify and SPEC §11 and §12.
 
 ## Decisions
 
@@ -32,10 +32,11 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 - D8 Login form: under the Google button, always shown (works without JS): `<form id="code-sign-in" method="post" action="/auth/code">`, the `field` macro with name `code`, label "Have a sign-in code?", `inputmode="numeric"`, `autocomplete="one-time-code"`, `pattern="[0-9]{6}"`, `maxlength="6"`, required; button "Sign in with code" | confirmed
 - D9 Code page text: the code in `#sign-in-code` (six digits, large, tabular), "Tap ✕ and type this code in Sonar.", "It works once, within 5 minutes." | confirmed
 - D10 Logging: no app logging is added (the app has none); uvicorn's access log already records method, path, status and IP of every attempt, and the code travels only in the POST body and the code page | confirmed
-- D11 SPEC: one new §13 bullet "Sign-in code (§13 Sign-in)" after SPEC.md:245 describing D1-D6; no other SPEC line changes | confirmed
+- D11 SPEC: one new §13 bullet "Sign-in code (§13 Sign-in)" after SPEC.md:245 describing D1-D6, plus one manifest sentence on that bullet (D15, N08); no other SPEC line changes | confirmed
 - D12 Order: the owner iPhone gate (N06) comes before the whole-plan check (N07), since a plan's last node is that check | confirmed
 - D13 Visual gate setup (pre-authorized): a scratch launcher in the session scratchpad (never in the repo) runs `create_app` on a temp DB with sign-in settings for `http://127.0.0.1:8000` and a stand-in Google that redirects straight to `/auth/callback` and returns a verified `owner@example.com`, allowed with `uv run sonar allow-email owner@example.com --db <tmp db>` | confirmed
 - D14 The owner deploys to the server themselves at N06; the plan never pushes or deploys (`push: none`) | confirmed
+- D15 App scope: base.html (src/sonar/web/templates/base.html:6-23) links no manifest, so iOS scopes the home-screen app to the folder of the URL it was added from; added while signed out, that URL is /auth/login (the gate redirects there, src/sonar/web/access.py:51), so the scope is /auth/ and the 303 from `POST /auth/code` to `/` (src/sonar/web/pages/auth.py:133) leaves it and opens the in-app browser. Fix: serve a public `/static/manifest.webmanifest` (`name`/`short_name` "Sonar", `start_url` "/", `scope` "/", `display` "standalone", the apple-touch icon) and link it from base.html with `<link rel="manifest">`; this moves "a web app manifest" from Out of scope to In scope; the owner then deletes the home-screen icon and adds it again from Safari, as part of the N06 gate | confirmed
 
 ## Graph
 
@@ -46,8 +47,9 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 | N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | DONE | |
-| N06 | owner iPhone check | gate | N05 | -/- | 0 | 0 | TODO | |
+| N06 | owner iPhone check | gate | N08 | -/- | 0 | 1 | TODO | |
 | N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
+| N08 | web app manifest | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the auth and form
@@ -173,12 +175,42 @@ Done when:
   this code in Sonar.", no navigation, in all four views
 - C4 [visual] typing that code into /auth/login lands on the dashboard signed in as owner@example.com
 
-## N06 owner iPhone check
-Do: gate for the owner (D14): the owner deploys the committed tree to the server themselves, then on the iPhone home-screen
-  Sonar app taps Sign in with Google, finishes Google in the panel, reads the code, taps ✕, types the code,
-  then closes and relaunches the app; finally signs in once from plain Safari.
+## N08 web app manifest
+Do: Give the home-screen app the whole site as its scope, so the 303 from `POST /auth/code` to `/` stays in the
+  standalone app. Add a public static `manifest.webmanifest` and link it from base.html, so every page (the
+  bare login page included) carries it. Extend the SPEC home-screen bullet with one sentence.
+Context: D15 without a manifest iOS scopes the app to the folder it was added from (/auth/ via the gate
+  redirect, src/sonar/web/access.py:51), and `/` leaves it. Manifest JSON: `name` and `short_name` "Sonar",
+  `start_url` "/", `scope` "/", `display` "standalone", `icons` one entry `/static/icons/apple-touch-icon.png`,
+  `sizes` "180x180", `type` "image/png". `/static/` is public under sign-in (access.py:25,37); StaticFiles
+  (src/sonar/web/app.py:115) serves `.webmanifest` as `application/manifest+json`. Link
+  `<link rel="manifest" href="/static/manifest.webmanifest">` next to the apple-touch-icon link
+  (src/sonar/web/templates/base.html:50); no other template change. D11 the one SPEC change is a sentence
+  appended to the home-screen bullet (SPEC.md:246) saying every page links a manifest with scope and start_url
+  `/` so the post-code redirect stays in the app. Test pattern: tests/web/test_static.py:37-48; the sign-in
+  app helpers are in tests/web/test_auth_pages.py:24-75. Rebuild `sonar.css` (no new classes, so no diff).
+Read: `src/sonar/web/templates/base.html:44-64`, `tests/web/test_static.py`, `tests/web/test_auth_pages.py:1-80`, `SPEC.md:246`
+Write: `src/sonar/web/static/manifest.webmanifest`, `src/sonar/web/templates/base.html`, `src/sonar/web/static/sonar.css`, `SPEC.md`, `tests/web/test_static.py`, `tests/web/test_auth_pages.py`
+Test first: GET / links `rel="manifest" href="/static/manifest.webmanifest"` and GET of that file is 200 with
+  scope "/"; no manifest exists yet, so it fails.
 Done when:
-- C1 [human] after typing the code the home-screen app shows the dashboard, with no Safari chrome
+- C1 [cmd] `uv run pytest -q tests/web/test_static.py -k manifest` passes: GET / has the manifest link; the file
+  answers 200 with content-type `application/manifest+json` and JSON whose `scope` and `start_url` are "/",
+  `display` "standalone", `name` "Sonar", and whose icon src answers 200
+- C2 [cmd] `uv run pytest -q tests/web/test_auth_pages.py -k manifest` passes: with sign-in on and no session,
+  GET /static/manifest.webmanifest is 200 and GET /auth/login carries the manifest link
+- C3 [review] base.html gains only the one `<link rel="manifest">` line; the manifest has exactly the D15 keys;
+  SPEC.md changes only by the one sentence on the home-screen bullet; sonar.css is rebuilt and unchanged
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N06 owner iPhone check
+Do: gate for the owner (D14, D15): the owner deploys the committed tree to the server themselves, deletes the
+  Sonar icon from the iPhone home screen and adds it again from Safari (Share, Add to Home Screen), so iOS reads
+  the new manifest. Then in the home-screen app: tap Sign in with Google, finish Google in the panel, read the
+  code, tap ✕, type the code, then close and relaunch the app; finally sign in once from plain Safari.
+Done when:
+- C1 [human] after typing the code the home-screen app shows the dashboard inside the app, with no Safari
+  chrome, status bar overlay or close button
 - C2 [human] relaunching the home-screen app opens signed in, without the login page
 - C3 [human] sign-in from plain Safari goes straight to the dashboard, with no code page
 
@@ -193,7 +225,8 @@ Done when:
 - C4 [review] D3-D6 hold in src/sonar/auth/codes.py and src/sonar/web/pages/auth.py: CSPRNG codes, keyed-hash
   storage only, single use, 5-minute TTL, access list re-checked at exchange, per-IP limit, invalidation after
   5 rejections, one generic error, Origin/Referer check, no code in a URL, redirect or log
-- C5 [review] the SPEC §13 bullet matches the behaviour; no migration was added; the normal callback, session
+- C5 [review] the SPEC §13 bullet matches the behaviour, manifest sentence included; base.html links
+  /static/manifest.webmanifest with scope and start_url "/"; no migration was added; the normal callback, session
   length and API token handling are unchanged (tests/web/test_auth_pages.py, tests/web/test_auth_api_token.py)
 
 ## Log
@@ -220,4 +253,23 @@ exec: DONE · 1390 passed
 - POST /auth/code (Origin/Referer check before redeem, 303/400/403/429), login code form, static/sign_in.js, SPEC §13 bullet, tests
 - sonar.css rebuilt, unchanged: no new classes; 403/429 reuse the same inline error text
 check: PASS 5/5
+verify: PASS
+
+### N06 try 1 · 2026-10-12
+human: FAIL: code sign-in leaves the home-screen app
+- Owner tested on iPhone against production (deployed 2bb2f42). In the home-screen app, after typing the 6-digit code on /auth/login and tapping Sign in with code, the result opens in the in-app browser overlay again (status bar and close button appear) instead of staying in the standalone app. So the POST /auth/code submit or its 303 redirect to / is treated as leaving the app scope (check manifest scope/start_url vs SONAR_BASE_URL, form target, redirect, and how iOS standalone handles form posts and redirects). Checks 2 and 3 were not reached.
+
+### N06 replan 1 · 2026-10-12
+plan: ASK D15
+- cause: no web app manifest, so iOS scopes the home-screen app to the folder it was added from (likely /auth/ via the login redirect); the 303 to / leaves the scope and opens the in-app browser
+- D15 proposed: public static manifest with scope / and start_url /, linked from base.html, then the owner re-adds the icon; alt: no code change, re-add from / while signed in
+plan: REPLANNED +N08
+- D15 confirmed: add the manifest; N08 serves a public static/manifest.webmanifest (scope and start_url /) linked from base.html
+- N06 now depends on N08 and starts with the owner deleting and re-adding the home-screen icon from Safari; C1 also rules out the overlay close button
+
+### N08 try 1 · 2026-10-12
+exec: DONE · tests: 1393 passed
+- Added static manifest.webmanifest (D15 keys, scope and start_url /), a rel=manifest link in base.html, manifest tests in test_static.py and test_auth_pages.py, and one sentence on the SPEC home-screen bullet
+- sonar.css rebuilt with no diff; the apple-touch-icon test was added as support and passed on first run since the icon already exists
+check: PASS 3/3
 verify: PASS

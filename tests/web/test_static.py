@@ -67,3 +67,32 @@ def test_sign_in_js_only_rewrites_the_google_link_in_standalone_display(tmp_path
     assert "(display-mode: standalone)" in response.text
     assert "google-sign-in" in response.text
     assert "mode=code" in response.text
+
+
+def test_index_links_web_app_manifest_with_whole_site_scope(tmp_path):
+    """GET / links a manifest scoped to the whole site for the home-screen app."""
+    app = create_app(db_path=tmp_path / "test.db")
+    with TestClient(app) as client:
+        text = client.get("/").text
+        response = client.get("/static/manifest.webmanifest")
+    assert 'rel="manifest" href="/static/manifest.webmanifest"' in text
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/manifest+json")
+    manifest = response.json()
+    assert manifest["name"] == "Sonar"
+    assert manifest["short_name"] == "Sonar"
+    assert manifest["scope"] == "/"
+    assert manifest["start_url"] == "/"
+    assert manifest["display"] == "standalone"
+    assert manifest["icons"] == [
+        {"src": "/static/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+    ]
+
+
+def test_manifest_icon_is_served(tmp_path):
+    """The manifest's icon answers 200 as a PNG."""
+    app = create_app(db_path=tmp_path / "test.db")
+    with TestClient(app) as client:
+        response = client.get("/static/icons/apple-touch-icon.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"

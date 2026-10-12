@@ -49,10 +49,11 @@ Definition of done: no code sign-in remains in `src/`, `tests/` or SPEC; every p
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | DONE | |
 | N06 | owner iPhone check | gate | N10 | -/- | 0 | 2 | DONE | |
-| N07 | plan acceptance | check | N06 | -/sonnet | 0 | 0 | TODO | |
+| N07 | plan acceptance | check | N11 | -/sonnet | 0 | 1 | TODO | |
 | N08 | web app manifest | exec | N05 | haiku/sonnet | 1 | 0 | DONE | |
 | N09 | drop code mode | exec | N08 | sonnet/sonnet | 2 | 0 | DONE | |
 | N10 | login visual check | gate | N09 | -/- | 0 | 0 | DONE | |
+| N11 | scope Tailwind sources | exec | N06 | haiku/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the auth and form
@@ -264,18 +265,40 @@ Done when:
 - C2 [human] relaunching the home-screen app opens signed in, without the login page
 - C3 [human] sign-in from plain Safari goes straight to the dashboard
 
+## N11 scope Tailwind sources
+Do: Make the CSS build depend only on the app's own files. Tailwind v4 auto-detects class candidates from the
+  whole repo (cwd), so words in `.plan/*.md` (this plan names `text-4xl`, `tracking-widest`) and other
+  non-app files leak into `sonar.css`, and a fresh build no longer matches the committed one.
+Context: src/sonar/web/static/src/app.css:1-2 is `@import "tailwindcss";` then `@source "../../templates";`.
+  Change line 1 to `@import "tailwindcss" source("../../..");` (base = src/sonar, so templates, Python and
+  static JS stay scanned) with a one-line comment above it saying why (repo-root docs and plans must not add
+  classes). Keep line 2. A build of the committed tree with this change is byte-identical to the committed
+  sonar.css, so the rebuilt file has no diff. The working-tree sonar.css is currently a polluted build; the
+  rebuild restores it. No test: this is build config, the criteria below prove it. Touch no other file (the
+  uncommitted `.gitignore` and `.claude/launch.json` are the owner's, leave them as they are).
+Read: `src/sonar/web/static/src/app.css:1-5`
+Write: `src/sonar/web/static/src/app.css`, `src/sonar/web/static/sonar.css`
+Done when:
+- C1 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
+- C2 [cmd] `! grep -q -e '--text-4xl' -e '--tracking-widest' src/sonar/web/static/sonar.css`
+- C3 [cmd] `test "$(git diff --name-only HEAD -- src)" = "src/sonar/web/static/src/app.css"`
+- C4 [review] app.css changes only line 1 plus one why-comment; `source()` points at src/sonar
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N07 plan acceptance
 Do: Whole-plan check: the full verify, the CSS against a fresh build, SPEC §11 (SPEC.md:162) and §12
-  (SPEC.md:178) for the login page, and that no code sign-in is left (D16).
+  (SPEC.md:178) for the login page, and that no code sign-in is left (D16). N11 scoped the Tailwind sources
+  in app.css, so a fresh build ignores `.plan/` and other repo-root files.
 Done when:
 - C1 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 - C2 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
-- C3 [cmd] `test "$(git diff --name-only 57a4928^ -- src ':!src/sonar/web/static/sonar.css' | tr '\n' ' ')" = "src/sonar/web/static/manifest.webmanifest src/sonar/web/templates/base.html "`
+- C3 [cmd] `test "$(git diff --name-only 57a4928^ -- src ':!src/sonar/web/static/sonar.css' | tr '\n' ' ')" = "src/sonar/web/static/manifest.webmanifest src/sonar/web/static/src/app.css src/sonar/web/templates/base.html "`
 - C4 [review] SPEC §11 and §12 hold for login.html: extends base.html, composes the component macros, no
   inline `<style>` or `<script>`
 - C5 [review] the SPEC §13 home-screen bullet describes only the manifest (D11) and matches
   manifest.webmanifest and base.html; no migration was added; the normal callback, session length and API
-  token handling are unchanged (tests/web/test_auth_pages.py, tests/web/test_auth_api_token.py)
+  token handling are unchanged (tests/web/test_auth_pages.py, tests/web/test_auth_api_token.py); app.css
+  differs from 57a4928^ only by the scoped `source()` import and its comment
 
 ## Log
 
@@ -348,5 +371,23 @@ verify: FAIL C4
 exec: DONE · 1347 passed
 - Rebuilt sonar.css from src only; the plan file mentions text-4xl and tracking-widest and tailwind auto-scans it
 - Build run on a copy of src so .plan does not leak classes in
+check: PASS 4/4
+verify: PASS
+
+### N07 try 1 · 2026-10-12
+check: FAIL C2
+- C2 exit 1: \ No newline at end of file
+
+### N07 replan 1 · 2026-10-12
+plan: REPLANNED +N11
+- C2 cause: Tailwind v4 auto-detects sources from the repo root, so class words in .plan/*.md (text-4xl, tracking-widest, collapse, table-row ...) leak into a fresh build; committed sonar.css is correct
+- N11 scopes app.css line 1 to source(../../..) = src/sonar; a build of the committed tree with it is byte-identical to HEAD sonar.css and stable across runs
+- N07 now depends on N11; C3 expects app.css in the src diff; C5 reviews the app.css change
+- graph is 11 nodes; kept tier M (one session, no runs/), lint ok
+
+### N11 try 1 · 2026-10-12
+exec: DONE · tests: 1347 passed
+- app.css line 1 now imports tailwindcss with source(../../..) plus a why-comment; sonar.css rebuilt and equals HEAD, leaking text-4xl and tracking-widest gone
+- Choice: restored the committed sonar.css before the final build, since a rebuild over a polluted output keeps scanning its own leaked classes
 check: PASS 4/4
 verify: PASS

@@ -42,7 +42,7 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | sign-in code store | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | sign-in code store | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 0 | 0 | TODO | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | TODO | |
@@ -200,3 +200,10 @@ Done when:
 
 ### N01 try 1 · 2026-10-12
 check: PASS 4/4
+
+### N02 try 1 · 2026-10-12
+exec: DONE · 1367 passed
+- Added SignInCodes and TooManyAttempts in auth/codes.py with HMAC digests, TTL, per-client and store-wide limits
+- Successful and malformed redeems both count as attempts; malformed counts as a failure
+check: PASS 3/3
+verify: PASS

@@ -49,7 +49,7 @@ def sign_in_gate(
             if is_api:
                 return JSONResponse({"error": "Sign in first."}, status_code=401)
             return RedirectResponse(LOGIN_PATH, status_code=302)
-        if not _is_allowed(db_path, email):
+        if not is_allowed_email(db_path, email):
             if is_api:
                 return JSONResponse({"error": f"{email} is not allowed."}, status_code=403)
             return not_allowed_page(templates, request, email)
@@ -78,6 +78,6 @@ def _same_token(given: str, expected: str) -> bool:
     return hmac.compare_digest(given.encode(), expected.encode())
 
 
-def _is_allowed(db_path: Path, email: str) -> bool:
+def is_allowed_email(db_path: Path, email: str) -> bool:
     with closing(connect(db_path)) as conn:
         return is_allowed(conn, email)

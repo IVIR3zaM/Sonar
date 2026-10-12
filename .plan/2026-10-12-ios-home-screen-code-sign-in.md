@@ -43,7 +43,7 @@ Definition of done: tests cover issue, exchange, expiry, single use, the rate li
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | sign-in code store | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
+| N03 | code-mode callback and code page | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N04 | code exchange form and standalone script | exec | N03 | sonnet/opus | 0 | 0 | TODO | |
 | N05 | visual check | gate | N04 | -/- | 0 | 0 | TODO | |
 | N06 | owner iPhone check | gate | N05 | -/- | 0 | 0 | TODO | |
@@ -205,5 +205,12 @@ check: PASS 4/4
 exec: DONE · 1367 passed
 - Added SignInCodes and TooManyAttempts in auth/codes.py with HMAC digests, TTL, per-client and store-wide limits
 - Successful and malformed redeems both count as attempts; malformed counts as a failure
+check: PASS 3/3
+verify: PASS
+
+### N03 try 1 · 2026-10-12
+exec: DONE · 1375 passed
+- /auth/google?mode=code flags the session; code-mode callback checks the access list, issues a code, renders bare sign_in_code.html with no-store
+- create_app gains now clock and one SignInCodes; access._is_allowed made public as is_allowed_email; sonar.css rebuilt
 check: PASS 3/3
 verify: PASS

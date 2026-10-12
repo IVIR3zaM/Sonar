@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from sonar.auth.codes import SignInCodes
 from sonar.auth.settings import AuthSettings
 from sonar.categorization.groups import LABELS as GROUP_LABELS
 from sonar.categorization.groups import TRANSFER
@@ -84,6 +85,7 @@ def create_app(
     today: Callable[[], date] = date.today,
     auth: AuthSettings | None = None,
     google: auth_pages.GoogleClient | None = None,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> FastAPI:
     """Build the Sonar FastAPI app, migrating `db_path` on startup.
 
@@ -95,6 +97,7 @@ def create_app(
 
     With `auth`, every page and API call needs a Google sign-in (SPEC §13
     Sign-in); `google` defaults to authlib's client, tests pass a fake.
+    `now` is the aware-UTC clock for the one-time sign-in codes.
     Without it no session or sign-in route exists at all.
     """
 
@@ -123,7 +126,9 @@ def create_app(
     app.include_router(categories.build_router(db_path, today, templates))
     if auth is not None:
         google = google or auth_pages.google_client(auth)
-        app.include_router(auth_pages.build_router(auth, google, templates))
+        app.include_router(
+            auth_pages.build_router(auth, google, templates, SignInCodes(), db_path, now)
+        )
         # Added last means outermost: the session must wrap the gate that reads it.
         app.add_middleware(
             BaseHTTPMiddleware, dispatch=access.sign_in_gate(db_path, templates, auth.api_token)

@@ -50,7 +50,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N06 | connection store and consent rules | exec | N12 | sonnet/sonnet | 1 | 1 | DONE | |
 | N07 | match and merge in the import pipeline | exec | N05 | opus/opus | 1 | 0 | DONE | |
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N15 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N15 | -/- | 0 | 0 | DONE | |
 | N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
@@ -713,3 +713,6 @@ verify: PASS
 
 ### N17 try 1 · 2026-10-14
 human: owner confirmed the three rule edits; applied on the local instance only (rules 8, 10, 11); uncategorized 2 before and 2 after; prod rule set to be re-checked before any prod write
+
+### N09 try 1 · 2026-10-14
+human: visual check by orchestrator on a temp DB with a throwaway key: not-connected (no banner, Connect bank), connected card (status, last four, consent end, last sync, Sync now and Reconnect bank), ending, ended and failed banners above the content with Reconnect (plus Sync now when failed), at 375px light and dark and desktop dark, no horizontal overflow; Connect returning to /settings was seen for real on prod by the owner and is covered by the N13 fake-bank tests

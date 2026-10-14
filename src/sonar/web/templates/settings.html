@@ -98,12 +98,19 @@
     </div>
   </dl>
   {% endif %}
-  <form id="bank-connect" method="post" action="/bank/connect" class="mt-4 space-y-4">
-    {% if bank_error %}
-    <div id="form-error" role="alert" tabindex="-1" class="{{ form_error_class }}">{{ bank_error.message }}</div>
+  {% if bank_error %}
+  <div id="form-error" role="alert" tabindex="-1" class="mt-4 {{ form_error_class }}">{{ bank_error.message }}</div>
+  {% endif %}
+  <div class="mt-4 flex flex-wrap gap-2">
+    {% if connection %}
+    <form id="bank-sync" method="post" action="/bank/sync">
+      {{ button("Sync now", type="submit") }}
+    </form>
     {% endif %}
-    {{ button("Reconnect bank" if connection else "Connect bank", type="submit", variant="secondary" if connection else "primary") }}
-  </form>
+    <form id="bank-connect" method="post" action="/bank/connect">
+      {{ button("Reconnect bank" if connection else "Connect bank", type="submit", variant="secondary" if connection else "primary") }}
+    </form>
+  </div>
   {% endcall %}
   {% endif %}
 

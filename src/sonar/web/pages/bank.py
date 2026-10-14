@@ -1,4 +1,7 @@
-"""Connecting the bank (SPEC §13 Bank sync): authorization redirect, callback and banner."""
+"""The bank (SPEC §13 Bank sync): authorization redirect, callback, Sync now and banner.
+
+Also mounts the bank JSON API, which exists only when bank sync is on.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ from sonar.banking.consent import (
     state_hash,
     state_matches,
 )
+from sonar.banking.service import NotConnectedError, sync
 from sonar.banking.settings import ASPSP_COUNTRY, ASPSP_NAME, BankSettings
 from sonar.banking.store import (
     load_connection,
@@ -29,6 +33,7 @@ from sonar.banking.store import (
     take_pending_state,
 )
 from sonar.db import connect
+from sonar.web.api import bank as bank_api
 from sonar.web.pages.settings import render_settings_page
 
 # One message for every failure: the page must not tell an attacker which check failed.
@@ -42,6 +47,12 @@ class BankClient(Protocol):
 
     def create_session(self, code: str) -> dict: ...
 
+    def booked_transactions(
+        self, account_uid: str, date_from: date, date_to: date
+    ) -> list[dict]: ...
+
+    def balances(self, account_uid: str) -> list[dict]: ...
+
 
 def build_router(
     db_path: Path,
@@ -52,6 +63,7 @@ def build_router(
     templates: Jinja2Templates,
 ) -> APIRouter:
     router = APIRouter()
+    router.include_router(bank_api.build_router(db_path, today, now, client), prefix="/api")
 
     def failed(request: Request) -> HTMLResponse:
         return render_settings_page(
@@ -103,6 +115,18 @@ def build_router(
                 save_connection(conn, parse_session(client.create_session(code), moment))
             except (BankApiError, ValueError):
                 return failed(request)
+        finally:
+            conn.close()
+        return RedirectResponse("/settings", status_code=303)
+
+    @router.post("/bank/sync")
+    def sync_now() -> Response:
+        # The outcome, ok or error, is recorded on the connection and shown on Settings.
+        conn = connect(db_path)
+        try:
+            sync(conn, client, today(), now())
+        except (NotConnectedError, BankApiError):
+            pass
         finally:
             conn.close()
         return RedirectResponse("/settings", status_code=303)

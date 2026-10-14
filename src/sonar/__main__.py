@@ -1,4 +1,5 @@
-"""Sonar entry point: one-command start, plus the `import-categories` and allow-list CLIs."""
+"""Sonar entry point: one-command start, plus the `import-categories`, allow-list and
+`bank-sync` CLIs."""
 
 import argparse
 import os
@@ -14,7 +15,8 @@ import uvicorn
 from sonar.auth import store as auth_store
 from sonar.auth.emails import normalize_email
 from sonar.auth.settings import AuthSettings, auth_settings
-from sonar.banking.client import EnableBankingClient, default_http
+from sonar.banking.client import BankApiError, EnableBankingClient, default_http
+from sonar.banking.service import NotConnectedError, SyncClient, sync
 from sonar.banking.settings import BankSettings, bank_settings, read_private_key
 from sonar.categorization.rules import load_taxonomy
 from sonar.categorization.store import reapply_rules, replace_taxonomy, uncategorized_count
@@ -27,7 +29,7 @@ def main() -> None:
     """Start the Sonar web app on 127.0.0.1 (SONAR_PORT, else 8000), or run a CLI subcommand.
 
     Only `sys.argv[1]` being literally a subcommand name (`import-categories`,
-    `allow-email`, `revoke-email`, `list-emails`, `sync-emails`) is treated as
+    `allow-email`, `revoke-email`, `list-emails`, `sync-emails`, `bank-sync`) is treated as
     the CLI; any other invocation (including none) starts the server, so this
     stays the console-script entry point without full argparse swallowing an
     unrelated process argv (e.g. a test runner's own flags).
@@ -52,6 +54,11 @@ def main() -> None:
     if argv and argv[0] == "sync-emails":
         args = _parse_sync_emails_args(argv[1:])
         sync_emails(args.emails, Path(args.db))
+        return
+    if argv and argv[0] == "bank-sync":
+        args = _parse_bank_sync_args(argv[1:])
+        _, client = _bank()
+        bank_sync(Path(args.db), client, date.today(), datetime.now(UTC))
         return
     serve()
 
@@ -126,6 +133,12 @@ def _parse_sync_emails_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _parse_bank_sync_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="sonar bank-sync")
+    parser.add_argument("--db", default=_default_db_path())
+    return parser.parse_args(argv)
+
+
 def import_categories(path: Path, db_path: Path) -> None:
     """Migrate `db_path` and replace its stored taxonomy with `path`'s TOML.
 
@@ -183,6 +196,39 @@ def sync_emails(emails: list[str], db_path: Path) -> None:
         return f"Allowed exactly {len(auth_store.list_emails(conn))} email(s)."
 
     _run_on_allow_list(db_path, action)
+
+
+def bank_sync(db_path: Path, client: SyncClient | None, today: date, now: datetime) -> None:
+    """Sync the connected bank account into `db_path` and print one line.
+
+    Bank sync off or no connection prints why and exits 0; a failed sync prints the client's
+    fixed-shape message (never a key, token or session id) and exits 1.
+    """
+    if client is None:
+        print("Bank sync is not configured.")
+        return
+    with closing(connect(db_path)) as conn:
+        apply_migrations(conn, MIGRATIONS_DIR)
+        try:
+            result = sync(conn, client, today, now)
+        except NotConnectedError:
+            print("Bank is not connected.")
+            return
+        except BankApiError as error:
+            print(f"Bank sync failed: {error.message}")
+            raise SystemExit(1) from None
+    balance = (
+        f"balance {_format_cents(result.balance.amount_cents)} on {result.balance.as_of}"
+        if result.balance
+        else "no balance"
+    )
+    print(f"Bank sync: {result.added} added, {result.duplicates} duplicates, {balance}.")
+
+
+def _format_cents(cents: int) -> str:
+    sign = "-" if cents < 0 else ""
+    whole, remainder = divmod(abs(cents), 100)
+    return f"{sign}{whole}.{remainder:02d}"
 
 
 def _run_on_allow_list(db_path: Path, action: Callable[[Any], str]) -> None:

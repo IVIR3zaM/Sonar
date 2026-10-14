@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -17,7 +19,7 @@ from sonar.db import connect
 from sonar.web.app import create_app
 from tests.html import soup, text
 from tests.seed import seed
-from tests.web.fake_bank import BANK_AUTH_URL, FakeBank
+from tests.web.fake_bank import BANK_AUTH_URL, FakeBank, booked_debit
 from tests.web.fake_google import FakeGoogle
 
 BANK = BankSettings(
@@ -286,3 +288,81 @@ def test_sign_in_signed_in_get_connect_is_405(tmp_path):
         response = client.get("/bank/connect")
 
     assert response.status_code == 405
+
+
+@contextmanager
+def _connected_client(tmp_path: Path, bank: FakeBank) -> Iterator[TestClient]:
+    with _client(tmp_path, bank) as client:
+        state = _connect(client, bank)
+        client.get("/bank/callback", params={"code": "the-code", "state": state})
+        yield client
+
+
+def _synced_rows(tmp_path: Path) -> list[str]:
+    conn = connect(tmp_path / "t.db")
+    try:
+        return [r[0] for r in conn.execute("SELECT entry_reference FROM transactions")]
+    finally:
+        conn.close()
+
+
+def test_connected_card_offers_sync_now(tmp_path):
+    bank = FakeBank()
+    with _connected_client(tmp_path, bank) as client:
+        page = soup(client.get("/settings"))
+
+    form = page.select_one("#bank-card #bank-sync")
+    assert form["method"] == "post"
+    assert form["action"] == "/bank/sync"
+    assert text(form.select_one("button[type=submit]")) == "Sync now"
+
+
+def test_not_connected_card_has_no_sync_now(tmp_path):
+    with _client(tmp_path, FakeBank()) as client:
+        page = soup(client.get("/settings"))
+
+    assert page.select_one("#bank-sync") is None
+
+
+def test_sync_now_imports_and_redirects_to_settings(tmp_path):
+    bank = FakeBank()
+    bank.booked = [booked_debit("ref-1")]
+    with _connected_client(tmp_path, bank) as client:
+        response = client.post("/bank/sync")
+        page = soup(client.get("/settings"))
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings"
+    assert _synced_rows(tmp_path) == ["ref-1"]
+    assert bank.windows[0][1:] == (date(2026, 7, 16), date(2026, 10, 14))
+    last_sync = page.select_one("#bank-last-sync")
+    assert text(last_sync.select_one("[data-field=status]")) == "ok"
+    assert text(last_sync.select_one("[data-field=added]")) == "1"
+
+
+def test_failed_sync_now_redirects_and_shows_the_error(tmp_path):
+    bank = FakeBank()
+    with _connected_client(tmp_path, bank) as client:
+        bank.error = BankApiError(503, "Enable Banking answered 503")
+        response = client.post("/bank/sync")
+        page = soup(client.get("/settings"))
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings"
+    last_sync = page.select_one("#bank-last-sync")
+    assert text(last_sync.select_one("[data-field=error]")) == "Enable Banking answered 503"
+
+
+def test_sync_now_without_a_connection_redirects_to_settings(tmp_path):
+    bank = FakeBank()
+    with _client(tmp_path, bank) as client:
+        response = client.post("/bank/sync")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings"
+    assert bank.windows == []
+
+
+def test_bank_off_has_no_sync_route(tmp_path):
+    with _client(tmp_path, None) as client:
+        assert client.post("/bank/sync").status_code == 404

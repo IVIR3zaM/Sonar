@@ -13,7 +13,14 @@
 <div id="bank-banner" role="status" data-banner="{{ banner.kind }}"
      class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/25 bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
   <p class="min-w-0 [overflow-wrap:anywhere]">{{ message }}</p>
-  <form method="post" action="/bank/connect">
-    {{ button("Reconnect", variant="secondary", size="sm") }}
-  </form>
+  <div class="flex flex-wrap gap-2">
+    {% if banner.kind == "failed" %}
+    <form method="post" action="/bank/sync">
+      {{ button("Sync now", variant="secondary", size="sm") }}
+    </form>
+    {% endif %}
+    <form method="post" action="/bank/connect">
+      {{ button("Reconnect", variant="secondary", size="sm") }}
+    </form>
+  </div>
 </div>

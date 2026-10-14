@@ -2,11 +2,42 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sonar.banking.client import BankApiError
 
 BANK_AUTH_URL = "https://auth.example.com/start"
+OWN_IBAN = "DE00000000000000001234"
+
+
+def booked_debit(
+    reference: str,
+    amount: str = "12.34",
+    booking_date: str = "2026-10-12",
+    creditor: str = "Grocer Example",
+    purpose: str = "Card payment",
+) -> dict:
+    """An anonymized Enable Banking booked debit from the owner's account."""
+    return {
+        "entry_reference": reference,
+        "transaction_amount": {"currency": "EUR", "amount": amount},
+        "credit_debit_indicator": "DBIT",
+        "creditor": {"name": creditor},
+        "creditor_account": {"iban": "DE99000000000000000001"},
+        "debtor": {"name": "Owner Example"},
+        "debtor_account": {"iban": OWN_IBAN},
+        "remittance_information": [purpose],
+        "booking_date": booking_date,
+        "value_date": booking_date,
+    }
+
+
+def listed_balance(amount: str, balance_type: str = "ITAV") -> dict:
+    return {
+        "name": balance_type,
+        "balance_type": balance_type,
+        "balance_amount": {"currency": "EUR", "amount": amount},
+    }
 
 
 class FakeBank:
@@ -19,6 +50,20 @@ class FakeBank:
         self.iban = "DE00000000000000001234"
         self.session_id = "session-1"
         self.accounts: list[dict] | None = None
+        self.booked: list[dict] = []
+        self.balance_list: list[dict] = []
+        self.windows: list[tuple[str, date, date]] = []
+
+    def booked_transactions(self, account_uid: str, date_from: date, date_to: date) -> list[dict]:
+        if self.error is not None:
+            raise self.error
+        self.windows.append((account_uid, date_from, date_to))
+        return list(self.booked)
+
+    def balances(self, account_uid: str) -> list[dict]:
+        if self.error is not None:
+            raise self.error
+        return list(self.balance_list)
 
     def aspsps(self, country: str) -> list[dict]:
         return [

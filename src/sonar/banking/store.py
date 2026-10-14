@@ -1,4 +1,5 @@
-"""Bank connection storage (SPEC §13 Bank sync): the connection and the pending authorization."""
+"""Bank storage (SPEC §13 Bank sync): the connection, its last sync, the pending authorization
+and the synced balance."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 from sonar.banking.consent import BankConnection, NewConnection
+from sonar.transactions import ParsedBalance
 
 
 def load_connection(conn: sqlite3.Connection) -> BankConnection | None:
@@ -55,6 +57,51 @@ def save_connection(conn: sqlite3.Connection, new: NewConnection) -> None:
                 _format(new.consent_valid_until),
                 _format(new.connected_at),
             ),
+        )
+
+
+def record_sync_ok(conn: sqlite3.Connection, at: datetime, added: int) -> None:
+    _record_sync(conn, at, "ok", added, None)
+
+
+def record_sync_error(conn: sqlite3.Connection, at: datetime, message: str) -> None:
+    """Record a failed sync; `message` is the client's fixed-shape text, never a secret."""
+    _record_sync(conn, at, "error", None, message)
+
+
+def _record_sync(
+    conn: sqlite3.Connection, at: datetime, status: str, added: int | None, error: str | None
+) -> None:
+    with conn:
+        conn.execute(
+            """
+            UPDATE bank_connection
+            SET last_sync_at = ?, last_sync_status = ?, last_sync_added = ?, last_sync_error = ?
+            WHERE id = 1
+            """,
+            (_format(at), status, added, error),
+        )
+
+
+def latest_account(conn: sqlite3.Connection, source: str) -> str | None:
+    """The account of the latest-booked stored row from `source`, if any."""
+    row = conn.execute(
+        "SELECT account FROM transactions WHERE source = ? ORDER BY booking_date DESC, id DESC",
+        (source,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def upsert_balance(conn: sqlite3.Connection, balance: ParsedBalance) -> None:
+    """Store the synced balance; a later sync on the same day replaces it."""
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO balances (account, as_of, amount_cents, source)
+            VALUES (?, ?, ?, 'import')
+            ON CONFLICT(account, as_of, source) DO UPDATE SET amount_cents = excluded.amount_cents
+            """,
+            (balance.account, balance.as_of.isoformat(), balance.amount_cents),
         )
 
 

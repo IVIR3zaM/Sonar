@@ -76,9 +76,8 @@ def _banner(client: TestClient):
 
 
 def _assert_reconnect_form(banner) -> None:
-    form = banner.select_one("form")
+    form = banner.select_one("form[action='/bank/connect']")
     assert form["method"] == "post"
-    assert form["action"] == "/bank/connect"
     assert form.select_one("button[type=submit]") is not None
 
 
@@ -157,3 +156,23 @@ def test_bank_off_has_no_slot_and_no_banner_route(tmp_path, path):
 
     assert page.select_one("#bank-banner-slot") is None
     assert banner.status_code == 404
+
+
+def test_failed_banner_offers_sync_now(tmp_path):
+    with _client(tmp_path) as client:
+        _connection_ending_in(tmp_path, 60)
+        _failed_sync(tmp_path)
+        banner = _banner(client)
+
+    form = banner.select_one("form[action='/bank/sync']")
+    assert form["method"] == "post"
+    assert text(form.select_one("button[type=submit]")) == "Sync now"
+
+
+@pytest.mark.parametrize("days", [10, -2])
+def test_consent_banners_offer_no_sync_now(tmp_path, days):
+    with _client(tmp_path) as client:
+        _connection_ending_in(tmp_path, days)
+        banner = _banner(client)
+
+    assert banner.select_one("form[action='/bank/sync']") is None

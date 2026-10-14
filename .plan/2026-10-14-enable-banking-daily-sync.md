@@ -56,7 +56,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
-| N15 | daily sync into the import pipeline | exec | N07,N14 | opus/opus | 0 | 0 | TODO | |
+| N15 | daily sync into the import pipeline | exec | N07,N14 | opus/opus | 1 | 0 | DONE | |
 | N16 | rule parity report | exec | N15 | opus/sonnet | 0 | 0 | TODO | |
 | N17 | rule changes | gate | N16 | -/- | 0 | 0 | TODO | |
 
@@ -693,4 +693,12 @@ exec: DONE · 1466 passed
 - import_rows(conn, source, txs, balance=None, rules=()) -> ImportCounts(added, duplicates, uncategorized) takes the balance and rules too, so N15 calls one function in one DB transaction
 - CSV match writes CSV mandate_ref/creditor_id literally (even None), per D9
 check: PASS 3/3
+verify: PASS
+
+### N15 try 1 · 2026-10-14
+exec: DONE · 1517 passed
+- banking/mapping.py (pure) + banking/service.sync via import_rows with rules and recurring re-run; store gains record_sync_ok/error, latest_account, upsert_balance; sonar bank-sync CLI; POST /bank/sync and Sync now in #bank-card and failed banner; /api/bank and /api/bank/sync mounted by pages/bank.py under /api (app.py not writable, API exists only with bank sync on)
+- after a failed sync the last successful date is not stored, so the next sync refetches the full 90-day window; unreadable payload (ValueError) recorded as BankApiError with a fixed message
+- sonar.css rebuilt, no diff (classes already present); CLI prints no balance when the bank lists none
+check: PASS 4/4
 verify: PASS

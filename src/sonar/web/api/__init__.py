@@ -2,7 +2,8 @@
 
 Each module is a thin HTTP translation over its feature's service or store and
 exposes `build_router(db_path, today)`; `build_api_router` mounts them all.
-`_common` holds the request-body parsing they share. The AGENTS.md
+`_common` holds the request-body parsing they share. `bank` is the exception: it
+needs the bank client and exists only with bank sync on, so `pages/bank.py` mounts it. The AGENTS.md
 Categorization workflow reads and writes categories and rules here instead of
 editing a file.
 """

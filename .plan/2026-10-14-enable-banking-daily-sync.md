@@ -58,7 +58,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
 | N15 | daily sync into the import pipeline | exec | N07,N14 | opus/opus | 1 | 0 | DONE | |
 | N16 | rule parity report | exec | N15 | opus/sonnet | 1 | 0 | DONE | |
-| N17 | rule changes | gate | N16 | -/- | 0 | 0 | TODO | |
+| N17 | rule changes | gate | N16 | -/- | 0 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -710,3 +710,6 @@ exec: DONE · 1517 passed
 - Report covers data/sonar.db per brief and notes sonar-prod.db has a different rule set; scratch scripts in session scratchpad only
 check: PASS 3/3
 verify: PASS
+
+### N17 try 1 · 2026-10-14
+human: owner confirmed the three rule edits; applied on the local instance only (rules 8, 10, 11); uncategorized 2 before and 2 after; prod rule set to be re-checked before any prod write

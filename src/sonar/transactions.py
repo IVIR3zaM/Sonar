@@ -25,6 +25,8 @@ class ParsedTransaction:
     iban: str | None = None
     mandate_ref: str | None = None
     creditor_id: str | None = None
+    # The bank's id for a booking read by the bank sync; CSV rows have none.
+    entry_reference: str | None = None
 
 
 @dataclass(frozen=True)

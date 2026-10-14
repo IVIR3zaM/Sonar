@@ -48,7 +48,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 1 | 0 | DONE | |
 | N05 | overlap strategy | gate | N04 | -/- | 0 | 1 | DONE | |
 | N06 | connection store and consent rules | exec | N12 | sonnet/sonnet | 1 | 1 | DONE | |
-| N07 | match and merge in the import pipeline | exec | N05 | opus/opus | 0 | 0 | TODO | |
+| N07 | match and merge in the import pipeline | exec | N05 | opus/opus | 1 | 0 | DONE | |
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N15 | -/- | 0 | 0 | TODO | |
 | N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | TODO | |
@@ -686,3 +686,11 @@ plan: REPLANNED +N15,N16,N17
 - N05 brief now closes the answered gate on owner agreement with the Decisions and briefs
 - N07 is now the pure matcher, migration and shared import_rows path; new N15 holds the mapping, sync service, CLI, routes and API (deps N07,N14)
 - new N16 rule parity report on real data in data/ (deps N15) and gate N17 for owner-confirmed rule changes via the Categorization workflow; N09 deps N15, N10 deps N08,N09,N17
+
+### N07 try 1 · 2026-10-14
+exec: DONE · 1466 passed
+- pure importing/match.py pair(); migration 0013_bank_merge.sql (entry_reference + partial unique index, merged); ParsedTransaction.entry_reference; store.import_rows shared by import_file, splits synced vs CSV rows and merges matches; SPEC §13 Bank sync overlap sentence
+- import_rows(conn, source, txs, balance=None, rules=()) -> ImportCounts(added, duplicates, uncategorized) takes the balance and rules too, so N15 calls one function in one DB transaction
+- CSV match writes CSV mandate_ref/creditor_id literally (even None), per D9
+check: PASS 3/3
+verify: PASS

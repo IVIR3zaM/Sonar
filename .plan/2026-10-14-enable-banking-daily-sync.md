@@ -52,13 +52,14 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N15 | -/- | 0 | 0 | DONE | |
 | N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | DONE | |
-| N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
+| N11 | plan acceptance | check | N18 | -/sonnet | 0 | 1 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
 | N15 | daily sync into the import pipeline | exec | N07,N14 | opus/opus | 1 | 0 | DONE | |
 | N16 | rule parity report | exec | N15 | opus/sonnet | 1 | 0 | DONE | |
 | N17 | rule changes | gate | N16 | -/- | 0 | 0 | DONE | |
+| N18 | query strings out of access logs | exec | N10 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -538,6 +539,38 @@ Done when:
 - C3 [human] `systemctl list-timers` lists `sonar-bank-sync.timer` with its next run at 06:30 Berlin time, and the
   journal shows the one-line "Bank sync:" summary with no secret in it
 
+## N18 query strings out of access logs
+Do: Keep query strings out of every access log line, so the OAuth `code` and `state` that the bank (and Google)
+  redirect to `/bank/callback` and `/auth/callback` are never written to a log. The uvicorn access log that
+  `sonar` starts and the prod nginx access log both log the method, the path without its query, the status and
+  the client, for every request. Logs stay on; only the query is dropped.
+Context: Intent constraint: secrets are never printed or logged; D3/D4: the code and the plaintext state are
+  secrets (the DB keeps only the state's hash).
+  - uvicorn: `serve` calls `uvicorn.run` at src/sonar/__main__.py:71-79 with the default logging; the access line
+    is built from `get_path_with_query_string` (.venv/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py:477-481)
+    and goes through the `access` handler of `uvicorn.config.LOGGING_CONFIG` (.venv/.../uvicorn/config.py:83-112).
+    Pass `serve` a `log_config` built from a copy of `LOGGING_CONFIG` whose access handler has a filter that
+    drops everything from the first `?` of the path argument; never mutate uvicorn's module dict. The filter is
+    a small pure function plus the `logging.Filter`, both in src/sonar/__main__.py (the top level holds no new
+    module, AGENTS.md Layout). The exact kwargs test at tests/test_main.py:65-70 gains `log_config`.
+  - nginx: deploy/terraform/templates/sonar.conf.tftpl is included at the `http` level from conf.d, so it may
+    declare a `log_format` (a unique name, e.g. `sonar_no_query`) above `server` that uses `$request_method`,
+    `$uri` and `$server_protocol` instead of `$request`, and the `server` block sets `access_log` with it.
+    The format holds no `$request`, `$request_uri`, `$args` or `$query_string`.
+Read: `src/sonar/__main__.py`, `tests/test_main.py`, `deploy/terraform/templates/sonar.conf.tftpl`, `deploy/README.md`
+Write: `src/sonar/__main__.py`, `tests/test_main.py`, `deploy/terraform/templates/sonar.conf.tftpl`, `deploy/README.md`
+Test first: a record logged to `uvicorn.access` after `logging.config.dictConfig(<serve's log_config>)`, with the
+  path argument "/bank/callback?state=s3cret&code=c0de", writes a line holding "/bank/callback" and neither
+  "s3cret" nor "c0de". It fails today because `serve` passes no `log_config`.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/test_main.py` passes: the access line drops the query for /bank/callback and
+  /auth/callback and keeps a query-less path unchanged; `serve` passes the filtered `log_config` to `uvicorn.run`
+- C2 [cmd] `grep -q 'access_log .*sonar_no_query' deploy/terraform/templates/sonar.conf.tftpl && ! grep -nE '\$(request|request_uri|args|query_string)([^_a-z]|$)' deploy/terraform/templates/sonar.conf.tftpl`
+- C3 [review] the filter only rewrites the path argument of access records (other fields and the error log are
+  untouched); `uvicorn.config.LOGGING_CONFIG` is copied, not mutated; `log_format` sits outside `server`;
+  deploy/README.md mentions that access logs omit query strings if it describes nginx logging
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N11 plan acceptance
 Do: Check the whole plan against the SPEC, the security rules and the Definition of done.
 Done when:
@@ -552,6 +585,7 @@ Done when:
   - no bank path is public;
   - the key path is refused under static/;
   - no print, log, template or API answer holds a JWT, key, code or session id;
+  - the uvicorn and nginx access logs drop query strings, so /bank/callback and /auth/callback log no code or state;
   - TLS verification is on;
   - errors are generic
 - C6 [cmd] `test -z "$(git ls-files data samples)"` and no test fixture holds a real IBAN or name (D12)
@@ -719,3 +753,21 @@ human: visual check by orchestrator on a temp DB with a throwaway key: not-conne
 
 ### N10 try 1 · 2026-10-14
 human: owner confirmed the prod live check: Connected with consent end about 180 days ahead, sync added only new rows with no duplicates and the dashboard balance is today's, timer next run 06:30 Berlin and a clean one-line journal summary; main pushed and CI deploy run 38618031947 succeeded
+
+### N11 try 1 · 2026-10-14
+check: PASS 3/3
+verify: FAIL C5
+- C5 src/sonar/__main__.py:71 - uvicorn.run keeps its default access log, which prints the full request line; the bank's redirect GET /bank/callback?state=<state>&code=<code> is written to stdout with the authorization code and plaintext state (observed: access log lines carry query strings, e.g. GET /bank/callback?state=x&code=y) - expected no log line to hold the code or state
+
+### N11 replan 1 · 2026-10-14
+plan: REPLANNED +N18
+- cause: C5 failed, uvicorn's default access log (src/sonar/__main__.py:71) writes the /bank/callback query with the code and plaintext state; prod nginx's default access log does the same, and /auth/callback shares the leak
+- new N18 (exec, deps N10) drops query strings from the uvicorn access log via a filtered log_config copy and from the nginx access log via a query-less log_format; N11 now depends on N18
+- N11 C5 gains an explicit bullet that both access logs omit query strings
+
+### N18 try 1 · 2026-10-14
+exec: DONE · 1522 passed
+- serve passes a log_config (deepcopy of uvicorn LOGGING_CONFIG) whose access handler filters the query out of the path arg; tests in tests/test_main.py
+- nginx sonar_no_query log_format ($uri, no $request/$args) above server plus access_log; README Logs note
+check: PASS 3/3
+verify: PASS

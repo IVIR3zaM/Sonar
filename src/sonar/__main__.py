@@ -2,6 +2,8 @@
 `bank-sync` CLIs."""
 
 import argparse
+import copy
+import logging
 import os
 import sys
 from collections.abc import Callable
@@ -11,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 from sonar.auth import store as auth_store
 from sonar.auth.emails import normalize_email
@@ -76,7 +79,34 @@ def serve() -> None:
         # redirects and cookies see the public https scheme.
         proxy_headers=True,
         forwarded_allow_ips="127.0.0.1",
+        log_config=_access_log_config(),
     )
+
+
+def _without_query(path: str) -> str:
+    return path.split("?", 1)[0]
+
+
+class _QueryFreeAccessLog(logging.Filter):
+    """Drop the query from an access record's path (uvicorn's 3rd arg).
+
+    The OAuth `code` and `state` arrive in the query of the bank and Google callbacks and
+    are secrets, so no access line may carry them.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            client, method, path, http_version, status = record.args
+            record.args = (client, method, _without_query(str(path)), http_version, status)
+        return True
+
+
+def _access_log_config() -> dict[str, Any]:
+    """uvicorn's default logging with the query-free filter on the access handler."""
+    config = copy.deepcopy(LOGGING_CONFIG)
+    config["filters"] = {"query_free": {"()": _QueryFreeAccessLog}}
+    config["handlers"]["access"]["filters"] = ["query_free"]
+    return config
 
 
 def _auth_settings() -> AuthSettings | None:

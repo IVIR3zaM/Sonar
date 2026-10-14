@@ -289,5 +289,5 @@ Sonar shares the Gateway VM with Gateway and Kita, and the bucket with both.
 - **Gateway redeploy:** if redeploying Gateway replaces the VM, Gateway's workflow dispatches Sonar's deploy; if it doesn't, run `gh workflow run ci.yml -f ref=main`. The data survives on the volume, which is reattached and remounted.
 - **Never destroy the volume.** It has `prevent_destroy` and Hetzner delete protection, because the SQLite database lives on it.
 - **Secrets:** state lives in R2, not on your machine, and holds secrets; keep the bucket private. `backend.hcl` holds your R2 credentials; terraform copies them into the gitignored `.terraform/` directory and into any saved `-out` plan files. Never share `.terraform/`, plan files, `terraform.tfvars`, or your SSH key. All four are gitignored; never commit them.
-- **Logs:** `ssh root@<server_ipv4> journalctl -u sonar`.
+- **Logs:** `ssh root@<server_ipv4> journalctl -u sonar`. Sonar's access log (uvicorn) and its nginx access log (`sonar_no_query` format) omit query strings, so the OAuth `code` and `state` of the bank and Google callbacks are never logged.
 - **Bank sync:** `journalctl -u sonar-bank-sync` shows the daily runs; `systemctl list-timers sonar-bank-sync.timer` shows the next one.

@@ -1,6 +1,14 @@
+# Access lines keep the method, path (no query), protocol, status and client, never the query:
+# the OAuth code and state travel in it. Loaded at the http level, so the name must be unique.
+log_format sonar_no_query '$remote_addr - $remote_user [$time_local] '
+                          '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                          '"$http_user_agent"';
+
 server {
     listen 443 ssl;
     server_name ${hostname};
+
+    access_log /var/log/nginx/access.log sonar_no_query;
 
     # Self-signed origin certificate; Cloudflare terminates the public TLS.
     ssl_certificate     /etc/sonar/tls/origin.crt;

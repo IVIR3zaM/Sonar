@@ -1,5 +1,7 @@
 """Tests for the __main__ entry point."""
 
+import logging
+import logging.config
 from unittest.mock import patch
 
 import pytest
@@ -47,6 +49,62 @@ def test_main_runs_uvicorn_with_correct_args():
         assert kwargs.get("port") == 8000
 
 
+def _served_log_config() -> dict:
+    from sonar.__main__ import _access_log_config
+
+    return _access_log_config()
+
+
+def _access_line(path: str, capsys) -> str:
+    """The line uvicorn's access logger writes for `path` under the config `serve` passes."""
+    import uvicorn.config
+
+    try:
+        logging.config.dictConfig(_served_log_config())
+        logging.getLogger("uvicorn.access").info(
+            '%s - "%s %s HTTP/%s" %d', "10.0.0.1:5000", "GET", path, "1.1", 200
+        )
+    finally:
+        logging.config.dictConfig(uvicorn.config.LOGGING_CONFIG)
+    return capsys.readouterr().out
+
+
+@pytest.mark.parametrize("path", ["/bank/callback", "/auth/callback"])
+def test_access_log_drops_the_query_string(path, capsys):
+    line = _access_line(f"{path}?state=s3cret&code=c0de", capsys)
+
+    assert path in line
+    assert "s3cret" not in line
+    assert "c0de" not in line
+    assert "200" in line
+    assert "10.0.0.1:5000" in line
+
+
+def test_access_log_keeps_a_path_without_a_query_unchanged(capsys):
+    line = _access_line("/monthly", capsys)
+
+    assert '"GET /monthly HTTP/1.1" 200' in line
+
+
+def test_access_log_config_does_not_mutate_uvicorns_own(capsys):
+    import uvicorn.config
+
+    before = repr(uvicorn.config.LOGGING_CONFIG)
+
+    _served_log_config()
+
+    assert repr(uvicorn.config.LOGGING_CONFIG) == before
+
+
+def test_access_log_filter_leaves_other_records_alone():
+    from sonar.__main__ import _QueryFreeAccessLog
+
+    record = logging.LogRecord("uvicorn.error", logging.INFO, "f", 1, "see ?x=1 %s", ("a?b",), None)
+
+    assert _QueryFreeAccessLog().filter(record) is True
+    assert record.args == ("a?b",)
+
+
 def test_server_db_path_is_sonar_db_path_when_set(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.argv", ["sonar"])
     monkeypatch.setenv("SONAR_DB_PATH", str(tmp_path / "env.db"))
@@ -67,6 +125,7 @@ def test_server_db_path_is_sonar_db_path_when_set(monkeypatch, tmp_path):
         "port": 8000,
         "proxy_headers": True,
         "forwarded_allow_ips": "127.0.0.1",
+        "log_config": _served_log_config(),
     }
 
 

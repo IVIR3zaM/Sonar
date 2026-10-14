@@ -43,16 +43,17 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
-| N02 | SPEC, bank settings and Enable Banking client | exec | N01 | sonnet/opus | 0 | 0 | TODO | |
-| N03 | owner Enable Banking setup and first authorization | gate | N02 | -/- | 0 | 0 | TODO | |
+| N02 | SPEC and bank settings | exec | N01 | sonnet/opus | 1 | 1 | DONE | |
+| N03 | owner Enable Banking setup and first authorization | gate | N12 | -/- | 0 | 0 | TODO | |
 | N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 0 | 0 | TODO | |
 | N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
-| N06 | connection store, consent flow and banner | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
+| N06 | connection store, consent flow and banner | exec | N12 | sonnet/opus | 0 | 0 | TODO | |
 | N07 | daily sync into the import pipeline | exec | N05,N06 | opus/opus | 0 | 0 | TODO | |
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N07 | -/- | 0 | 0 | TODO | |
 | N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
+| N12 | Enable Banking client | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -71,36 +72,87 @@ Done when:
 - C6 [cmd] `git check-ignore -q data/enable-banking-comparison.md && git check-ignore -q data/enable-banking-session.json`
 - C7 [cmd] `test -w .git/index && git status --porcelain >/dev/null` exits 0
 
-## N02 SPEC, bank settings and Enable Banking client
-Do: Write the SPEC amendment and the env settings, and add the thin Enable Banking HTTP client that signs every
-  request with the app key. The client returns raw payload dicts; mapping comes in N07.
-  - SPEC.md:10: replace the sentence "A live bank connection ... Don't build it, ..." with "Data comes in by file
-    upload and, for the Deutsche Bank Girokonto, by a daily Enable Banking sync (§13 Bank sync)."
-  - SPEC §13: append a "Bank sync" bullet summing up D2, D4, D6, D7 and D8 in plain words. It leaves the CSV/API
-    overlap to N07.
-  - `.env.example`: add the two variables with comments: the key file lives outside the repo, mode 600.
-Context: D1 package `src/sonar/banking/`. D2: `bank_settings(env) -> BankSettings | None` is pure, modelled on
-  src/sonar/auth/settings.py:35-50. `read_private_key(path, served_dir) -> bytes` raises ValueError, with a
-  message that names the path but never the contents, when the file is missing or unreadable or when its resolved
-  path lies inside `served_dir`. D3 covers the client: `EnableBankingClient(app_id, private_key_pem, http, now)`
-  with `aspsp`, `start_authorization`, `create_session`, `booked_transactions`, `balances` and `BankApiError`.
-  `http` is an `httpx.Client`, so tests pass `httpx.MockTransport`. D12: tests generate an RSA key with
-  `cryptography` at runtime and use only made-up payloads; no key file is committed.
-Read: `src/sonar/auth/settings.py`, `tests/auth/test_emails.py`, `tests/test_architecture.py`, `SPEC.md:1-12`, `SPEC.md:225-258`
-Write: `SPEC.md`, `.env.example`, `src/sonar/banking/__init__.py`, `src/sonar/banking/settings.py`, `src/sonar/banking/client.py`, `tests/banking/__init__.py`, `tests/banking/test_settings.py`, `tests/banking/test_client.py`
-Test first: `booked_transactions` sends a Bearer JWT that verifies with the test public key (RS256, kid = app id,
-  iss/aud as D3, exp = iat + 3600), and it fails today because the module does not exist.
+## N02 SPEC and bank settings
+Do: Amend SPEC for the bank sync and add its pure env settings; the HTTP client is N12.
+  - SPEC.md:10: replace that bullet with "- Data comes in by file upload and, for the Deutsche Bank Girokonto, by
+    a daily Enable Banking sync (§13 Bank sync)."
+  - After SPEC.md:258, the last §13 bullet, append this bullet word for word: "- Bank sync (§0, §4, §8): with
+    SONAR_ENABLE_BANKING_APP_ID and SONAR_ENABLE_BANKING_KEY_PATH set (both or neither, else `sonar` refuses to
+    start; the key file must be readable and outside the served static files), Sonar reads the Deutsche Bank
+    Girokonto from Enable Banking. Connect bank on the Settings Bank connection card sends the owner to the bank
+    for the longest consent it allows (about 180 days) and back to /bank/callback, which accepts only the
+    single-use state it issued in the last 30 minutes. `sonar bank-sync`, run daily at 06:30 Berlin time, by Sync
+    now and by `POST /api/bank/sync`, imports the booked transactions from 7 days before the last successful sync,
+    and the balance, through the import pipeline, then re-applies rules and recurring detection. A banner on every
+    page says when the consent ends within 14 days, has ended, or the last sync failed, with Reconnect.
+    `GET /api/bank` returns the status. With neither variable set, none of this exists."
+  - `.env.example`: append both variables, empty, with comments: the app id; the key `.pem` path, outside the repo, mode 600.
+Context: new package `src/sonar/banking/` with an empty `__init__.py`; tests in `tests/banking/` with an empty
+  `__init__.py`, as tests/auth/ has. `banking/settings.py` is pure, modelled on src/sonar/auth/settings.py:11-54:
+  - `BANK_ENV_VARS` = the two names above; `ASPSP_NAME = "Deutsche Bank"`; `ASPSP_COUNTRY = "DE"`.
+  - frozen dataclass `BankSettings(app_id: str, key_path: Path, redirect_url: str)`.
+  - `bank_settings(env: Mapping[str, str]) -> BankSettings | None`: both unset or empty → None; one → ValueError
+    "Bank sync is only partly configured; missing: <name>". redirect_url = `SONAR_BASE_URL` without a trailing
+    "/", else `http://127.0.0.1:<SONAR_PORT, else 8000>`, plus "/bank/callback".
+  - `read_private_key(path: Path, served_dir: Path) -> bytes` returns the file's bytes. It raises ValueError naming
+    the path, never the contents (`raise ... from None`), when `path.resolve()` lies inside `served_dir.resolve()`,
+    when reading raises OSError, or when `cryptography.hazmat.primitives.serialization.load_pem_private_key(data,
+    None)` rejects the bytes. N06 passes src/sonar/web/static; banking never imports sonar.web
+    (tests/test_architecture.py). Nothing here prints, logs or reads `os.environ`.
+Read: `src/sonar/auth/settings.py`, `tests/auth/test_settings.py`, `SPEC.md:1-12`, `SPEC.md:225-258`, `.env.example`
+Write: `SPEC.md`, `.env.example`, `src/sonar/banking/__init__.py`, `src/sonar/banking/settings.py`, `tests/banking/__init__.py`, `tests/banking/test_settings.py`
+Test first: `bank_settings({})` is None; it fails today because `sonar.banking` does not exist.
 Done when:
-- C1 [cmd] `uv run pytest -q tests/banking/test_settings.py` passes tests for: both vars unset or empty → None;
-  one set → ValueError naming the missing one; a key path inside the served dir, a missing key and an unreadable
-  key → ValueError whose text never contains the key contents
-- C2 [cmd] `uv run pytest -q tests/banking/test_client.py` passes tests for: the JWT header and claims; the
-  request path, query and body of each call (`transaction_status=BOOK`, dates ISO); pages joined across
-  `continuation_key`; a 401 answer and a transport error raise `BankApiError` with the status, and its text holds
-  no JWT, key or session id; the client is built with TLS verification on and a 30 s timeout
-- C3 [review] SPEC.md:10 no longer says not to build a bank connection; the §13 Bank sync bullet matches
-  D2/D4/D6/D7/D8; `client.py` and `settings.py` never print, log or call `datetime.now`/`date.today`
+- C1 [cmd] `uv run pytest -q tests/banking/test_settings.py -k bank_settings` passes tests for: both unset or empty
+  → None; one set → ValueError naming it; redirect_url from SONAR_BASE_URL ("/" dropped), SONAR_PORT, or 8000
+- C2 [cmd] `uv run pytest -q tests/banking/test_settings.py -k private_key` passes tests for: a valid key (an RSA key
+  made with `cryptography` at runtime in `tmp_path`) → its bytes; a key under served_dir, also when reached by a
+  symlink from outside, a missing path, a directory and a non-PEM file → ValueError naming the path and holding none of the file's text
+- C3 [review] SPEC.md:10 no longer says not to build a bank connection; the §13 Bank sync bullet reads as given;
+  `.env.example` has both variables empty; settings.py never prints, logs, reads the clock or `os.environ`; no key
+  file is committed
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N12 Enable Banking client
+Do: Add `src/sonar/banking/client.py`, a thin HTTP shell that signs every Enable Banking request with the app
+  key and returns raw payload dicts; the mapping is N07.
+Context: `BASE_URL = "https://api.enablebanking.com"`; requests use absolute URLs on it. `default_http()` returns
+  `httpx.Client(timeout=30.0, verify=True)`: TLS verification is explicit and never off.
+  - `EnableBankingClient(app_id: str, private_key_pem: bytes, http: httpx.Client, now: Callable[[], datetime])`;
+    `now` returns an aware UTC datetime; tests fix it and pass `httpx.Client(transport=httpx.MockTransport(...))`.
+  - Every request sends `Authorization: Bearer <jwt>` from `authlib.jose.jwt.encode`. authlib is already a
+    dependency and brings `cryptography`, so add no package and leave pyproject.toml alone; its import-time
+    AuthlibDeprecationWarning is harmless. Header `{"alg": "RS256", "typ": "JWT", "kid": app_id}`; claims `iss`
+    "enablebanking.com", `aud` "api.enablebanking.com", `iat` = int(now().timestamp()), `exp` = iat + 3600.
+  - `aspsps(country: str) -> list[dict]`: GET `/aspsps` with query `country`; returns the answer's `aspsps`.
+  - `start_authorization(valid_until: datetime, state: str, redirect_url: str) -> dict`: POST `/auth`, JSON
+    `{"access": {"valid_until": valid_until.isoformat()}, "aspsp": {"name": ASPSP_NAME, "country": ASPSP_COUNTRY},
+    "state": state, "redirect_url": redirect_url, "psu_type": "personal"}`, constants from banking/settings.py.
+  - `create_session(code: str) -> dict`: POST `/sessions`, JSON `{"code": code}`.
+  - `booked_transactions(account_uid: str, date_from: date, date_to: date) -> list[dict]`: GET
+    `/accounts/{account_uid}/transactions` with ISO `date_from` and `date_to` and `transaction_status=BOOK`; while
+    an answer has a non-empty `continuation_key`, repeat with it added; returns all pages' `transactions` joined.
+  - `balances(account_uid: str) -> list[dict]`: GET `/accounts/{account_uid}/balances`; returns `balances`.
+  - `BankApiError(Exception)` has `status: int | None` and `message`. A non-2xx answer gives "Enable Banking
+    answered <status>", plus " (<error>)" when the JSON body's `error` is a string that `re.fullmatch`es `[A-Z_]{1,40}`. An
+    `httpx.HTTPError` gives status None and "Enable Banking could not be reached", raised `from None`. The text
+    never holds the JWT, key, code, session id, URL or body, and is at most 200 characters.
+  Nothing prints, logs or calls `datetime.now`/`date.today`; tests use a runtime RSA key and made-up payloads only.
+Read: `src/sonar/banking/settings.py`, `tests/banking/test_settings.py`
+Write: `src/sonar/banking/client.py`, `tests/banking/test_client.py`
+Test first: `booked_transactions` sends a Bearer JWT that `authlib.jose.jwt.decode` verifies with the test public
+  key; it fails today because `sonar.banking.client` does not exist.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/banking/test_client.py -k jwt` passes tests for the header (alg, typ, kid) and
+  the claims (iss, aud, iat from `now`, exp = iat + 3600)
+- C2 [cmd] `uv run pytest -q tests/banking/test_client.py -k "aspsps or authorization or session or transactions or balances"`
+  passes tests for the method, path, query and JSON body of all five calls, and two pages joined by `continuation_key`
+- C3 [cmd] `uv run pytest -q tests/banking/test_client.py -k "error or timeout"` passes tests for: a 401 with
+  `{"error": "EXPIRED_SESSION"}` → status 401 and that code in the text; an `error` off the pattern is left out;
+  `httpx.ConnectError` from the transport → status None; no text holds the JWT, the code or a session id echoed in
+  the body; `default_http().timeout` is 30 s
+- C4 [review] TLS verification is on with no switch to turn it off; no print, log or clock call; the error text rules hold
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 owner Enable Banking setup and first authorization
 Do: gate for the owner, with the helper pre-authorized (D13).
@@ -334,3 +386,21 @@ plan: REPLANNED
 
 ### N01 try 1 · 2026-10-14
 check: PASS 7/7
+
+### N02 try 1 · 2026-10-14
+exec: BLOCKED · brief cites D2-D8 (env var names, JWT iss/aud, client paths, Bank sync bullet content) without stating them; cannot guess
+
+### N02 replan 1 · 2026-10-14
+plan: REPLANNED +N12
+- cause: the brief cited D2-D8 without stating them and could not fit them in 40 lines with the client
+- N02 is now SPEC, .env.example and banking/settings.py, with the SPEC.md:10 text, the §13 Bank sync bullet word for word, env names, redirect rule and read_private_key checks stated
+- new N12 (deps N02) holds client.py: base URL, JWT header and claims, the five calls with paths, queries and bodies, BankApiError text rules; JWT via authlib.jose (cryptography comes with authlib), no PyJWT, no pyproject change
+- N03 and N06 now depend on N12
+
+### N02 try 1 · 2026-10-14
+exec: DONE · 1362 passed
+- SPEC §0 bullet and §13 Bank sync bullet, .env.example vars
+- banking/settings.py: bank_settings, read_private_key (symlink-safe, no key text in errors)
+- cryptography is used via authlib's transitive dependency; pyproject not in Write
+check: PASS 3/3
+verify: PASS

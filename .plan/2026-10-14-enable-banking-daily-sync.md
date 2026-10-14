@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: RUNNING
+status: DONE
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -52,7 +52,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N15 | -/- | 0 | 0 | DONE | |
 | N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | DONE | |
-| N11 | plan acceptance | check | N18 | -/sonnet | 0 | 1 | TODO | |
+| N11 | plan acceptance | check | N18 | -/sonnet | 1 | 1 | DONE | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
@@ -769,5 +769,9 @@ plan: REPLANNED +N18
 exec: DONE · 1522 passed
 - serve passes a log_config (deepcopy of uvicorn LOGGING_CONFIG) whose access handler filters the query out of the path arg; tests in tests/test_main.py
 - nginx sonar_no_query log_format ($uri, no $request/$args) above server plus access_log; README Logs note
+check: PASS 3/3
+verify: PASS
+
+### N11 try 1 · 2026-10-14
 check: PASS 3/3
 verify: PASS

@@ -1,0 +1,336 @@
+# Enable Banking daily sync
+status: RUNNING
+created: 2026-10-14 · updated: 2026-10-14
+goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
+verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
+commit: per-node
+push: none
+budgets: 2 tries per brief · 2 replans per node
+tier: M
+
+## Intent
+
+Goal: Today the Girokonto data reaches Sonar only when the owner downloads a CSV and uploads it. Sonar will pull it itself: a timer on the server runs `sonar bank-sync` at 06:30 Berlin time. The sync fetches the booked transactions since the last sync and today's balance from Enable Banking, using the owner's own linked account in restricted mode and requests signed with the app's private key. The rows go through the existing import pipeline, so rules, recurring detection and the forecast work on them as they do on CSV rows. The owner connects once from Settings and reconnects the same way when the bank consent runs out. A banner on every page warns 14 days before the consent ends, when it has ended and after a failed sync.
+
+In scope: a SPEC §13 Bank sync amendment that replaces the "don't build it" line at SPEC.md:10; a `banking` feature package (env settings, the JWT-signed HTTP client, pure payload mapping, consent and banner rules, store, sync service); one migration for the connection state; the Connect/Reconnect flow with a state-checked callback; the `sonar bank-sync` command; a Settings "Bank connection" card with Sync now; the banner; `/api/bank` for parity; the systemd service and timer in the Terraform install, the CI secrets and the deploy README; an owner-run comparison of API rows with the stored CSV rows that decides how API and CSV rows overlap.
+
+Out of scope: email or push notifications, other banks or accounts, payments, pending transactions, more than one bank connection, changes to the CSV importers beyond the overlap rule, and committing any real bank data.
+
+Constraints: AGENTS.md rules: strict TDD, KISS, functional core with `today`/`now` as parameters, integer cents, `store.py`/`service.py` the only DB access, a new package only with a SPEC feature, migrations additive only, `tests/test_architecture.py` green, page tests on ids through `tests/html.py`, `sonar.css` rebuilt and committed. Secrets only from env, never printed, logged, rendered or stored in tracked files. OWASP: state parameter on the redirect, callback behind sign-in, private key never under a served path, TLS verification on, generic error text. The app starts with one command and works unchanged when Enable Banking is not configured. Decisions D1-D15.
+
+Definition of done: verify passes; the visual gate passes for the Settings card and the banner at desktop and 375px, light and dark; on prod the owner connects, runs a sync, sees new transactions and today's balance, and `systemctl list-timers` lists the timer; the final check passes SPEC §11 and §12.
+
+## Decisions
+
+- D1 Package: a new `src/sonar/banking/` behind the new SPEC §13 Bank sync feature, holding `settings.py` (env, pure), `client.py` (HTTP and JWT shell), `consent.py` (pure consent and banner rules), `mapping.py` (pure payload → `ParsedTransaction`/`ParsedBalance`), `store.py` and `service.py`. Routes go in `web/pages/bank.py` and `web/api/bank.py` | confirmed
+- D2 Config: env `SONAR_ENABLE_BANKING_APP_ID` and `SONAR_ENABLE_BANKING_KEY_PATH`; an empty value counts as unset. With both unset the feature is off: no bank routes (404), no Settings card, no banner, and `bank-sync` prints "Bank sync is not configured." and exits 0. With only one set, `sonar` refuses to start and names the missing one, as sign-in does (src/sonar/auth/settings.py:35-50). The key file must be readable and resolve outside `src/sonar/web/static/`, else `sonar` refuses to start; its contents are never printed. Redirect URL = `SONAR_BASE_URL`, else `http://127.0.0.1:<SONAR_PORT>`, plus `/bank/callback`. ASPSP = name "Deutsche Bank", country "DE" (N03 confirms the exact name) | confirmed
+- D3 Client: base `https://api.enablebanking.com`; each request carries `Authorization: Bearer <JWT>`. The JWT is RS256, signed with `authlib.jose` (already a dependency, so no new package), with header `kid` = app id and claims `iss` "enablebanking.com", `aud` "api.enablebanking.com", `iat` now and `exp` now + 1 h. Calls: GET `/aspsps?country=DE`; POST `/auth`; POST `/sessions`; GET `/accounts/{uid}/transactions` with `date_from`, `date_to` and `transaction_status=BOOK`, following `continuation_key`; GET `/accounts/{uid}/balances`. httpx uses a 30 s timeout with TLS verification on. A non-2xx answer or a transport error raises `BankApiError(status, message)`: at most 200 characters, never the JWT, key, code or session id | confirmed
+- D4 Consent flow: `POST /bank/connect` reads the ASPSP's `maximum_consent_validity` and asks for `valid_until` = now + that many seconds − 10 minutes. It makes a state with `secrets.token_urlsafe(32)` and stores only its SHA-256 hash and creation time; a new Connect replaces any pending one. It then calls POST `/auth` (`access.valid_until`, `aspsp`, `state`, `redirect_url`, `psu_type` "personal") and answers 303 to the returned url. `GET /bank/callback?code&state` deletes the pending state on every call. It accepts the state only when `hmac.compare_digest` matches the hash and the state is under 30 minutes old. It then calls POST `/sessions` with the code. It stores the session id, the account uid (the only account, or else the first with `cash_account_type` "CACC"), the IBAN's last 4 characters and the consent end from the session's `access.valid_until`, replacing any earlier connection, and answers 303 to /settings. A bad, missing, reused or expired state, a bank `error` parameter or an API error re-renders /settings with status 400 and the inline `#form-error` "The bank connection did not complete. Start again with Connect bank.", and stores nothing. No bank path is public: the sign-in gate covers them all (src/sonar/web/access.py:25,37) | confirmed
+- D5 Storage: one additive migration, numbered with the next free number in src/sonar/migrations/ when it runs: 0012, or 0013 if the energy-monitor plan has taken 0012. Table `bank_connection` is a single row (id = 1) with `session_id`, `account_uid`, `iban_last4`, `consent_valid_until` (UTC ISO datetime), `connected_at`, `last_sync_at`, `last_sync_status` (`ok`/`error`/null), `last_sync_added` and `last_sync_error`. Table `bank_authorization` is a single row with `state_hash` and `created_at`. A reconnect replaces the session fields and keeps the last-sync fields | confirmed
+- D6 Banner: shown on every non-bare page, only when the feature is on and a connection exists. It loads by htmx from `GET /bank/banner`, like the Uncategorized badge (src/sonar/web/templates/base.html:108), into a slot above `{% block content %}` (base.html:149); the fragment is empty when there is nothing to say. Each case below has a Reconnect button (a POST form to /bank/connect), and the failed case also has Sync now. When more than one case applies, the first listed wins: expired (today ≥ consent end date): "Bank access ended on <date>."; failed (last sync status error): "The bank sync on <date> failed: <error>."; expiring (today ≥ consent end − 14 days): "Bank access ends on <date>."; never connected: nothing | confirmed
+- D7 Settings and API: with the feature on, /settings gets a "Bank connection" card (`#bank-card`). It shows the status (Not connected, Connected, Ends soon, Expired), "Deutsche Bank ···<last4>", the consent end, the last sync (time, ok or failed, rows added, error), a Connect bank or Reconnect bank button and Sync now. Sync now is `POST /bank/sync`: it runs the sync and answers 303 to /settings. For API parity (SPEC §13): `GET /api/bank` returns the same status as JSON, with no session id or account uid; `POST /api/bank/sync` runs the sync and returns that status, answering 409 when not connected and 502 when Enable Banking fails. Connect stays page-only because it is a browser redirect | confirmed
+- D8 Sync: `sonar bank-sync [--db]`. Not configured: prints "Bank sync is not configured." and exits 0. Configured but not connected: prints "Bank is not connected." and exits 0. Otherwise it fetches the booked transactions from `date_from` to today and the balances, imports the rows through the import pipeline and re-applies rules and recurring detection as the upload does (src/sonar/web/pages/import_.py:57-62). It records the balance as of the sync date as source 'import', upserted so the day's latest sync wins. It records `last_sync_at`, the status and the rows added. On success it prints "Bank sync: N added, M duplicates, balance X on D." and exits 0. On any error it records status error with the short message, prints "Bank sync failed: <message>" and exits 1. Later syncs start at the last successful sync date − 7 days, and dedup drops the repeats. The first window follows D9. The service takes `today`, `now` and the client as parameters | confirmed
+- D9 CSV/API overlap: the owner picks it at gate N05 after reading the N04 report, and the planner then replans N07 to that choice. N07's brief is written for A. A: the API takes over from a cutover date. At the first sync the cutover is the day after the latest booking date of the stored Deutsche Bank CSV rows, or 90 days back if there are none, and it is stored on the connection. API rows from the cutover on are deduplicated by their Enable Banking transaction id: the fingerprint becomes a hash of "enable-banking", the account and the id, with occurrence 1. From then on CSV uploads of the Girokonto import only rows booked before the cutover. B: API rows use the normal fingerprint, and an API row that matches a stored row on account, booking date, amount and normalized counterparty counts as a duplicate | confirmed
+- D10 Details settled at N05 from the report, recorded without real values: the rule that gives API rows the same `account` string as the stored Girokonto CSV rows, the transaction id field, the fields for mandate reference and creditor id, and the balance type. Defaults the brief assumes: the id is `entry_reference`, else `transaction_id`; the balance is `CLBD`, else `ITBD`, else the first one listed | confirmed
+- D11 Deploy: Terraform variables `enable_banking_app_id` (default "") and `enable_banking_private_key` (sensitive PEM text, default ""); both or neither must be set. When set, install.sh puts the key at `/etc/sonar/enable-banking.pem` (0640 root:sonar), and `sonar.env` gets both env vars. When unset, the key file is removed. Units `sonar-bank-sync.service` (oneshot, User=sonar, EnvironmentFile, `ExecStart=/opt/sonar/.venv/bin/sonar bank-sync`, RequiresMountsFor=/var/lib/sonar) and `sonar-bank-sync.timer` (`OnCalendar=*-*-* 06:30:00 Europe/Berlin`, `Persistent=true`), always installed and enabled. ci.yml passes the GitHub variable `ENABLE_BANKING_APP_ID` and the secret `ENABLE_BANKING_PRIVATE_KEY` as `TF_VAR_`s. deploy/README.md documents the setup | confirmed
+- D12 Real data: the first-authorization file `data/enable-banking-session.json` (mode 0600) and the report `data/enable-banking-comparison.md` live only in the gitignored `data/`. Tracked files, tests, commit messages and the plan log never hold real values. Fixtures are hand-written, anonymized Enable Banking payloads, and tests generate a throwaway RSA key at runtime | confirmed
+- D13 Pre-authorized mid-run: at N03, the orchestrator writes and runs a scratch helper (session scratchpad, never the repo) that makes the first authorization; at N04, the executor calls Enable Banking with the owner's key and reads `data/sonar.db` read-only; the visual gate's scratch launcher (D14). The plan never pushes or deploys: the owner deploys at N10 | confirmed
+- D14 Visual gate setup: a scratch launcher (session scratchpad) runs `create_app` on a temp DB with bank settings, a throwaway key in `$TMPDIR` and a fake Enable Banking client (no network). The fake's Connect goes straight to /bank/callback with the right state. The launcher seeds the states not connected, connected, ending in 10 days, expired and failed sync. `create_app` therefore takes an injected bank client, as it does `google` (src/sonar/web/app.py:82-87) | confirmed
+- D15 Tier M with 11 nodes, as requested, with every brief written now and N07 rewritten after N05. Planzilla §1 would move a graph of more than 10 nodes to L | confirmed
+
+## Graph
+
+| id | title | type | deps | model | try | rp | status | note |
+|----|-------|------|------|-------|-----|----|--------|------|
+| N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
+| N02 | SPEC, bank settings and Enable Banking client | exec | N01 | sonnet/opus | 0 | 0 | TODO | |
+| N03 | owner Enable Banking setup and first authorization | gate | N02 | -/- | 0 | 0 | TODO | |
+| N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 0 | 0 | TODO | |
+| N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
+| N06 | connection store, consent flow and banner | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
+| N07 | daily sync into the import pipeline | exec | N05,N06 | opus/opus | 0 | 0 | TODO | |
+| N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
+| N09 | visual check | gate | N07 | -/- | 0 | 0 | TODO | |
+| N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
+| N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
+
+## N01 preflight
+Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
+  libraries import; the Tailwind CLI builds; Terraform validates; Enable Banking's API host answers; `data/` is
+  gitignored; and the repo is writable.
+Done when:
+- C1 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
+- C2 [cmd] `uv run python -c "import authlib.jose, cryptography, httpx"` exits 0
+- C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/plz-preflight.css" --minify`
+  exits 0 and writes outside the repo
+- C4 [cmd] `ASDF_TERRAFORM_VERSION=1.16.5 terraform -chdir=deploy/terraform fmt -check main.tf variables.tf outputs.tf versions.tf && ASDF_TERRAFORM_VERSION=1.16.5 terraform -chdir=deploy/terraform validate`
+  exits 0: the asdf shim gets CI's version (.github/workflows/ci.yml:59), and fmt checks only the tracked .tf files,
+  never the gitignored `terraform.tfvars`
+- C5 [cmd] `curl -sS -o /dev/null -w '%{http_code}' https://api.enablebanking.com/aspsps` prints an HTTP status
+  (401 without a JWT is fine), which proves the host is reachable
+- C6 [cmd] `git check-ignore -q data/enable-banking-comparison.md && git check-ignore -q data/enable-banking-session.json`
+- C7 [cmd] `test -w .git/index && git status --porcelain >/dev/null` exits 0
+
+## N02 SPEC, bank settings and Enable Banking client
+Do: Write the SPEC amendment and the env settings, and add the thin Enable Banking HTTP client that signs every
+  request with the app key. The client returns raw payload dicts; mapping comes in N07.
+  - SPEC.md:10: replace the sentence "A live bank connection ... Don't build it, ..." with "Data comes in by file
+    upload and, for the Deutsche Bank Girokonto, by a daily Enable Banking sync (§13 Bank sync)."
+  - SPEC §13: append a "Bank sync" bullet summing up D2, D4, D6, D7 and D8 in plain words. It leaves the CSV/API
+    overlap to N07.
+  - `.env.example`: add the two variables with comments: the key file lives outside the repo, mode 600.
+Context: D1 package `src/sonar/banking/`. D2: `bank_settings(env) -> BankSettings | None` is pure, modelled on
+  src/sonar/auth/settings.py:35-50. `read_private_key(path, served_dir) -> bytes` raises ValueError, with a
+  message that names the path but never the contents, when the file is missing or unreadable or when its resolved
+  path lies inside `served_dir`. D3 covers the client: `EnableBankingClient(app_id, private_key_pem, http, now)`
+  with `aspsp`, `start_authorization`, `create_session`, `booked_transactions`, `balances` and `BankApiError`.
+  `http` is an `httpx.Client`, so tests pass `httpx.MockTransport`. D12: tests generate an RSA key with
+  `cryptography` at runtime and use only made-up payloads; no key file is committed.
+Read: `src/sonar/auth/settings.py`, `tests/auth/test_emails.py`, `tests/test_architecture.py`, `SPEC.md:1-12`, `SPEC.md:225-258`
+Write: `SPEC.md`, `.env.example`, `src/sonar/banking/__init__.py`, `src/sonar/banking/settings.py`, `src/sonar/banking/client.py`, `tests/banking/__init__.py`, `tests/banking/test_settings.py`, `tests/banking/test_client.py`
+Test first: `booked_transactions` sends a Bearer JWT that verifies with the test public key (RS256, kid = app id,
+  iss/aud as D3, exp = iat + 3600), and it fails today because the module does not exist.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/banking/test_settings.py` passes tests for: both vars unset or empty → None;
+  one set → ValueError naming the missing one; a key path inside the served dir, a missing key and an unreadable
+  key → ValueError whose text never contains the key contents
+- C2 [cmd] `uv run pytest -q tests/banking/test_client.py` passes tests for: the JWT header and claims; the
+  request path, query and body of each call (`transaction_status=BOOK`, dates ISO); pages joined across
+  `continuation_key`; a 401 answer and a transport error raise `BankApiError` with the status, and its text holds
+  no JWT, key or session id; the client is built with TLS verification on and a 30 s timeout
+- C3 [review] SPEC.md:10 no longer says not to build a bank connection; the §13 Bank sync bullet matches
+  D2/D4/D6/D7/D8; `client.py` and `settings.py` never print, log or call `datetime.now`/`date.today`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N03 owner Enable Banking setup and first authorization
+Do: gate for the owner, with the helper pre-authorized (D13).
+  1. In the Enable Banking Control Panel the owner creates a production application in restricted mode, keeps
+     its private key `.pem` outside the repo (chmod 600), and registers the redirect URLs: prod
+     `https://<sonar host>/bank/callback`, plus `http://127.0.0.1:8000/bank/callback` if the panel accepts it.
+  2. The owner links the Deutsche Bank Girokonto to the app.
+  3. The owner sets `SONAR_ENABLE_BANKING_APP_ID` and `SONAR_ENABLE_BANKING_KEY_PATH` in the local `.env`.
+  4. The owner makes sure `data/sonar.db` holds Girokonto CSV imports up to recent days: a copy of the prod DB,
+     or the newest export imported locally.
+  5. The orchestrator writes a scratch helper in the session scratchpad on `sonar.banking.client`. It lists the
+     DE ASPSPs whose name contains "Deutsche Bank" and prints the names and `maximum_consent_validity`. It calls
+     POST /auth with a fresh state and a registered redirect URL, and prints the authorization URL.
+  6. The owner authorizes at the bank and pastes back the full URL the browser lands on. On prod, while signed
+     in, that page is a 404 whose address bar still holds `code` and `state`.
+  7. The helper checks the state, calls POST /sessions and writes only `session_id` and the account uids to
+     `data/enable-banking-session.json`, mode 0600. It prints no secret.
+Done when:
+- C1 [human] the owner confirms the restricted-mode app exists, the Girokonto is linked, and the key lives outside
+  the repo with mode 600
+- C2 [cmd] `test "$(stat -f %Lp data/enable-banking-session.json)" = 600 && git check-ignore -q data/enable-banking-session.json`
+- C3 [human] the exact ASPSP name the helper listed for the Girokonto is recorded in the log; if it differs from
+  "Deutsche Bank", D2 gets a mid-run revision
+
+## N04 API vs CSV comparison report
+Do: Write a local report, for the owner only, that compares what Enable Banking returns for the Girokonto with the
+  CSV rows already in the DB over the same dates, so the owner can choose the overlap strategy at N05. Use a
+  scratch script in your session scratchpad, never in the repo. It reads the session from
+  `data/enable-banking-session.json` and the app id and key path from `.env`, and fetches booked transactions for
+  the last 90 days twice plus the balances. It opens `data/sonar.db` read-only (sqlite URI `mode=ro`), never
+  through `sonar.db.connect`, which migrates.
+Context: D9 options A and B; D10 lists what the owner settles. The CSV importer layout is in
+  src/sonar/importing/importers/deutsche_bank_giro.py:1-30 and the fingerprint in src/sonar/importing/dedup.py:24-35.
+  The report covers:
+  1. counts per side in the overlapping dates;
+  2. matches under the current fingerprint with the most faithful mapping, under date+amount+normalized
+     counterparty, and under date+amount, with reasons for the unmatched rows;
+  3. for every `ParsedTransaction` field, the API field it comes from and how often it equals the CSV value;
+  4. whether `entry_reference` and `transaction_id` are present, unique and the same in both fetches;
+  5. the balance types and dates returned, against the latest CSV balance;
+  6. how the CSV `account` string relates to the API's account identifiers;
+  7. the risks of A and B, with a recommendation.
+  D12: the report may hold real rows because `data/` is gitignored, but at most 5 example pairs. Your reply and
+  any log line hold only counts and field names.
+Read: `src/sonar/importing/importers/deutsche_bank_giro.py`, `src/sonar/importing/dedup.py`, `src/sonar/banking/client.py`, `src/sonar/migrations/0001_import.sql`
+Write: `data/enable-banking-comparison.md`
+Test first: -
+Done when:
+- C1 [cmd] `test -s data/enable-banking-comparison.md && git check-ignore -q data/enable-banking-comparison.md`
+- C2 [review] the report has the 7 sections above with numbers, and holds no JWT, private key, session id or code
+- C3 [cmd] `test -z "$(git status --porcelain -- src tests SPEC.md)"` shows no tracked change
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N05 overlap strategy
+Do: gate for the owner. The owner reads `data/enable-banking-comparison.md` and picks the CSV/API overlap strategy:
+  - A: the API takes over from a cutover date; API rows are deduplicated by their Enable Banking transaction id,
+    and CSV rows import only before the cutover.
+  - B: API rows match CSV rows on date + amount + counterparty.
+  The owner also confirms D10: the account label rule, the id field, the mandate and creditor id fields, and the
+  balance type. The orchestrator adds the answers as Decisions with field names only (no real values) and asks
+  the planner for `Replan: N07`.
+Done when:
+- C1 [human] the owner names A or B, and each D10 item, and the Decisions record them without real data
+- C2 [human] N07's brief has been rewritten to follow the choice before N07 starts
+
+## N06 connection store, consent flow and banner
+Do: Add the bank connection state and the in-app Connect/Reconnect flow:
+  - a migration and `banking/store.py`;
+  - `banking/consent.py`, pure: the requested `valid_until`, hashing and checking the state, the banner case and
+    the card status;
+  - in `web/pages/bank.py`: `POST /bank/connect`, `GET /bank/callback` and `GET /bank/banner`;
+  - the Settings `#bank-card` (status and Connect/Reconnect; Sync now comes in N07) and the banner slot in
+    base.html.
+  `create_app` gains `bank: BankSettings | None` and an injected `bank_client`. `serve()` reads the bank settings
+  and refuses to start on a partial config or a bad key path. When the feature is off, none of this exists.
+  Rebuild `sonar.css`.
+Context: D2 for config and start-up. D4 for the flow; error paths re-render /settings with 400 and `#form-error`,
+  following the Settings error helper (src/sonar/web/pages/settings.py:22-37). D5 for the tables and the
+  migration number. D6 for the banner texts, the precedence and the htmx hook, like base.html:108, in a slot
+  above base.html:149. D7 for the card fields. D14: tests use a fake client like tests/web/fake_google.py. Wiring
+  belongs in src/sonar/web/app.py:82-138 and src/sonar/__main__.py:56-75; tests go next to tests/test_main.py:96-130.
+Read: `src/sonar/web/app.py`, `src/sonar/web/access.py`, `src/sonar/web/pages/settings.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/base.html:95-150`, `src/sonar/__main__.py`, `src/sonar/banking/settings.py`, `src/sonar/banking/client.py`, `src/sonar/cashflow/store.py`, `tests/web/fake_google.py`, `tests/html.py`, `tests/test_main.py`
+Write: `src/sonar/migrations/*_bank_connection.sql`, `src/sonar/banking/store.py`, `src/sonar/banking/consent.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/pages/settings.py`, `src/sonar/web/app.py`, `src/sonar/__main__.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/base.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/banking/test_store.py`, `tests/banking/test_consent.py`, `tests/web/test_bank_pages.py`, `tests/web/fake_bank.py`, `tests/test_main.py`
+Test first: with the fake client, `POST /bank/connect` answers 303 to the fake bank URL; GET /bank/callback with
+  that state and a code then shows Connected in `#bank-card`. It fails today because there is no route.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/banking/test_consent.py` passes tests for:
+  - valid_until = now + maximum − 10 min;
+  - the banner at 15 days before the end (none), at 14 days (ends), on the end date (ended), after a failed sync
+    (failed), with expired beating failed, and never connected (none)
+- C2 [cmd] `uv run pytest -q tests/web/test_bank_pages.py -k callback` passes tests for:
+  - a wrong, reused or 31-minute-old state, a bank `error` and an API error → 400 /settings with `#form-error`
+    and nothing stored;
+  - a valid callback stores the connection and replaces an earlier one
+- C3 [cmd] `uv run pytest -q tests/web/test_bank_pages.py tests/test_main.py -k "off or partial or key"` passes
+  tests for:
+  - without bank settings, the three bank routes are 404, and /settings has no `#bank-card` or banner hook;
+  - a partial env or a key under static/ makes `sonar` exit 1 without calling uvicorn
+- C4 [cmd] `uv run pytest -q tests/web/test_bank_pages.py -k sign_in` passes: with sign-in on, a signed-out GET
+  /bank/callback redirects to /auth/login and stores nothing; GET /bank/connect answers 405
+- C5 [review] the state is stored only as a hash and is single use; no template, response or print holds a
+  session id, code, JWT or key; sqlite appears only in store.py; the migration is additive; sonar.css is rebuilt
+- C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N07 daily sync into the import pipeline
+Do: Map Enable Banking booked transactions and the balance to the import dataclasses (pure, `banking/mapping.py`)
+  and import them through the existing pipeline with overlap strategy A (D9, as confirmed at N05). Add
+  `banking/service.sync`; the `sonar bank-sync` command; `POST /bank/sync` and Sync now in `#bank-card` and in the
+  failed banner; `GET /api/bank` and `POST /api/bank/sync`. Append the overlap rule to SPEC's §13 Bank sync bullet.
+  Rebuild `sonar.css`.
+Context: D10, as confirmed at N05, gives the account label, id field, mandate/creditor fields and balance type.
+  Mapping:
+  - amount = Decimal(`transaction_amount.amount`) in exact cents, negative for `DBIT`;
+  - counterparty = `creditor.name` for DBIT, `debtor.name` for CRDT; iban from the other side's account;
+  - purpose = the `remittance_information` lines joined by a space;
+  - value_date falls back to booking_date;
+  - raw_row = `json.dumps(tx, sort_keys=True, ensure_ascii=False)`.
+  Pipeline: extract the shared insert path from src/sonar/importing/store.py:31-70,118-125 so file and API
+  imports share it. API rows use source "Deutsche Bank Girokonto API".
+  A: at the first sync the cutover is stored on the connection (a migration adds the column), and later syncs
+  never fetch before it. Each API row's fingerprint is sha256 of `["enable-banking", account, id]`, occurrence 1.
+  `import_file` skips `deutsche_bank_giro.NAME` rows (src/sonar/importing/importers/deutsche_bank_giro.py:37)
+  booked on or after the cutover and counts them as duplicates.
+  D8 covers the windows, messages, exit codes and balance upsert; D7 the routes and the 409/502 answers.
+Read: `src/sonar/importing/store.py`, `src/sonar/importing/dedup.py`, `src/sonar/transactions.py`, `src/sonar/banking/client.py`, `src/sonar/banking/store.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/pages/import_.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/api/settings.py`, `src/sonar/__main__.py`, `tests/importing/test_store.py`
+Write: `SPEC.md`, `src/sonar/migrations/*_bank_cutover.sql`, `src/sonar/banking/mapping.py`, `src/sonar/banking/service.py`, `src/sonar/banking/store.py`, `src/sonar/importing/store.py`, `src/sonar/__main__.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/api/bank.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/banking/**`, `tests/importing/test_store.py`, `tests/web/test_bank_pages.py`, `tests/web/test_api_bank.py`, `tests/test_cli_bank.py`
+Test first: `mapping.transactions` turns an anonymized DBIT payload of "12.34" into −1234 cents with the
+  creditor as counterparty. It fails today because the module does not exist.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/banking/test_mapping.py` passes the sign, exact cents, counterparty side,
+  purpose join, value_date fallback, id and balance-type tests
+- C2 [cmd] `uv run pytest -q tests/banking/test_service.py` passes:
+  - the first sync sets the cutover and fetches from it; a later sync starts 7 days before the last success;
+  - a repeated sync adds 0 rows; a CSV row on or after the cutover is skipped;
+  - the balance is upserted as of today; an API error records the status error and keeps the earlier rows
+- C3 [cmd] `uv run pytest -q tests/test_cli_bank.py tests/web/test_api_bank.py tests/web/test_bank_pages.py -k "sync or api"`
+  passes the D8 output lines and exit codes, Sync now → 303 /settings, and /api/bank (no session id) with 409 and 502
+- C4 [review] mapping and service never read the clock; sqlite appears only in store/service; nothing prints or
+  stores a JWT, key or session id; SPEC's Bank sync bullet states the overlap rule; sonar.css is rebuilt
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N08 systemd timer and Terraform install
+Do: Install a daily `sonar bank-sync` timer with the existing Terraform install, ship the Enable Banking app id and
+  key to the VM, pass them from CI, and document the setup and the reconnect in deploy/README.md. The app stays
+  deployable with both values unset.
+Context: D11 for the variables, files, modes, units and the CI names. Follow the existing pattern:
+  - render the files in `local.rendered`, which feeds the install triggers (deploy/terraform/main.tf:52-63,135-145);
+  - upload them with file provisioners (main.tf:154-177);
+  - install them in `install_config` (deploy/terraform/files/install.sh:87-100), then
+    `systemctl enable --now sonar-bank-sync.timer`;
+  - the env lines are conditional in deploy/terraform/templates/sonar.env.tftpl;
+  - CI env goes in .github/workflows/ci.yml at the terraform apply step;
+  - README: the GitHub table (deploy/README.md:226-240), a "Bank sync" section (create the restricted app,
+    register `https://<host>/bank/callback`, set the var and secret, connect, reconnect before the consent ends),
+    and Operations with `journalctl -u sonar-bank-sync` and `systemctl list-timers sonar-bank-sync.timer`.
+  Never touch the gitignored `terraform.tfvars`.
+Read: `deploy/terraform/main.tf`, `deploy/terraform/variables.tf`, `deploy/terraform/files/install.sh`, `deploy/terraform/templates/sonar.service.tftpl`, `deploy/terraform/templates/sonar.env.tftpl`, `deploy/terraform/terraform.tfvars.example`, `deploy/README.md`, `.github/workflows/ci.yml`
+Write: `deploy/terraform/main.tf`, `deploy/terraform/variables.tf`, `deploy/terraform/terraform.tfvars.example`, `deploy/terraform/files/install.sh`, `deploy/terraform/templates/**`, `deploy/README.md`, `.github/workflows/ci.yml`
+Test first: -
+Done when:
+- C1 [cmd] `ASDF_TERRAFORM_VERSION=1.16.5 terraform -chdir=deploy/terraform fmt -check main.tf variables.tf outputs.tf versions.tf && ASDF_TERRAFORM_VERSION=1.16.5 terraform -chdir=deploy/terraform validate`
+  exits 0 (CI's version; tracked .tf files only)
+- C2 [cmd] `bash -n deploy/terraform/files/install.sh && grep -q "OnCalendar=\*-\*-\* 06:30:00 Europe/Berlin" deploy/terraform/templates/sonar-bank-sync.timer.tftpl && grep -q "Persistent=true" deploy/terraform/templates/sonar-bank-sync.timer.tftpl`
+- C3 [review] the key variable is sensitive and its validation needs both values or neither; the key lands 0640
+  root:sonar and is removed when unset; the service unit is oneshot as User=sonar with RequiresMountsFor; the
+  timer is enabled; ci.yml passes the two values without echoing them; the README covers setup, reconnect and
+  logs
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N09 visual check
+Do: gate, pre-authorized (D13, D14). Start the scratch launcher from the session scratchpad on a temp DB with
+  bank settings, a throwaway key in `$TMPDIR` and the fake client. Then import the newest file in samples/, set
+  the salary day and balance (config `visual_recipe`), and walk through:
+  1. Connect bank from Settings;
+  2. a successful Sync now;
+  3. the seeded states: consent ending in 10 days, expired, and failed sync.
+  Check /settings and the dashboard with the banner at desktop and 375px, light and dark (read_page first; scaled
+  screenshots only where layout matters).
+Done when:
+- C1 [visual] `#bank-card` shows the status, "Deutsche Bank ···<last4>", the consent end, the last sync and the
+  Connect or Reconnect and Sync now buttons, legible, with no overflow at 375px
+- C2 [visual] the banner shows the right text for ending, ended and failed, with Reconnect (plus Sync now when
+  failed), above the page content on every non-bare page, in all four views
+- C3 [visual] when not connected the dashboard has no banner, and Connect lands back on /settings showing Connected
+
+## N10 owner live check on prod
+Do: gate for the owner (D11, D13).
+  1. The owner adds the GitHub variable `ENABLE_BANKING_APP_ID` and the secret `ENABLE_BANKING_PRIVATE_KEY` to the
+     `production` environment.
+  2. The owner checks that `https://<host>/bank/callback` is a registered redirect URL.
+  3. The owner deploys the committed tree themselves (push to main, or a local apply). The plan never pushes.
+  4. On prod Settings: Connect bank, authorize at Deutsche Bank, Sync now.
+  5. On the server: `systemctl start sonar-bank-sync.service`, `journalctl -u sonar-bank-sync -n 20` and
+     `systemctl list-timers sonar-bank-sync.timer`.
+Done when:
+- C1 [human] after Connect, Settings shows Connected with a consent end about 180 days ahead
+- C2 [human] the sync adds the transactions booked since the last CSV import, with no duplicates of CSV rows, and
+  the dashboard shows the balance as of today
+- C3 [human] `systemctl list-timers` lists `sonar-bank-sync.timer` with its next run at 06:30 Berlin time, and the
+  journal shows the one-line "Bank sync:" summary with no secret in it
+
+## N11 plan acceptance
+Do: Check the whole plan against the SPEC, the security rules and the Definition of done.
+Done when:
+- C1 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
+- C2 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
+- C3 [smoke] with no Enable Banking env, `uv run sonar` on a temp DB starts; /settings has no `#bank-card`;
+  /bank/connect answers 404; `uv run sonar bank-sync --db <tmp>` prints "Bank sync is not configured." and exits 0
+- C4 [review] SPEC §11 still holds, SPEC §12 UI acceptance holds for the card and the banner, and the §13 Bank
+  sync bullet matches the built behavior
+- C5 [review] security:
+  - the state is hashed, single use and expires;
+  - no bank path is public;
+  - the key path is refused under static/;
+  - no print, log, template or API answer holds a JWT, key, code or session id;
+  - TLS verification is on;
+  - errors are generic
+- C6 [cmd] `test -z "$(git ls-files data samples)"` and no test fixture holds a real IBAN or name (D12)
+
+## Log
+
+### N01 try 1 · 2026-10-14
+check: FAIL C4
+- C4 exit 126: terraform 1.16.5
+
+### N01 replan 1 · 2026-10-14
+plan: REPLANNED
+- cause: the asdf terraform shim has no version set in this repo (exit 126), and a plain fmt -check also fails on the gitignored, unformatted terraform.tfvars
+- C4 now pins ASDF_TERRAFORM_VERSION=1.16.5 (CI's version) and fmt-checks only the tracked .tf files; checked by hand: fmt and validate exit 0
+- N08 C1 gets the same command so it does not fail the same way
+
+### N01 try 1 · 2026-10-14
+check: PASS 7/7

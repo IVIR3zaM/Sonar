@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: RUNNING
+status: WAITING
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -57,7 +57,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
 | N15 | daily sync into the import pipeline | exec | N07,N14 | opus/opus | 1 | 0 | DONE | |
-| N16 | rule parity report | exec | N15 | opus/sonnet | 0 | 0 | TODO | |
+| N16 | rule parity report | exec | N15 | opus/sonnet | 1 | 0 | DONE | |
 | N17 | rule changes | gate | N16 | -/- | 0 | 0 | TODO | |
 
 ## N01 preflight
@@ -701,4 +701,12 @@ exec: DONE · 1517 passed
 - after a failed sync the last successful date is not stored, so the next sync refetches the full 90-day window; unreadable payload (ValueError) recorded as BankApiError with a fixed message
 - sonar.css rebuilt, no diff (classes already present); CLI prints no balance when the bank lists none
 check: PASS 4/4
+verify: PASS
+
+### N16 try 1 · 2026-10-14
+exec: DONE · 1517 passed
+- data/enable-banking-rule-parity.md: 395 pairs, 388 alike before; 3 rules diverge on creditor_id only; 3 edits proposed (2 creditor_id->iban, 1 drop creditor_id); re-check 395/395 alike, 0 stored rows change; 36 unpaired API rows, counts unchanged
+- Proposal order: swap creditor_id for iban when the rule's stored rows share one iban, else drop creditor_id; each kept only if no stored row changes category
+- Report covers data/sonar.db per brief and notes sonar-prod.db has a different rule set; scratch scripts in session scratchpad only
+check: PASS 3/3
 verify: PASS

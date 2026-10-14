@@ -53,7 +53,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N09 | visual check | gate | N07 | -/- | 0 | 0 | TODO | |
 | N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
-| N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | VERIFYING | |
+| N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP

@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: RUNNING
+status: WAITING
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -45,7 +45,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
 | N02 | SPEC and bank settings | exec | N01 | sonnet/opus | 1 | 1 | DONE | |
 | N03 | owner Enable Banking setup and first authorization | gate | N12 | -/- | 0 | 1 | DONE | |
-| N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 0 | 0 | TODO | |
+| N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 1 | 0 | DONE | |
 | N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
 | N06 | connection store and consent rules | exec | N12 | sonnet/sonnet | 1 | 1 | DONE | |
 | N07 | daily sync into the import pipeline | exec | N05,N14 | opus/opus | 0 | 0 | TODO | |
@@ -573,3 +573,11 @@ check: FAIL C2
 - C2 exit 1: stat: cannot read file system information for '%Lp': No such file or directory
 note: helper 1: ASPSP for DE is 'Deutsche Bank', maximum_consent_validity 15552000 s; equals D2 name
 check: PASS 3/3
+
+### N04 try 1 · 2026-10-14
+exec: DONE · 1448 passed
+- data/enable-banking-comparison.md: 395/395 rows in overlap, fingerprint 391 match (4 API purposes truncated), date+amount+cp 395; entry_reference 431/431 unique, stable over 2 fetches; transaction_id absent; mandate_ref/creditor_id absent
+- D9 A/B not defined in brief: report reads A as fingerprint dedup, B as cutover keyed on entry_reference; recommends B
+- scratch fetch/compare scripts in session scratchpad, DB opened mode=ro, raw API dump deleted
+check: PASS 3/3
+verify: PASS

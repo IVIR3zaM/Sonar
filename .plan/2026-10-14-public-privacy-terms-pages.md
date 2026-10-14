@@ -1,5 +1,5 @@
 # Public privacy and terms pages
-status: WAITING
+status: DONE
 created: 2026-10-14 · updated: 2026-10-14
 goal: /privacy and /terms are static pages anyone can open without signing in, while every other route stays behind the sign-in gate.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -35,7 +35,7 @@ Definition of done: with sign-in on and no session, GET /privacy and /terms answ
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | public privacy and terms pages | exec | - | sonnet/sonnet | 1 | 1 | DONE | |
-| N02 | visual check | gate | N01 | -/- | 0 | 0 | TODO | |
+| N02 | visual check | gate | N01 | -/- | 0 | 0 | DONE | |
 
 ## N01 public privacy and terms pages
 Do: Add `src/sonar/web/pages/legal.py` with GET /privacy and /terms rendering `privacy.html` and `terms.html`

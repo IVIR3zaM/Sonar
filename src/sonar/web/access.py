@@ -1,8 +1,8 @@
 """The sign-in gate (SPEC §13 Sign-in): every page and API call needs an allowed session email.
 
 Wired only when sign-in is configured; `/static/*` and `/auth/*` stay public so
-the sign-in page can load. The allow-list is read on every request, so a
-revoked email is locked out on its next request.
+the sign-in page can load, and so do exactly `/privacy` and `/terms` (the public pages).
+The allow-list is read on every request, so a revoked email is locked out on its next request.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ SESSION_COOKIE = "sonar_session"
 SESSION_MAX_AGE = 14 * 24 * 60 * 60
 LOGIN_PATH = "/auth/login"
 PUBLIC_PREFIXES = ("/static/", "/auth/")
+PUBLIC_PATHS = frozenset({"/privacy", "/terms"})
 
 CallNext = Callable[[Request], Awaitable[Response]]
 
@@ -34,7 +35,7 @@ def sign_in_gate(
 
     async def gate(request: Request, call_next: CallNext) -> Response:
         path = request.url.path
-        if path.startswith(PUBLIC_PREFIXES):
+        if path.startswith(PUBLIC_PREFIXES) or path in PUBLIC_PATHS:
             return await call_next(request)
         is_api = path == "/api" or path.startswith("/api/")
         bearer = _bearer_token(request) if is_api and api_token else None

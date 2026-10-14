@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% set bare = true %}
+
+{% block content %}
+{% call card(title="Terms of use", id="terms") %}
+<div class="flex flex-col gap-3 text-sm text-ink">
+  <p>Sonar is a personal tool for the private use of its owner and listed household members.</p>
+  <p>It is not offered to the public and no service is provided to other users.</p>
+</div>
+{% endcall %}
+{% endblock %}

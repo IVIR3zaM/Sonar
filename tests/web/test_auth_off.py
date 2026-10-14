@@ -37,3 +37,16 @@ def test_pages_open_without_a_cookie_and_show_no_sign_out(tmp_path):
     page = soup(response)
     assert page.select_one("#sign-out") is None
     assert page.select_one("#signed-in-email") is None
+
+
+def test_public_pages_open_without_auth_routes(tmp_path):
+    app = _app(tmp_path)
+    with TestClient(app, follow_redirects=False) as client:
+        privacy = client.get("/privacy")
+        terms = client.get("/terms")
+        login = client.get("/auth/login")
+
+    assert privacy.status_code == 200
+    assert terms.status_code == 200
+    assert login.status_code == 404
+    assert all(middleware.cls is not SessionMiddleware for middleware in app.user_middleware)

@@ -34,6 +34,7 @@ from sonar.web.pages import (
     dashboard,
     debts,
     import_,
+    legal,
     lights_on,
     monthly,
     payoff,
@@ -131,6 +132,7 @@ def create_app(
     app.include_router(payoff.build_router(db_path, today, templates))
     app.include_router(settings.build_router(db_path, today, templates))
     app.include_router(categories.build_router(db_path, today, templates))
+    app.include_router(legal.build_router(templates))
     if bank_on:
         app.include_router(
             bank_pages.build_router(db_path, today, now, bank, bank_client, templates)

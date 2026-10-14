@@ -47,13 +47,15 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N03 | owner Enable Banking setup and first authorization | gate | N12 | -/- | 0 | 0 | TODO | |
 | N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 0 | 0 | TODO | |
 | N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
-| N06 | connection store, consent flow and banner | exec | N12 | sonnet/opus | 0 | 0 | TODO | |
-| N07 | daily sync into the import pipeline | exec | N05,N06 | opus/opus | 0 | 0 | TODO | |
+| N06 | connection store and consent rules | exec | N12 | sonnet/sonnet | 1 | 1 | DONE | |
+| N07 | daily sync into the import pipeline | exec | N05,N14 | opus/opus | 0 | 0 | TODO | |
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N07 | -/- | 0 | 0 | TODO | |
 | N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
+| N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 0 | 0 | TODO | |
+| N14 | bank banner | exec | N13 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -218,44 +220,116 @@ Done when:
 - C1 [human] the owner names A or B, and each D10 item, and the Decisions record them without real data
 - C2 [human] N07's brief has been rewritten to follow the choice before N07 starts
 
-## N06 connection store, consent flow and banner
-Do: Add the bank connection state and the in-app Connect/Reconnect flow:
-  - a migration and `banking/store.py`;
-  - `banking/consent.py`, pure: the requested `valid_until`, hashing and checking the state, the banner case and
-    the card status;
-  - in `web/pages/bank.py`: `POST /bank/connect`, `GET /bank/callback` and `GET /bank/banner`;
-  - the Settings `#bank-card` (status and Connect/Reconnect; Sync now comes in N07) and the banner slot in
-    base.html.
-  `create_app` gains `bank: BankSettings | None` and an injected `bank_client`. `serve()` reads the bank settings
-  and refuses to start on a partial config or a bad key path. When the feature is off, none of this exists.
-  Rebuild `sonar.css`.
-Context: D2 for config and start-up. D4 for the flow; error paths re-render /settings with 400 and `#form-error`,
-  following the Settings error helper (src/sonar/web/pages/settings.py:22-37). D5 for the tables and the
-  migration number. D6 for the banner texts, the precedence and the htmx hook, like base.html:108, in a slot
-  above base.html:149. D7 for the card fields. D14: tests use a fake client like tests/web/fake_google.py. Wiring
-  belongs in src/sonar/web/app.py:82-138 and src/sonar/__main__.py:56-75; tests go next to tests/test_main.py:96-130.
-Read: `src/sonar/web/app.py`, `src/sonar/web/access.py`, `src/sonar/web/pages/settings.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/base.html:95-150`, `src/sonar/__main__.py`, `src/sonar/banking/settings.py`, `src/sonar/banking/client.py`, `src/sonar/cashflow/store.py`, `tests/web/fake_google.py`, `tests/html.py`, `tests/test_main.py`
-Write: `src/sonar/migrations/*_bank_connection.sql`, `src/sonar/banking/store.py`, `src/sonar/banking/consent.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/pages/settings.py`, `src/sonar/web/app.py`, `src/sonar/__main__.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/base.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/banking/test_store.py`, `tests/banking/test_consent.py`, `tests/web/test_bank_pages.py`, `tests/web/fake_bank.py`, `tests/test_main.py`
-Test first: with the fake client, `POST /bank/connect` answers 303 to the fake bank URL; GET /bank/callback with
-  that state and a code then shows Connected in `#bank-card`. It fails today because there is no route.
+## N06 connection store and consent rules
+Do: Add the bank connection tables, `banking/store.py` and the pure `banking/consent.py` (SPEC §13 Bank sync).
+  consent.py, no clock and no I/O except `new_state`:
+  - `BankConnection` (frozen dataclass: the `bank_connection` columns below, datetimes tz-aware UTC) and
+    `NewConnection` (session_id, account_uid, iban_last4, consent_valid_until, connected_at);
+  - `consent_seconds(aspsps, name)`: `maximum_consent_validity` of the ASPSP with that `name`, else ValueError;
+  - `requested_valid_until(now, seconds)` = now + seconds − 10 minutes;
+  - `new_state()` = `secrets.token_urlsafe(32)`; `state_hash(state)` = SHA-256 hex;
+  - `state_matches(state, stored_hash, created_at, now)`: `hmac.compare_digest` on the hashes and
+    now − created_at < 30 minutes;
+  - `parse_session(session, now) -> NewConnection`: `session_id`; the only entry of `accounts`, else the first
+    with `cash_account_type` "CACC"; its `uid` and the last 4 characters of `account_id.iban`; consent end from
+    `access.valid_until` as UTC. A missing field or no usable account raises ValueError;
+  - `banner(connection, today) -> Banner | None` (`kind`, `on`: date, `error`), first match wins: "expired" when
+    today ≥ the consent end date; "failed" when `last_sync_status` is "error" (`on` = last sync date, `error`
+    its message); "expiring" when today ≥ consent end date − 14 days; None when never connected or none apply;
+  - `card_status(connection, today)`: "Not connected", "Expired", "Ends soon" or "Connected", same thresholds.
+  store.py: `load_connection`, `save_connection(conn, new)` (upsert id 1: replaces the session fields, keeps the
+  last-sync fields), `save_pending_state(conn, state_hash, created_at)` (replaces any pending one) and
+  `take_pending_state(conn)` (returns hash and created_at, or None, and always deletes the row).
+Context: Migration = the next free number in src/sonar/migrations/ (0012 today, after 0011_debts_purpose_match.sql),
+  named `NNNN_bank_connection.sql`, CREATE TABLE only. `bank_connection`: `id` INTEGER PRIMARY KEY CHECK (id = 1),
+  `session_id`, `account_uid`, `iban_last4`, `consent_valid_until`, `connected_at` (TEXT NOT NULL, datetimes as UTC
+  ISO), `last_sync_at` TEXT, `last_sync_status` TEXT CHECK IN ('ok','error'), `last_sync_added` INTEGER,
+  `last_sync_error` TEXT, all three nullable. `bank_authorization`: `id` CHECK (id = 1), `state_hash`, `created_at`.
+  Only the hash of a state is ever stored. Store style: src/sonar/cashflow/store.py:33-62. sqlite3 is allowed only
+  in store modules (tests/test_architecture.py:46-55). Tests use hand-written anonymized payloads, no real values.
+Read: `src/sonar/cashflow/store.py`, `src/sonar/db.py`, `src/sonar/banking/settings.py`, `src/sonar/migrations/0005_settings.sql`, `tests/cashflow/test_store.py`
+Write: `src/sonar/migrations/*_bank_connection.sql`, `src/sonar/banking/consent.py`, `src/sonar/banking/store.py`, `tests/banking/test_consent.py`, `tests/banking/test_store.py`
+Test first: `requested_valid_until(now, 15552000)` is now + 180 days − 10 minutes; fails today: no consent.py.
 Done when:
-- C1 [cmd] `uv run pytest -q tests/banking/test_consent.py` passes tests for:
-  - valid_until = now + maximum − 10 min;
-  - the banner at 15 days before the end (none), at 14 days (ends), on the end date (ended), after a failed sync
-    (failed), with expired beating failed, and never connected (none)
-- C2 [cmd] `uv run pytest -q tests/web/test_bank_pages.py -k callback` passes tests for:
-  - a wrong, reused or 31-minute-old state, a bank `error` and an API error → 400 /settings with `#form-error`
-    and nothing stored;
-  - a valid callback stores the connection and replaces an earlier one
-- C3 [cmd] `uv run pytest -q tests/web/test_bank_pages.py tests/test_main.py -k "off or partial or key"` passes
-  tests for:
-  - without bank settings, the three bank routes are 404, and /settings has no `#bank-card` or banner hook;
-  - a partial env or a key under static/ makes `sonar` exit 1 without calling uvicorn
-- C4 [cmd] `uv run pytest -q tests/web/test_bank_pages.py -k sign_in` passes: with sign-in on, a signed-out GET
-  /bank/callback redirects to /auth/login and stores nothing; GET /bank/connect answers 405
-- C5 [review] the state is stored only as a hash and is single use; no template, response or print holds a
-  session id, code, JWT or key; sqlite appears only in store.py; the migration is additive; sonar.css is rebuilt
-- C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
+- C1 [cmd] `uv run pytest -q tests/banking/test_consent.py` passes tests for: valid_until; `consent_seconds` found
+  and missing; a matching, wrong and 30-minute-old state; `parse_session` with one account, two accounts (CACC
+  wins) and none; banner at 15 days before the end (None), 14 days (expiring), on the end date (expired), after a
+  failed sync (failed), expired beating failed, never connected (None); the four card statuses
+- C2 [cmd] `uv run pytest -q tests/banking/test_store.py` passes tests for: no connection → None; save then load
+  round-trips; a second save replaces the session fields and keeps the last-sync fields; take_pending_state
+  returns the saved hash once, then None; a new pending state replaces the old one
+- C3 [review] the migration only creates the two tables; consent.py is pure but for `new_state`; no plain state stored
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N13 Connect flow and Settings card
+Do: Wire the bank connection into the app (SPEC §13 Bank sync); the banner is N14, Sync now is N07.
+  - `create_app` gains `now` (default UTC clock), `bank: BankSettings | None` and `bank_client` (an object with
+    `aspsps`, `start_authorization`, `create_session`, as src/sonar/banking/client.py:48-62), and sets
+    `app.state.bank_enabled`. With `bank` None nothing below exists: bank routes 404 and no card.
+  - `serve()`: `bank_settings(os.environ)`, `read_private_key(key_path, STATIC_DIR)`; a ValueError prints and exits 1
+    before uvicorn, like src/sonar/__main__.py:71-76; else passes `bank` and `EnableBankingClient(…, default_http(), now)`.
+  - `web/pages/bank.py`, using only banking.consent and banking.store:
+    - `POST /bank/connect`: `consent_seconds(aspsps(ASPSP_COUNTRY), ASPSP_NAME)`, `new_state()`, then
+      `save_pending_state(state_hash(state), now)` and `start_authorization(requested_valid_until(now, seconds),
+      state, bank.redirect_url)`; 303 to the answer's `url`;
+    - `GET /bank/callback?code&state&error`: `take_pending_state` first, on every call. Accept only with no `error`,
+      both params and `state_matches`; then `save_connection(parse_session(create_session(code), now))`; 303 /settings;
+    - any failure in either route (bad, missing, reused or expired state, `error`, BankApiError, ValueError)
+      re-renders /settings with 400 and `#form-error` "The bank connection did not complete. Start again with
+      Connect bank." and stores no connection.
+  - settings.py: lift `_render_settings_page` (src/sonar/web/pages/settings.py:22-37) to a module-level function
+    that bank.py calls too; with the feature on it adds the connection and `card_status`.
+  - settings.html: a "Bank connection" card `#bank-card` with `data-bank-status` (the status in lower-kebab case),
+    the status, "Deutsche Bank ···<last4>", the consent end (`date` filter), the last sync (time, ok or failed, rows
+    added, error), the bank `#form-error` and a POST form `#bank-connect` "Connect bank" (not connected) or
+    "Reconnect bank". Rebuild sonar.css (AGENTS.md Setup).
+Context: The sign-in gate already covers /bank/* (src/sonar/web/access.py:25,37). `tests/web/fake_bank.py`, like
+  fake_google.py: `aspsps` lists Deutsche Bank, DE, `maximum_consent_validity` 15552000; `start_authorization`
+  records the state, returns a fake url; `create_session` returns an anonymized session or raises a set BankApiError.
+Read: `src/sonar/web/app.py`, `src/sonar/web/pages/settings.py`, `src/sonar/web/templates/settings.html`, `src/sonar/__main__.py`, `src/sonar/banking/consent.py`, `src/sonar/banking/store.py`, `tests/web/fake_google.py`, `tests/web/test_auth_pages.py`, `tests/html.py`, `tests/test_main.py:60-133`
+Write: `src/sonar/web/pages/bank.py`, `src/sonar/web/pages/settings.py`, `src/sonar/web/app.py`, `src/sonar/__main__.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_bank_pages.py`, `tests/web/fake_bank.py`, `tests/test_main.py`
+Test first: with the fake, `POST /bank/connect` answers 303 to the fake url; `GET /bank/callback` with that state
+  and a code then shows `data-bank-status="connected"` in `#bank-card`. It fails today: there is no route.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_bank_pages.py -k "connect or callback"` passes: the connect redirect; a
+  valid callback stores and shows ···last4; a second one replaces it; a wrong, reused or 31-minute-old state, an
+  `error` param and a BankApiError each give 400 with `#form-error` and no connection stored
+- C2 [cmd] `uv run pytest -q tests/web/test_bank_pages.py tests/test_main.py -k "off or partial or key"` passes:
+  off → both routes 404, no `#bank-card`; a partial env and a key path at the served sonar.css exit 1, no uvicorn
+- C3 [cmd] `uv run pytest -q tests/web/test_bank_pages.py -k sign_in` passes: with sign-in on, a signed-out GET
+  /bank/callback redirects to /auth/login and stores nothing; a signed-in GET /bank/connect answers 405
+- C4 [review] no template, response or print holds a session id, code, state, JWT or key; bank.py has no sqlite3;
+  routes live only in pages/bank.py; sonar.css is rebuilt
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N14 bank banner
+Do: Add the bank banner on every page (SPEC §13 Bank sync); its Sync now button comes in N07.
+  - `GET /bank/banner` in src/sonar/web/pages/bank.py renders `bank_banner.html` for
+    `banner(load_connection(conn), today)` (src/sonar/banking/consent.py); the fragment is empty when it is None.
+  - base.html: on non-bare pages, only when `request.app.state.bank_enabled`, a `#bank-banner-slot` loads
+    `/bank/banner` by htmx like the Uncategorized badge (base.html:108: `hx-trigger="load"`, `hx-swap="outerHTML"`),
+    placed inside `<main>` just above `{% block content %}` (base.html:149).
+  - bank_banner.html: `#bank-banner` with `data-banner` = the banner kind, built from the components/ macros, and
+    the text, dates with the `date` filter:
+    - expired: "Bank access ended on <date>.";
+    - failed: "The bank sync on <date> failed: <error>.";
+    - expiring: "Bank access ends on <date>.".
+    Each case has a Reconnect button: a POST form to /bank/connect. Rebuild sonar.css (AGENTS.md Setup).
+Context: Which case applies, and its date and error, is already decided by `banner`; the template only renders it.
+  With `bank` None (the feature off) the route is 404 and no page holds the slot. Tests build the app as
+  tests/web/test_bank_pages.py does, with tests/web/fake_bank.py, and seed the connection through
+  `banking.store.save_connection`; a failed sync is seeded with a direct UPDATE in the test.
+Read: `src/sonar/web/pages/bank.py`, `src/sonar/banking/consent.py`, `src/sonar/banking/store.py`, `src/sonar/web/templates/base.html:95-150`, `src/sonar/web/templates/components/button.html`, `tests/web/test_bank_pages.py`, `tests/html.py`
+Write: `src/sonar/web/pages/bank.py`, `src/sonar/web/templates/base.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_bank_banner.py`
+Test first: with a connection ending in 10 days, `GET /bank/banner` holds `#bank-banner` with
+  `data-banner="expiring"`. It fails today because the route does not exist.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_bank_banner.py` passes: no connection → an empty fragment; the
+  expired, failed and expiring fragments with their `data-banner`, text and a POST form to /bank/connect
+- C2 [cmd] `uv run pytest -q tests/web/test_bank_banner.py -k "slot or off"` passes: `#bank-banner-slot` with
+  `hx-get="/bank/banner"` on / and /settings when on; off → /bank/banner 404 and no slot on / or /settings
+- C3 [review] the template has no inline style, holds no session id or account uid, and sonar.css is rebuilt
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N07 daily sync into the import pipeline
 Do: Map Enable Banking booked transactions and the balance to the import dataclasses (pure, `banking/mapping.py`)
@@ -423,4 +497,22 @@ check: PASS 3/3
 verify: PASS
 
 ### N12 try 1 · 2026-10-14
+verify: PASS
+
+### N06 try 1 · 2026-10-14
+exec: BLOCKED · brief cites D2/D4/D5/D6/D7/D14 (tables, banner texts, card fields, flow) but does not include them; executor may not open the plan
+
+### N06 replan 1 · 2026-10-14
+plan: REPLANNED +N13,N14
+- cause: the brief cited D2 D4-D7 D14 without stating them, and the store, flow, card and banner with their decisions could not fit one 40-line brief
+- N06 is now the migration, banking/store.py and pure banking/consent.py, with table columns, function names, thresholds and banner precedence stated
+- new N13 (deps N06): create_app/serve wiring, POST /bank/connect, GET /bank/callback steps and error text, #bank-card fields, fake_bank
+- new N14 (deps N13): GET /bank/banner, base.html slot and banner texts
+- N07 now depends on N05,N14; graph is 14 nodes, still tier M per D15
+
+### N06 try 1 · 2026-10-14
+exec: DONE · 1407 passed
+- Added 0012_bank_connection.sql, banking/consent.py (pure rules) and banking/store.py
+- Banner 'failed' uses today as date if last_sync_at is missing; naive consent end raises ValueError
+check: PASS 3/3
 verify: PASS

@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: RUNNING
+status: WAITING
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -55,7 +55,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
-| N14 | bank banner | exec | N13 | sonnet/sonnet | 0 | 0 | TODO | |
+| N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -315,12 +315,14 @@ Do: Add the bank banner on every page (SPEC §13 Bank sync); its Sync now button
     - failed: "The bank sync on <date> failed: <error>.";
     - expiring: "Bank access ends on <date>.".
     Each case has a Reconnect button: a POST form to /bank/connect. Rebuild sonar.css (AGENTS.md Setup).
+  - tests/web/test_templates_hygiene.py:41: add `bank_banner.html` to the `fragments` set (it is an htmx
+    fragment, so it does not extend base.html).
 Context: Which case applies, and its date and error, is already decided by `banner`; the template only renders it.
   With `bank` None (the feature off) the route is 404 and no page holds the slot. Tests build the app as
   tests/web/test_bank_pages.py does, with tests/web/fake_bank.py, and seed the connection through
   `banking.store.save_connection`; a failed sync is seeded with a direct UPDATE in the test.
-Read: `src/sonar/web/pages/bank.py`, `src/sonar/banking/consent.py`, `src/sonar/banking/store.py`, `src/sonar/web/templates/base.html:95-150`, `src/sonar/web/templates/components/button.html`, `tests/web/test_bank_pages.py`, `tests/html.py`
-Write: `src/sonar/web/pages/bank.py`, `src/sonar/web/templates/base.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_bank_banner.py`
+Read: `src/sonar/web/pages/bank.py`, `src/sonar/banking/consent.py`, `src/sonar/banking/store.py`, `src/sonar/web/templates/base.html:95-150`, `src/sonar/web/templates/components/button.html`, `tests/web/test_bank_pages.py`, `tests/html.py`, `tests/web/test_templates_hygiene.py:35-50`
+Write: `src/sonar/web/pages/bank.py`, `src/sonar/web/templates/base.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_bank_banner.py`, `tests/web/test_templates_hygiene.py`
 Test first: with a connection ending in 10 days, `GET /bank/banner` holds `#bank-banner` with
   `data-banner="expiring"`. It fails today because the route does not exist.
 Done when:
@@ -328,8 +330,10 @@ Done when:
   expired, failed and expiring fragments with their `data-banner`, text and a POST form to /bank/connect
 - C2 [cmd] `uv run pytest -q tests/web/test_bank_banner.py -k "slot or off"` passes: `#bank-banner-slot` with
   `hx-get="/bank/banner"` on / and /settings when on; off → /bank/banner 404 and no slot on / or /settings
-- C3 [review] the template has no inline style, holds no session id or account uid, and sonar.css is rebuilt
-- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+- C3 [review] the template has no inline style, holds no session id or account uid, sonar.css is rebuilt, and
+  the hygiene test's only change is `bank_banner.html` added to `fragments`
+- C4 [cmd] `uv run pytest -q tests/web/test_templates_hygiene.py` passes
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N07 daily sync into the import pipeline
 Do: Map Enable Banking booked transactions and the balance to the import dataclasses (pure, `banking/mapping.py`)
@@ -521,5 +525,21 @@ verify: PASS
 exec: DONE · 1429 passed
 - bank routes in pages/bank.py, render_settings_page lifted, bank card in settings.html, serve() wires bank settings and client
 - sonar.css rebuilt, no class change; test_main create_app asserts now pass bank=None, bank_client=None
+check: PASS 4/4
+verify: PASS
+
+### N14 try 1 · 2026-10-14
+exec: BLOCKED · tests/web/test_templates_hygiene.py (outside Write) lists fragment templates; bank_banner.html must be added to its fragments set or test_templates_extend_base fails C4
+- bank banner route, slot, template, tests and sonar.css done; test_bank_banner.py 10 passed; only that hygiene test fails
+
+### N14 replan 1 · 2026-10-14
+plan: REPLANNED
+- cause: test_templates_extend_base fails because bank_banner.html is an htmx fragment not in the hygiene test's fragments set (tests/web/test_templates_hygiene.py:41), a file outside Write
+- brief adds tests/web/test_templates_hygiene.py to Read/Write and a Do step to add bank_banner.html to fragments; new C4 runs the hygiene test, C3 reviews that change is the only exemption, verify moves to C5
+
+### N14 try 1 · 2026-10-14
+exec: DONE · 1439 passed
+- GET /bank/banner, bank_banner.html and #bank-banner-slot in base.html; sonar.css rebuilt
+- hygiene fragments set gains bank_banner.html
 check: PASS 4/4
 verify: PASS

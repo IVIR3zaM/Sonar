@@ -1,0 +1,19 @@
+{#-
+  The bank banner (SPEC §13 Bank sync), loaded into #bank-banner-slot by GET /bank/banner.
+  `banner` says which case applies; this only renders it. It holds no session id or account uid.
+-#}
+{% from "components/button.html" import button %}
+{% if banner.kind == "expired" %}
+  {% set message = "Bank access ended on " ~ (banner.on | date) ~ "." %}
+{% elif banner.kind == "failed" %}
+  {% set message = "The bank sync on " ~ (banner.on | date) ~ " failed: " ~ banner.error ~ "." %}
+{% else %}
+  {% set message = "Bank access ends on " ~ (banner.on | date) ~ "." %}
+{% endif %}
+<div id="bank-banner" role="status" data-banner="{{ banner.kind }}"
+     class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warn/25 bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
+  <p class="min-w-0 [overflow-wrap:anywhere]">{{ message }}</p>
+  <form method="post" action="/bank/connect">
+    {{ button("Reconnect", variant="secondary", size="sm") }}
+  </form>
+</div>

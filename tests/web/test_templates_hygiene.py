@@ -38,7 +38,7 @@ def test_templates_extend_base():
     templates = scan_templates(templates_dir)
 
     # Fragment templates (rendered by HTMX/OOB swaps) are exempt
-    fragments = {"import_results.html", "components/nav_badge.html"}
+    fragments = {"import_results.html", "components/nav_badge.html", "bank_banner.html"}
 
     # Component templates are exempt
     components_dir = "components"

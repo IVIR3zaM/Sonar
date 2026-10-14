@@ -146,6 +146,9 @@
       {%- else %}
       <main id="main" class="mx-auto max-w-6xl px-4 py-6 [overflow-anchor:none] sm:px-6 lg:px-10 lg:py-10">
       {%- endif %}
+        {%- if not bare and request and request.app is defined and request.app.state.bank_enabled %}
+        <div id="bank-banner-slot" hx-get="/bank/banner" hx-trigger="load" hx-swap="outerHTML"></div>
+        {%- endif %}
         {% block content %}{% endblock %}
       </main>
     </div>

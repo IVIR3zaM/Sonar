@@ -1,4 +1,4 @@
-"""Connecting the bank (SPEC §13 Bank sync): the authorization redirect and its callback."""
+"""Connecting the bank (SPEC §13 Bank sync): authorization redirect, callback and banner."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from sonar.banking.client import BankApiError
 from sonar.banking.consent import (
+    banner,
     consent_seconds,
     new_state,
     parse_session,
@@ -21,7 +22,12 @@ from sonar.banking.consent import (
     state_matches,
 )
 from sonar.banking.settings import ASPSP_COUNTRY, ASPSP_NAME, BankSettings
-from sonar.banking.store import save_connection, save_pending_state, take_pending_state
+from sonar.banking.store import (
+    load_connection,
+    save_connection,
+    save_pending_state,
+    take_pending_state,
+)
 from sonar.db import connect
 from sonar.web.pages.settings import render_settings_page
 
@@ -100,5 +106,17 @@ def build_router(
         finally:
             conn.close()
         return RedirectResponse("/settings", status_code=303)
+
+    @router.get("/bank/banner", response_class=HTMLResponse)
+    def bank_banner(request: Request) -> HTMLResponse:
+        conn = connect(db_path)
+        try:
+            connection = load_connection(conn)
+        finally:
+            conn.close()
+        shown = banner(connection, today())
+        if shown is None:
+            return HTMLResponse("")
+        return templates.TemplateResponse(request, "bank_banner.html", {"banner": shown})
 
     return router

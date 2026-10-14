@@ -90,9 +90,22 @@ install_config() {
     chmod 0600 /etc/sonar/tls/origin.key
   fi
   install -m 0644 "$deploy_dir/sonar.service" /etc/systemd/system/sonar.service
+  install -m 0644 "$deploy_dir/sonar-bank-sync.service" /etc/systemd/system/sonar-bank-sync.service
+  install -m 0644 "$deploy_dir/sonar-bank-sync.timer" /etc/systemd/system/sonar-bank-sync.timer
   install -m 0644 "$deploy_dir/sonar.conf" /etc/nginx/conf.d/sonar.conf
+  install_bank_key
   systemctl daemon-reload
   systemctl enable sonar.service
+  systemctl enable --now sonar-bank-sync.timer
+}
+
+# The sonar user reads the key; nobody else. An empty upload means bank sync is off, so no key stays behind.
+install_bank_key() {
+  if [[ -s $deploy_dir/enable-banking.pem ]]; then
+    install -m 0640 -o root -g sonar "$deploy_dir/enable-banking.pem" /etc/sonar/enable-banking.pem
+  else
+    rm -f /etc/sonar/enable-banking.pem
+  fi
 }
 
 reload_nginx() {

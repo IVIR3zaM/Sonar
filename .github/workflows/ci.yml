@@ -125,4 +125,6 @@ jobs:
           TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
           TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           TF_VAR_allowed_emails: ${{ secrets.ALLOWED_EMAILS }}
+          TF_VAR_enable_banking_app_id: ${{ vars.ENABLE_BANKING_APP_ID }}
+          TF_VAR_enable_banking_private_key: ${{ secrets.ENABLE_BANKING_PRIVATE_KEY }}
         run: terraform apply -input=false -auto-approve -lock-timeout=10m

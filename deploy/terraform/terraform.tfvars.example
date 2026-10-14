@@ -8,6 +8,10 @@ google_client_secret = "replace-with-google-client-secret"
 allowed_emails       = ["owner@example.com"]
 sonar_git_ref        = "0000000000000000000000000000000000000000"
 
+# Optional bank sync (Enable Banking): set both or neither. Keep the real key out of any tracked file.
+# enable_banking_app_id      = "replace-with-enable-banking-application-id"
+# enable_banking_private_key = file("~/enable-banking-private.pem")
+
 # Optional, shown with their defaults:
 # sonar_repo_url        = "https://github.com/IVIR3zaM/Sonar.git"
 # uv_version            = "0.8.17"

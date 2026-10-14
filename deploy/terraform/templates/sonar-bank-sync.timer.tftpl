@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the Sonar bank sync every morning
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 Europe/Berlin
+Persistent=true
+
+[Install]
+WantedBy=timers.target

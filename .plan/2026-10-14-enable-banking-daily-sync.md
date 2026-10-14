@@ -49,11 +49,11 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
 | N06 | connection store, consent flow and banner | exec | N12 | sonnet/opus | 0 | 0 | TODO | |
 | N07 | daily sync into the import pipeline | exec | N05,N06 | opus/opus | 0 | 0 | TODO | |
-| N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
+| N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N07 | -/- | 0 | 0 | TODO | |
 | N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
-| N12 | Enable Banking client | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
+| N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | VERIFYING | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -403,4 +403,24 @@ exec: DONE · 1362 passed
 - banking/settings.py: bank_settings, read_private_key (symlink-safe, no key text in errors)
 - cryptography is used via authlib's transitive dependency; pyproject not in Write
 check: PASS 3/3
+verify: PASS
+
+### N12 try 1 · 2026-10-14
+exec: DONE · 1382 passed
+- Added banking/client.py: JWT-signed Enable Banking client with five calls and BankApiError
+- Non-JSON or non-matching error bodies give status-only text; 2xx body returned as response.json()
+
+### N08 try 1 · 2026-10-14
+exec: DONE · 1382 passed
+- Terraform vars enable_banking_app_id/private_key (both-or-neither), bank-sync service+timer templates, install.sh key 0640 root:sonar and timer enable, ci.yml TF_VARs, README Bank sync
+- Key uploaded always (empty file when unset); install.sh removes the key if empty
+
+### N12 try 1 · 2026-10-14
+check: PASS 4/4
+
+### N08 try 1 · 2026-10-14
+check: PASS 3/3
+verify: PASS
+
+### N12 try 1 · 2026-10-14
 verify: PASS

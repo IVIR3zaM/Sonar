@@ -54,8 +54,14 @@ locals {
       session_secret       = random_password.session_secret.result
       base_url             = local.base_url
       api_token            = random_password.api_token.result
+
+      enable_banking_app_id = var.enable_banking_app_id
     })
-    "sonar.service" = templatefile("${path.module}/templates/sonar.service.tftpl", {})
+    "sonar.service"           = templatefile("${path.module}/templates/sonar.service.tftpl", {})
+    "sonar-bank-sync.service" = templatefile("${path.module}/templates/sonar-bank-sync.service.tftpl", {})
+    "sonar-bank-sync.timer"   = templatefile("${path.module}/templates/sonar-bank-sync.timer.tftpl", {})
+    # Empty when bank sync is off; install.sh then removes the key file.
+    "enable-banking.pem" = var.enable_banking_private_key
     "sonar.conf" = templatefile("${path.module}/templates/sonar.conf.tftpl", {
       hostname = var.sonar_hostname
     })
@@ -169,6 +175,21 @@ resource "terraform_data" "install" {
   provisioner "file" {
     content     = local.rendered["sonar.service"]
     destination = "${local.deploy_dir}/sonar.service"
+  }
+
+  provisioner "file" {
+    content     = local.rendered["sonar-bank-sync.service"]
+    destination = "${local.deploy_dir}/sonar-bank-sync.service"
+  }
+
+  provisioner "file" {
+    content     = local.rendered["sonar-bank-sync.timer"]
+    destination = "${local.deploy_dir}/sonar-bank-sync.timer"
+  }
+
+  provisioner "file" {
+    content     = local.rendered["enable-banking.pem"]
+    destination = "${local.deploy_dir}/enable-banking.pem"
   }
 
   provisioner "file" {

@@ -131,6 +131,8 @@ If the line is missing, Sonar's install stops with an error that names `deploy/R
    | `google_client_id` | Client ID of the Google OAuth client. | required |
    | `google_client_secret` | Client secret of the Google OAuth client (sensitive). | required |
    | `allowed_emails` | Every email allowed to sign in, at least one; each apply replaces the access list with exactly these. | required |
+   | `enable_banking_app_id` | Enable Banking application id; set with `enable_banking_private_key` or leave both empty (see Bank sync). | empty (bank sync off) |
+   | `enable_banking_private_key` | PEM text of the application's private key (sensitive); empty with the app id. | empty (bank sync off) |
    | `sonar_git_ref` | Full 40-character commit SHA on `main` to deploy. | required |
    | `sonar_repo_url` | Public Git URL of Sonar, cloned without credentials. | `https://github.com/IVIR3zaM/Sonar.git` |
    | `uv_version` | uv version installed on the VM. | `0.8.17` |
@@ -239,6 +241,8 @@ Set up once, in the repository settings:
    | `GOOGLE_CLIENT_ID` | variable | `google_client_id` |
    | `GOOGLE_CLIENT_SECRET` | secret | `google_client_secret` |
    | `ALLOWED_EMAILS` | secret | `allowed_emails`, as a JSON list, for example `["owner@example.com"]` |
+   | `ENABLE_BANKING_APP_ID` | variable | `enable_banking_app_id`; optional, see Bank sync |
+   | `ENABLE_BANKING_PRIVATE_KEY` | secret | `enable_banking_private_key`, the whole PEM text; optional, set it with the app id |
    | `SSH_PRIVATE_KEY` | secret | written to a mode-600 file in the runner's temp dir; its path is `ssh_private_key_path` |
    | `R2_ACCESS_KEY_ID` | secret | `AWS_ACCESS_KEY_ID` for the R2 backend |
    | `R2_SECRET_ACCESS_KEY` | secret | `AWS_SECRET_ACCESS_KEY` for the R2 backend |
@@ -253,6 +257,21 @@ How the deploy job behaves:
 - **Empty-state guard:** after `terraform init` the job checks `terraform state list`. If the state is empty (not migrated to R2, or the wrong bucket or key) it fails before apply, because an apply would create a second data volume.
 - **Lock:** apply runs with `-lock-timeout=10m`, so it waits for a local run that holds the lock.
 - **Logs are public.** The repository is public, so anyone can read the workflow logs. The job masks every allowed email and the Gateway VM's IPv4 before any terraform call, runs terraform without the output wrapper and never runs `terraform output`. Read outputs such as `api_token` from your machine instead.
+
+## Bank sync
+
+Optional. With both Enable Banking values set, Sonar reads the Deutsche Bank Girokonto itself and a systemd timer runs `sonar bank-sync` every day at 06:30 Berlin time. With both unset, the app deploys and runs as before and the timer only prints "Bank sync is not configured."
+
+1. In the Enable Banking Control Panel, create a production application in restricted mode (your own linked account only) and keep its application id and the private key `.pem` it generates.
+2. Register `https://<sonar_hostname>/bank/callback` as a redirect URL of that application.
+3. Give Terraform the two values, both or neither (a lone one fails the plan):
+   - **CI:** add the variable `ENABLE_BANKING_APP_ID` and the secret `ENABLE_BANKING_PRIVATE_KEY` (the whole PEM text, including the BEGIN and END lines) to the `production` environment. The workflow passes them as `TF_VAR_` values and never echoes them.
+   - **Local apply:** set `enable_banking_app_id` and `enable_banking_private_key = file("<path to the .pem>")` in `terraform.tfvars`.
+4. Deploy. The install writes the key to `/etc/sonar/enable-banking.pem` (mode 0640, root:sonar) and both settings to `sonar.env`. Unsetting the values and deploying again removes the key file.
+5. In Sonar, open Settings, Bank connection, Connect bank and authorize at Deutsche Bank. Sync now fetches the first data; the timer does the rest.
+6. Reconnect before the consent ends (about 180 days). A banner on every page warns 14 days ahead; Reconnect bank on Settings renews it in a few clicks. After the consent ends, syncs fail until you reconnect.
+
+Check it on the VM: `systemctl list-timers sonar-bank-sync.timer` shows the next run; `systemctl start sonar-bank-sync.service` runs one now.
 
 ## Coexistence with Gateway and Kita
 
@@ -271,3 +290,4 @@ Sonar shares the Gateway VM with Gateway and Kita, and the bucket with both.
 - **Never destroy the volume.** It has `prevent_destroy` and Hetzner delete protection, because the SQLite database lives on it.
 - **Secrets:** state lives in R2, not on your machine, and holds secrets; keep the bucket private. `backend.hcl` holds your R2 credentials; terraform copies them into the gitignored `.terraform/` directory and into any saved `-out` plan files. Never share `.terraform/`, plan files, `terraform.tfvars`, or your SSH key. All four are gitignored; never commit them.
 - **Logs:** `ssh root@<server_ipv4> journalctl -u sonar`.
+- **Bank sync:** `journalctl -u sonar-bank-sync` shows the daily runs; `systemctl list-timers sonar-bank-sync.timer` shows the next one.

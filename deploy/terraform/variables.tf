@@ -36,6 +36,24 @@ variable "google_client_secret" {
   sensitive   = true
 }
 
+variable "enable_banking_app_id" {
+  description = "Application id of the Enable Banking app (restricted mode). Empty turns bank sync off."
+  type        = string
+  default     = ""
+}
+
+variable "enable_banking_private_key" {
+  description = "PEM text of the Enable Banking application's private key. Empty turns bank sync off; set it together with enable_banking_app_id."
+  type        = string
+  sensitive   = true
+  default     = ""
+
+  validation {
+    condition     = (var.enable_banking_app_id == "") == (var.enable_banking_private_key == "")
+    error_message = "Set both enable_banking_app_id and enable_banking_private_key, or neither."
+  }
+}
+
 variable "allowed_emails" {
   description = "Every email allowed to sign in; each apply replaces the access list with exactly these."
   type        = list(string)

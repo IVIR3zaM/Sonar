@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: WAITING
+status: RUNNING
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -51,7 +51,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N07 | match and merge in the import pipeline | exec | N05 | opus/opus | 1 | 0 | DONE | |
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N15 | -/- | 0 | 0 | DONE | |
-| N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | TODO | |
+| N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | DONE | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
@@ -716,3 +716,6 @@ human: owner confirmed the three rule edits; applied on the local instance only 
 
 ### N09 try 1 · 2026-10-14
 human: visual check by orchestrator on a temp DB with a throwaway key: not-connected (no banner, Connect bank), connected card (status, last four, consent end, last sync, Sync now and Reconnect bank), ending, ended and failed banners above the content with Reconnect (plus Sync now when failed), at 375px light and dark and desktop dark, no horizontal overflow; Connect returning to /settings was seen for real on prod by the owner and is covered by the N13 fake-bank tests
+
+### N10 try 1 · 2026-10-14
+human: owner confirmed the prod live check: Connected with consent end about 180 days ahead, sync added only new rows with no duplicates and the dashboard balance is today's, timer next run 06:30 Berlin and a clean one-line journal summary; main pushed and CI deploy run 38618031947 succeeded

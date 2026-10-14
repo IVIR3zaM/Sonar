@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: WAITING
+status: RUNNING
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -44,7 +44,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
 | N02 | SPEC and bank settings | exec | N01 | sonnet/opus | 1 | 1 | DONE | |
-| N03 | owner Enable Banking setup and first authorization | gate | N12 | -/- | 0 | 0 | TODO | |
+| N03 | owner Enable Banking setup and first authorization | gate | N12 | -/- | 0 | 1 | DONE | |
 | N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 0 | 0 | TODO | |
 | N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
 | N06 | connection store and consent rules | exec | N12 | sonnet/sonnet | 1 | 1 | DONE | |
@@ -157,27 +157,40 @@ Done when:
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 owner Enable Banking setup and first authorization
-Do: gate for the owner, with the helper pre-authorized (D13).
-  1. In the Enable Banking Control Panel the owner creates a production application in restricted mode, keeps
-     its private key `.pem` outside the repo (chmod 600), and registers the redirect URLs: prod
-     `https://<sonar host>/bank/callback`, plus `http://127.0.0.1:8000/bank/callback` if the panel accepts it.
-  2. The owner links the Deutsche Bank Girokonto to the app.
-  3. The owner sets `SONAR_ENABLE_BANKING_APP_ID` and `SONAR_ENABLE_BANKING_KEY_PATH` in the local `.env`.
-  4. The owner makes sure `data/sonar.db` holds Girokonto CSV imports up to recent days: a copy of the prod DB,
-     or the newest export imported locally.
-  5. The orchestrator writes a scratch helper in the session scratchpad on `sonar.banking.client`. It lists the
-     DE ASPSPs whose name contains "Deutsche Bank" and prints the names and `maximum_consent_validity`. It calls
-     POST /auth with a fresh state and a registered redirect URL, and prints the authorization URL.
-  6. The owner authorizes at the bank and pastes back the full URL the browser lands on. On prod, while signed
-     in, that page is a 404 whose address bar still holds `code` and `state`.
-  7. The helper checks the state, calls POST /sessions and writes only `session_id` and the account uids to
-     `data/enable-banking-session.json`, mode 0600. It prints no secret.
+Do: gate for the owner; the orchestrator's two scratch helpers are pre-authorized (D13). The app is a production
+  restricted-mode app whose only redirect URL is `https://<sonar host>/bank/callback` (Enable Banking rejects http),
+  so the first authorization runs through the deployed Connect flow (N13), never from this machine.
+  1. The owner keeps the private key `.pem` outside the repo (chmod 600) and sets `SONAR_ENABLE_BANKING_APP_ID`
+     and `SONAR_ENABLE_BANKING_KEY_PATH` in the local `.env`.
+  2. Helper 1 (session scratchpad, never the repo) uses `sonar.banking.client` with the local `.env` and only
+     GET /aspsps?country=DE. It prints the names containing "Deutsche Bank" and their `maximum_consent_validity`.
+     The Connect flow looks up `ASPSP_NAME` (src/sonar/banking/settings.py:15, used at
+     src/sonar/web/pages/bank.py:72). If no listed name equals "Deutsche Bank", stop and ASK a D2 revision before
+     step 3.
+  3. The owner adds the GitHub variable `ENABLE_BANKING_APP_ID` and the secret `ENABLE_BANKING_PRIVATE_KEY` to
+     the `production` environment (deploy/README.md:244-268) and deploys the committed tree themselves. The plan
+     never pushes or deploys. `SONAR_BASE_URL` on prod must be the https host (deploy/terraform/templates/sonar.env.tftpl:4).
+  4. `sonar bank-sync` does not exist until N07, and any unknown argument starts the web app
+     (src/sonar/__main__.py:29-33). So right after the deploy the owner runs
+     `sudo systemctl disable --now sonar-bank-sync.timer` on the VM. The N10 deploy enables it again
+     (deploy/terraform/files/install.sh:99).
+  5. On prod, signed in: Settings, Connect bank, authorize the Girokonto at Deutsche Bank. Settings then shows
+     Connected with "Deutsche Bank ···<last4>" and a consent end about 180 days ahead (D4, D7).
+  6. The owner copies the prod DB to the local `data/sonar.db`, so it holds the `bank_connection` row and the
+     Girokonto CSV imports up to recent days.
+  7. Helper 2 opens `data/sonar.db` read-only (sqlite URI `mode=ro`, never `sonar.db.connect`), reads
+     `session_id` and `account_uid` from `bank_connection` (src/sonar/migrations/0012_bank_connection.sql), and
+     writes only those two to `data/enable-banking-session.json` with mode 0600 (D12), the file N04 reads. It
+     prints no session id, code, JWT or key.
 Done when:
-- C1 [human] the owner confirms the restricted-mode app exists, the Girokonto is linked, and the key lives outside
-  the repo with mode 600
+- C1 [human] the owner confirms the Girokonto is linked to the restricted-mode app, the key lives outside the repo
+  with mode 600, prod Settings shows Connected with a consent end about 180 days ahead, and the bank-sync timer
+  is disabled on the VM
 - C2 [cmd] `test "$(stat -f %Lp data/enable-banking-session.json)" = 600 && git check-ignore -q data/enable-banking-session.json`
-- C3 [human] the exact ASPSP name the helper listed for the Girokonto is recorded in the log; if it differs from
-  "Deutsche Bank", D2 gets a mid-run revision
+- C3 [cmd] `uv run python -c "import json,sys; d=json.load(open('data/enable-banking-session.json')); sys.exit(0 if d.get('session_id') and d.get('account_uid') else 1)"`
+- C4 [human] the exact ASPSP name helper 1 listed for the Girokonto is recorded in the log and equals
+  "Deutsche Bank"
+- C5 [cmd] `test -z "$(git status --porcelain -- src tests SPEC.md)"` shows no tracked change
 
 ## N04 API vs CSV comparison report
 Do: Write a local report, for the owner only, that compares what Enable Banking returns for the Girokonto with the
@@ -543,3 +556,20 @@ exec: DONE · 1439 passed
 - hygiene fragments set gains bank_banner.html
 check: PASS 4/4
 verify: PASS
+
+### N03 try 1 · 2026-10-14
+human: gate defects
+- Owner registered the app as PRODUCTION restricted; Enable Banking rejects http redirect URLs, so the only redirect URL is https://sonar.malimaleki.com/bank/callback. First authorization cannot run from a local machine; it must go through the Connect flow of the deployed app (Settings card, N13). Owner linked the Deutsche Bank Girokonto in the control panel. Local data/enable-banking-session.json check and any localhost callback assumption do not apply.
+
+### N03 replan 1 · 2026-10-14
+plan: REPLANNED
+- cause: the restricted-mode prod app allows only the https prod redirect URL, so the local POST /auth helper and a localhost callback cannot work
+- first authorization now runs through the deployed Connect flow (N13); the owner adds the CI variable and secret and deploys the committed tree themselves
+- helper 1 only lists ASPSPs locally and gates the deploy on the name Deutsche Bank (D2); helper 2 extracts session_id and account_uid from a prod DB copy into data/enable-banking-session.json 0600, keeping N04's input unchanged
+- owner disables sonar-bank-sync.timer after the deploy, since bank-sync does not exist until N07 and unknown args start the web app; N10's deploy re-enables it
+
+### N03 try 1 · 2026-10-14
+check: FAIL C2
+- C2 exit 1: stat: cannot read file system information for '%Lp': No such file or directory
+note: helper 1: ASPSP for DE is 'Deutsche Bank', maximum_consent_validity 15552000 s; equals D2 name
+check: PASS 3/3

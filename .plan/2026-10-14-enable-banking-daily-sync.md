@@ -1,5 +1,5 @@
 # Enable Banking daily sync
-status: WAITING
+status: RUNNING
 created: 2026-10-14 · updated: 2026-10-14
 goal: Every morning Sonar fetches the Deutsche Bank Girokonto's booked transactions and balance from Enable Banking, and the owner renews the ~180-day consent from a banner or Settings in a few clicks.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -30,13 +30,13 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 - D6 Banner: shown on every non-bare page, only when the feature is on and a connection exists. It loads by htmx from `GET /bank/banner`, like the Uncategorized badge (src/sonar/web/templates/base.html:108), into a slot above `{% block content %}` (base.html:149); the fragment is empty when there is nothing to say. Each case below has a Reconnect button (a POST form to /bank/connect), and the failed case also has Sync now. When more than one case applies, the first listed wins: expired (today ≥ consent end date): "Bank access ended on <date>."; failed (last sync status error): "The bank sync on <date> failed: <error>."; expiring (today ≥ consent end − 14 days): "Bank access ends on <date>."; never connected: nothing | confirmed
 - D7 Settings and API: with the feature on, /settings gets a "Bank connection" card (`#bank-card`). It shows the status (Not connected, Connected, Ends soon, Expired), "Deutsche Bank ···<last4>", the consent end, the last sync (time, ok or failed, rows added, error), a Connect bank or Reconnect bank button and Sync now. Sync now is `POST /bank/sync`: it runs the sync and answers 303 to /settings. For API parity (SPEC §13): `GET /api/bank` returns the same status as JSON, with no session id or account uid; `POST /api/bank/sync` runs the sync and returns that status, answering 409 when not connected and 502 when Enable Banking fails. Connect stays page-only because it is a browser redirect | confirmed
 - D8 Sync: `sonar bank-sync [--db]`. Not configured: prints "Bank sync is not configured." and exits 0. Configured but not connected: prints "Bank is not connected." and exits 0. Otherwise it fetches the booked transactions from `date_from` to today and the balances, imports the rows through the import pipeline and re-applies rules and recurring detection as the upload does (src/sonar/web/pages/import_.py:57-62). It records the balance as of the sync date as source 'import', upserted so the day's latest sync wins. It records `last_sync_at`, the status and the rows added. On success it prints "Bank sync: N added, M duplicates, balance X on D." and exits 0. On any error it records status error with the short message, prints "Bank sync failed: <message>" and exits 1. Later syncs start at the last successful sync date − 7 days, and dedup drops the repeats. The first window follows D9. The service takes `today`, `now` and the client as parameters | confirmed
-- D9 CSV/API overlap: the owner picks it at gate N05 after reading the N04 report, and the planner then replans N07 to that choice. N07's brief is written for A. A: the API takes over from a cutover date. At the first sync the cutover is the day after the latest booking date of the stored Deutsche Bank CSV rows, or 90 days back if there are none, and it is stored on the connection. API rows from the cutover on are deduplicated by their Enable Banking transaction id: the fingerprint becomes a hash of "enable-banking", the account and the id, with occurrence 1. From then on CSV uploads of the Girokonto import only rows booked before the cutover. B: API rows use the normal fingerprint, and an API row that matches a stored row on account, booking date, amount and normalized counterparty counts as a duplicate | confirmed
-- D10 Details settled at N05 from the report, recorded without real values: the rule that gives API rows the same `account` string as the stored Girokonto CSV rows, the transaction id field, the fields for mandate reference and creditor id, and the balance type. Defaults the brief assumes: the id is `entry_reference`, else `transaction_id`; the balance is `CLBD`, else `ITBD`, else the first one listed | confirmed
+- D9 CSV/API overlap, strategy C (match and merge), the owner's choice at N05: no cutover; Girokonto CSV uploads and the sync both import any dates, and one booking is stored once, so the CSV stays the fallback when the bank link is down. A migration adds `transactions.entry_reference` (unique when set) and `transactions.merged` (0/1). Match key: same account, booking date, exact amount and normalized counterparty (whitespace runs collapsed to one space, casefolded, src/sonar/importing/dedup.py:50-52). Within one key, an incoming row first pairs with a stored row whose normalized purposes have the shorter as a prefix of the longer (API texts come padded and truncated); the leftovers then pair one-to-one in order, up to the smaller count; the remaining incoming rows are new. An API row is a duplicate when its entry_reference is stored; else it matches against the account's stored rows without entry_reference, and a match only sets entry_reference and merged (the row keeps its first-stored data); unmatched it is inserted with the fingerprint sha256 of ["enable-banking", account, entry_reference], occurrence 1. A CSV row is a duplicate when its (fingerprint, occurrence) is stored; else it matches against stored API rows not yet merged, and a match fills in the CSV purpose, mandate_ref and creditor_id, takes the CSV fingerprint and occurrence, and sets merged; unmatched it is inserted as today. Matches count as duplicates. The first sync fetches from 90 days before today | confirmed
+- D10 Details confirmed at N05, field names only: the id is `entry_reference` (`transaction_id` is absent). The account is the `account` of the latest-booked stored Girokonto CSV row, else the own-side IBAN (debtor_account on DBIT, creditor_account on CRDT) without spaces. The API gives no mandate or creditor id; both stay null. The balance type is ITAV, else CLBD, else ITBD, else the first listed. Rule parity: every category rule must categorize the API and CSV versions of each overlapping booking alike; N16 reports the rules that do not (purpose-text, iban and creditor_id rules) with proposed changes, and the owner confirms them at gate N17 through the AGENTS.md Categorization workflow; no rule goes into a tracked file | confirmed
 - D11 Deploy: Terraform variables `enable_banking_app_id` (default "") and `enable_banking_private_key` (sensitive PEM text, default ""); both or neither must be set. When set, install.sh puts the key at `/etc/sonar/enable-banking.pem` (0640 root:sonar), and `sonar.env` gets both env vars. When unset, the key file is removed. Units `sonar-bank-sync.service` (oneshot, User=sonar, EnvironmentFile, `ExecStart=/opt/sonar/.venv/bin/sonar bank-sync`, RequiresMountsFor=/var/lib/sonar) and `sonar-bank-sync.timer` (`OnCalendar=*-*-* 06:30:00 Europe/Berlin`, `Persistent=true`), always installed and enabled. ci.yml passes the GitHub variable `ENABLE_BANKING_APP_ID` and the secret `ENABLE_BANKING_PRIVATE_KEY` as `TF_VAR_`s. deploy/README.md documents the setup | confirmed
 - D12 Real data: the first-authorization file `data/enable-banking-session.json` (mode 0600) and the report `data/enable-banking-comparison.md` live only in the gitignored `data/`. Tracked files, tests, commit messages and the plan log never hold real values. Fixtures are hand-written, anonymized Enable Banking payloads, and tests generate a throwaway RSA key at runtime | confirmed
 - D13 Pre-authorized mid-run: at N03, the orchestrator writes and runs a scratch helper (session scratchpad, never the repo) that makes the first authorization; at N04, the executor calls Enable Banking with the owner's key and reads `data/sonar.db` read-only; the visual gate's scratch launcher (D14). The plan never pushes or deploys: the owner deploys at N10 | confirmed
 - D14 Visual gate setup: a scratch launcher (session scratchpad) runs `create_app` on a temp DB with bank settings, a throwaway key in `$TMPDIR` and a fake Enable Banking client (no network). The fake's Connect goes straight to /bank/callback with the right state. The launcher seeds the states not connected, connected, ending in 10 days, expired and failed sync. `create_app` therefore takes an injected bank client, as it does `google` (src/sonar/web/app.py:82-87) | confirmed
-- D15 Tier M with 11 nodes, as requested, with every brief written now and N07 rewritten after N05. Planzilla §1 would move a graph of more than 10 nodes to L | confirmed
+- D15 Tier M, as requested, now 17 nodes: every brief written up front, and after N05 the merge (N07), the sync (N15), the rule parity report (N16) and its gate (N17) follow D9 and D10. Planzilla §1 would move a graph of more than 10 nodes to L | confirmed
 
 ## Graph
 
@@ -46,16 +46,19 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N02 | SPEC and bank settings | exec | N01 | sonnet/opus | 1 | 1 | DONE | |
 | N03 | owner Enable Banking setup and first authorization | gate | N12 | -/- | 0 | 1 | DONE | |
 | N04 | API vs CSV comparison report | exec | N03 | opus/sonnet | 1 | 0 | DONE | |
-| N05 | overlap strategy | gate | N04 | -/- | 0 | 0 | TODO | |
+| N05 | overlap strategy | gate | N04 | -/- | 0 | 1 | DONE | |
 | N06 | connection store and consent rules | exec | N12 | sonnet/sonnet | 1 | 1 | DONE | |
-| N07 | daily sync into the import pipeline | exec | N05,N14 | opus/opus | 0 | 0 | TODO | |
+| N07 | match and merge in the import pipeline | exec | N05 | opus/opus | 0 | 0 | TODO | |
 | N08 | systemd timer and Terraform install | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N07 | -/- | 0 | 0 | TODO | |
-| N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N15 | -/- | 0 | 0 | TODO | |
+| N10 | owner live check on prod | gate | N08,N09,N17 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 1 | 1 | DONE | |
+| N15 | daily sync into the import pipeline | exec | N07,N14 | opus/opus | 0 | 0 | TODO | |
+| N16 | rule parity report | exec | N15 | opus/sonnet | 0 | 0 | TODO | |
+| N17 | rule changes | gate | N16 | -/- | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree; the JWT, crypto and HTTP
@@ -222,16 +225,21 @@ Done when:
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N05 overlap strategy
-Do: gate for the owner. The owner reads `data/enable-banking-comparison.md` and picks the CSV/API overlap strategy:
-  - A: the API takes over from a cutover date; API rows are deduplicated by their Enable Banking transaction id,
-    and CSV rows import only before the cutover.
-  - B: API rows match CSV rows on date + amount + counterparty.
-  The owner also confirms D10: the account label rule, the id field, the mandate and creditor id fields, and the
-  balance type. The orchestrator adds the answers as Decisions with field names only (no real values) and asks
-  the planner for `Replan: N07`.
+Do: gate for the owner, already answered after reading `data/enable-banking-comparison.md`: strategy C, match and
+  merge (D9), with the D10 details. The orchestrator shows the owner D9, D10 and the briefs of N07 (merge in the
+  import pipeline), N15 (daily sync), N16 (rule parity report) and N17 (rule changes gate), and closes the gate
+  when the owner agrees they record the choice.
+Context: D9: no cutover; one booking stored once; match key account, booking date, exact amount, normalized
+  counterparty; purposes normalized (whitespace collapsed, casefolded), shorter a prefix of the longer; then
+  one-to-one by key, identical keys paired by count; the first-stored row keeps its data; a CSV row matched to an
+  API row fills in the fuller purpose, mandate and creditor id; `entry_reference` and `merged` columns.
+  D10: id `entry_reference`; account from the stored Girokonto CSV rows; no mandate or creditor id from the API;
+  balance ITAV, else CLBD, else ITBD, else first; rule parity over the overlapping rows, rule changes confirmed by
+  the owner through the Categorization workflow, never in a tracked file.
 Done when:
-- C1 [human] the owner names A or B, and each D10 item, and the Decisions record them without real data
-- C2 [human] N07's brief has been rewritten to follow the choice before N07 starts
+- C1 [human] the owner agrees D9 and D10 state strategy C and each D10 item, with field names only and no real
+  values
+- C2 [human] the owner agrees the N07, N15, N16 and N17 briefs follow D9 and D10 before N07 starts
 
 ## N06 connection store and consent rules
 Do: Add the bank connection tables, `banking/store.py` and the pure `banking/consent.py` (SPEC §13 Bank sync).
@@ -348,42 +356,127 @@ Done when:
 - C4 [cmd] `uv run pytest -q tests/web/test_templates_hygiene.py` passes
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
-## N07 daily sync into the import pipeline
-Do: Map Enable Banking booked transactions and the balance to the import dataclasses (pure, `banking/mapping.py`)
-  and import them through the existing pipeline with overlap strategy A (D9, as confirmed at N05). Add
-  `banking/service.sync`; the `sonar bank-sync` command; `POST /bank/sync` and Sync now in `#bank-card` and in the
-  failed banner; `GET /api/bank` and `POST /api/bank/sync`. Append the overlap rule to SPEC's §13 Bank sync bullet.
-  Rebuild `sonar.css`.
-Context: D10, as confirmed at N05, gives the account label, id field, mandate/creditor fields and balance type.
-  Mapping:
-  - amount = Decimal(`transaction_amount.amount`) in exact cents, negative for `DBIT`;
-  - counterparty = `creditor.name` for DBIT, `debtor.name` for CRDT; iban from the other side's account;
-  - purpose = the `remittance_information` lines joined by a space;
-  - value_date falls back to booking_date;
-  - raw_row = `json.dumps(tx, sort_keys=True, ensure_ascii=False)`.
-  Pipeline: extract the shared insert path from src/sonar/importing/store.py:31-70,118-125 so file and API
-  imports share it. API rows use source "Deutsche Bank Girokonto API".
-  A: at the first sync the cutover is stored on the connection (a migration adds the column), and later syncs
-  never fetch before it. Each API row's fingerprint is sha256 of `["enable-banking", account, id]`, occurrence 1.
-  `import_file` skips `deutsche_bank_giro.NAME` rows (src/sonar/importing/importers/deutsche_bank_giro.py:37)
-  booked on or after the cutover and counts them as duplicates.
-  D8 covers the windows, messages, exit codes and balance upsert; D7 the routes and the 409/502 answers.
-Read: `src/sonar/importing/store.py`, `src/sonar/importing/dedup.py`, `src/sonar/transactions.py`, `src/sonar/banking/client.py`, `src/sonar/banking/store.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/pages/import_.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/api/settings.py`, `src/sonar/__main__.py`, `tests/importing/test_store.py`
-Write: `SPEC.md`, `src/sonar/migrations/*_bank_cutover.sql`, `src/sonar/banking/mapping.py`, `src/sonar/banking/service.py`, `src/sonar/banking/store.py`, `src/sonar/importing/store.py`, `src/sonar/__main__.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/api/bank.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/banking/**`, `tests/importing/test_store.py`, `tests/web/test_bank_pages.py`, `tests/web/test_api_bank.py`, `tests/test_cli_bank.py`
-Test first: `mapping.transactions` turns an anonymized DBIT payload of "12.34" into −1234 cents with the
-  creditor as counterparty. It fails today because the module does not exist.
+## N07 match and merge in the import pipeline
+Do: Store a booking that arrives both in a Girokonto CSV and from Enable Banking only once (D9, strategy C, no
+  cutover). Add a pure matcher, a migration and a shared `import_rows` path in `importing/store.py` that
+  `import_file` and the coming bank sync (N15) both call. Append the overlap rule to SPEC's §13 Bank sync bullet.
+Context: D9, as the owner chose it at N05:
+  - migration `NNNN_bank_merge.sql`, the next free number in src/sonar/migrations/ (0013 unless taken): `transactions`
+    gains `entry_reference TEXT` with a unique index where not null, and `merged INTEGER NOT NULL DEFAULT 0`;
+  - `ParsedTransaction` (src/sonar/transactions.py:13-27) gains `entry_reference: str | None = None`;
+  - pure `importing/match.py`: key = account, booking_date, amount_cents, `normalize_text(counterparty)`
+    (src/sonar/importing/dedup.py:50-52). Within a key, each incoming row first takes the first free stored row
+    whose `normalize_text` purposes have the shorter as a prefix of the longer. Then the leftover incoming and
+    stored rows pair one-to-one in order, up to the smaller count. The remaining incoming rows are new;
+  - API row (entry_reference set): duplicate when its entry_reference is stored; else matched against the
+    account's stored rows with entry_reference null. A match sets only entry_reference and merged = 1 (the row
+    keeps its first-stored data). Unmatched, it is inserted with fingerprint sha256 of the JSON array
+    ["enable-banking", account, entry_reference] and occurrence 1;
+  - CSV row: duplicate when its (fingerprint, occurrence) is stored; else matched against stored rows with
+    entry_reference set and merged = 0. A match writes the CSV purpose, mandate_ref, creditor_id, fingerprint and
+    occurrence and sets merged = 1. Unmatched, it is inserted as today (src/sonar/importing/store.py:73-103);
+  - matches count as duplicates; candidates load only for the batch's accounts and booking dates; one DB
+    transaction per call, as `import_file` has now (store.py:50-58);
+  - SPEC.md:259, at the end of the Bank sync bullet: "A booking that arrives both in a CSV and by the sync is
+    stored once: rows match on account, booking date, amount and counterparty, and on purpose when one text,
+    ignoring spacing and case, starts the other; the first-stored row keeps its data, and a CSV row fills in the
+    fuller purpose, mandate and creditor id."
+Read: `src/sonar/importing/store.py`, `src/sonar/importing/dedup.py`, `src/sonar/transactions.py`, `src/sonar/migrations/0001_import.sql`, `tests/importing/test_store.py`, `tests/importing/test_dedup.py`
+Write: `SPEC.md`, `src/sonar/migrations/*_bank_merge.sql`, `src/sonar/transactions.py`, `src/sonar/importing/match.py`, `src/sonar/importing/store.py`, `tests/importing/test_match.py`, `tests/importing/test_store.py`
+Test first: `match.pair` pairs an incoming row whose purpose is a truncated, space-padded prefix of a stored row's
+  purpose with that row. It fails today because the module does not exist.
 Done when:
-- C1 [cmd] `uv run pytest -q tests/banking/test_mapping.py` passes the sign, exact cents, counterparty side,
-  purpose join, value_date fallback, id and balance-type tests
-- C2 [cmd] `uv run pytest -q tests/banking/test_service.py` passes:
-  - the first sync sets the cutover and fetches from it; a later sync starts 7 days before the last success;
-  - a repeated sync adds 0 rows; a CSV row on or after the cutover is skipped;
-  - the balance is upserted as of today; an API error records the status error and keeps the earlier rows
-- C3 [cmd] `uv run pytest -q tests/test_cli_bank.py tests/web/test_api_bank.py tests/web/test_bank_pages.py -k "sync or api"`
-  passes the D8 output lines and exit codes, Sync now → 303 /settings, and /api/bank (no session id) with 409 and 502
-- C4 [review] mapping and service never read the clock; sqlite appears only in store/service; nothing prints or
-  stores a JWT, key or session id; SPEC's Bank sync bullet states the overlap rule; sonar.css is rebuilt
+- C1 [cmd] `uv run pytest -q tests/importing/test_match.py` passes: prefix in both directions, padded whitespace and
+  case, the one-to-one fallback, identical keys paired by count, and no pairing across amount, date or account
+- C2 [cmd] `uv run pytest -q tests/importing/test_store.py` passes: API then CSV and CSV then API each leave one
+  row; a CSV match fills in purpose, mandate and creditor id; re-running either import and an API refetch add 0;
+  two identical same-day API rows are both stored; the earlier re-import tests still pass
+- C3 [review] match.py is pure; sqlite only in store.py; the migration is additive; other formats import as before;
+  the SPEC bullet ends with the overlap sentence
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N15 daily sync into the import pipeline
+Do: Map Enable Banking booked transactions and the balance to the import dataclasses (pure `banking/mapping.py`)
+  and import them through `importing.store.import_rows` (N07, D9 match and merge). Add `banking/service.sync`; the
+  `sonar bank-sync` command; `POST /bank/sync` and Sync now in `#bank-card` and in the failed banner; `GET /api/bank`
+  and `POST /api/bank/sync`. Rebuild `sonar.css`.
+Context: Mapping (D10), source "Deutsche Bank Girokonto API":
+  - account, a parameter: the service takes the `account` of the latest-booked stored row whose source is
+    `deutsche_bank_giro.NAME` (src/sonar/importing/importers/deutsche_bank_giro.py:39), else the own-side IBAN
+    (`debtor_account` on DBIT, `creditor_account` on CRDT) without spaces;
+  - amount = Decimal(`transaction_amount.amount`) in exact cents, negative for DBIT; counterparty = `creditor.name`
+    for DBIT, `debtor.name` for CRDT; iban from the other side's account; purpose = the `remittance_information`
+    lines joined by a space; value_date falls back to booking_date; entry_reference = `entry_reference`;
+    mandate_ref and creditor_id stay None; raw_row = `json.dumps(tx, sort_keys=True, ensure_ascii=False)`;
+  - balance: type ITAV, else CLBD, else ITBD, else the first listed; as of the sync date, same account.
+  D8 sync: the first sync fetches from today − 90 days, later ones from the last successful sync date − 7 days, to
+  today. It re-applies rules and recurring detection as the upload does (src/sonar/web/pages/import_.py:55-62) and
+  upserts the balance (source 'import') so the day's latest sync wins. It records `last_sync_at`, the status and
+  rows added; a `BankApiError` records status error with its message and keeps earlier rows. The service takes
+  `today`, `now` and the client as parameters. CLI lines: "Bank sync is not configured." (exit 0), "Bank is not
+  connected." (exit 0), "Bank sync: N added, M duplicates, balance 1234.56 on 2026-10-14." (exit 0),
+  "Bank sync failed: <message>" (exit 1).
+  D7: Sync now posts `/bank/sync`, which runs the sync and answers 303 /settings. `GET /api/bank` returns the
+  card's status as JSON without session id or account uid; `POST /api/bank/sync` runs the sync and returns it,
+  409 when not connected, 502 when Enable Banking fails. Fake client: tests/web/fake_bank.py (D14).
+Read: `src/sonar/importing/store.py`, `src/sonar/banking/client.py`, `src/sonar/banking/consent.py`, `src/sonar/banking/store.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/pages/import_.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/api/settings.py`, `src/sonar/__main__.py`, `tests/web/fake_bank.py`
+Write: `src/sonar/banking/mapping.py`, `src/sonar/banking/service.py`, `src/sonar/banking/store.py`, `src/sonar/__main__.py`, `src/sonar/web/pages/bank.py`, `src/sonar/web/api/bank.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/templates/settings.html`, `src/sonar/web/templates/bank_banner.html`, `src/sonar/web/static/sonar.css`, `tests/banking/**`, `tests/web/fake_bank.py`, `tests/web/test_bank_pages.py`, `tests/web/test_bank_banner.py`, `tests/web/test_api_bank.py`, `tests/test_cli_bank.py`
+Test first: `mapping.transactions` turns an anonymized DBIT payload of "12.34" into −1234 cents with the creditor
+  as counterparty and its entry_reference. It fails today because the module does not exist.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/banking/test_mapping.py` passes sign, exact cents, counterparty side, purpose
+  join, value_date fallback, entry_reference, the account fallback and the balance-type order
+- C2 [cmd] `uv run pytest -q tests/banking/test_service.py` passes: the first and later windows; a repeated sync
+  adds 0; an API row matching a stored CSV row adds 0; the balance upsert; an API error recorded with rows kept
+- C3 [cmd] `uv run pytest -q tests/test_cli_bank.py tests/web/test_api_bank.py tests/web/test_bank_pages.py tests/web/test_bank_banner.py`
+  passes the CLI lines and exit codes, Sync now → 303 /settings, Sync now in the failed banner, /api/bank without
+  session id, 409 and 502
+- C4 [review] mapping and service never read the clock; sqlite only in store and service; nothing prints or stores
+  a JWT, key or session id; sonar.css is rebuilt
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N16 rule parity report
+Do: Write a local report, for the owner only, that checks every stored category rule against the API and CSV
+  versions of each overlapping Girokonto booking and proposes rule changes where they disagree (D10 rule parity).
+  Use a scratch script in your session scratchpad, never in the repo. It reads the session from
+  `data/enable-banking-session.json` and the app id and key path from `.env`, and fetches 90 days of booked
+  transactions. It opens `data/sonar.db` read-only (sqlite URI `mode=ro`), never through `sonar.db.connect`, which
+  migrates.
+Context: Map the API rows with `banking.mapping` (N15) and pair them with the stored CSV rows using
+  `importing.match` (N07). Load the rules with `load_stored_taxonomy` (src/sonar/categorization/store.py:66) and
+  categorize both versions of each pair with `categorize` (src/sonar/categorization/rules.py:66-76). The API gives
+  no mandate or creditor id and pads and truncates purposes (D10), so creditor_id, iban and purpose-text rules are
+  the likely misses. The report covers:
+  1. pairs, and how many categorize alike;
+  2. per rule (position, category, condition fields), the pairs where only one version matches, and which
+     condition fails;
+  3. per such rule, a proposed add, edit or remove in the fields of `POST /api/rules` (AGENTS.md Categorization
+     workflow), with its position;
+  4. a re-check with the proposed rule set: every pair categorizes alike, and no stored row changes category;
+  5. API rows with no CSV partner, by category before and after the proposal (counts only).
+  D12: the report may hold real values because `data/` is gitignored. Your reply and any log line hold only counts
+  and field names. Write no rule anywhere: the owner confirms them at N17.
+Read: `src/sonar/banking/mapping.py`, `src/sonar/importing/match.py`, `src/sonar/categorization/rules.py`, `src/sonar/categorization/store.py`, `src/sonar/banking/client.py`
+Write: `data/enable-banking-rule-parity.md`
+Test first: -
+Done when:
+- C1 [cmd] `test -s data/enable-banking-rule-parity.md && git check-ignore -q data/enable-banking-rule-parity.md`
+- C2 [review] the report has the 5 sections with numbers; section 4 shows every pair alike and no stored row
+  changing category, or names each exception; it holds no JWT, private key, session id or code
+- C3 [cmd] `test -z "$(git status --porcelain -- src tests SPEC.md)"`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N17 rule changes
+Do: gate for the owner. The owner reads sections 3-5 of `data/enable-banking-rule-parity.md` and confirms, edits or
+  drops each proposed rule change. The orchestrator then applies the confirmed ones in the main session through the
+  AGENTS.md Categorization workflow: the running app's `/api/rules` endpoints, with
+  `Authorization: Bearer $SONAR_API_TOKEN` when sign-in is on, on each instance the owner names. It stops on any
+  4xx. No tracked file changes, and the log holds only counts.
+Done when:
+- C1 [human] the owner confirms the list of rule changes, which may be empty
+- C2 [smoke] `curl -s http://127.0.0.1:8000/api/rules` (or the owner's named instance) lists every confirmed change,
+  and `GET /api/uncategorized` counts no more rows than before
+- C3 [smoke] `git status --porcelain -- src tests SPEC.md AGENTS.md` prints nothing
 
 ## N08 systemd timer and Terraform install
 Do: Install a daily `sonar bank-sync` timer with the existing Terraform install, ship the Enable Banking app id and
@@ -581,3 +674,15 @@ exec: DONE · 1448 passed
 - scratch fetch/compare scripts in session scratchpad, DB opened mode=ro, raw API dump deleted
 check: PASS 3/3
 verify: PASS
+
+### N05 try 1 · 2026-10-14
+human: owner chose strategy C
+- Owner rejected cutover (A) and fingerprint-only (B). Strategy C, match and merge, no cutover, both sources stay usable (CSV is plan B if the API link goes down), no duplicates. Match key: same account, booking date, exact amount, normalized counterparty; purpose compared after collapsing every whitespace run (\s+) to one space and lowercasing, the shorter text must be a prefix of the longer (API texts are padded and truncated); fallback: one-to-one on that day by the key alone; several identical keys paired by count. Matched row keeps first-stored data, stores entry_reference; migration adds the column. Whitespace normalization applies to both sources; owner asks whether it works: the report shows it fixes 391 of 395 pairs, the other 4 are truncation, so the prefix rule is needed. Owner wants every category rule to work on both CSV and API rows: parity test over the overlapping rows, and a list of rule changes (purpose-text, iban, and the three creditor_id rules) proposed for owner confirmation through the Categorization workflow, never written to tracked files. CSV rows matched to API-stored rows enrich them with the fuller purpose, mandate and creditor id. D10: id field entry_reference; the account string reuses the stored Girokonto CSV account string; no mandate or creditor id from the API; balance type ITAV, else CLBD, else ITBD, else first listed.
+
+### N05 replan 1 · 2026-10-14
+plan: REPLANNED +N15,N16,N17
+- cause: owner chose strategy C (match and merge) over A and B at gate N05, with the D10 details and rule parity
+- D9 and D10 rewritten for C: match key, prefix purpose rule, one-to-one and count fallback, entry_reference and merged columns, CSV enrichment, account rule, ITAV first; D15 now 17 nodes
+- N05 brief now closes the answered gate on owner agreement with the Decisions and briefs
+- N07 is now the pure matcher, migration and shared import_rows path; new N15 holds the mapping, sync service, CLI, routes and API (deps N07,N14)
+- new N16 rule parity report on real data in data/ (deps N15) and gate N17 for owner-confirmed rule changes via the Categorization workflow; N09 deps N15, N10 deps N08,N09,N17

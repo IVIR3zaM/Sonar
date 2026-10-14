@@ -14,11 +14,13 @@ import uvicorn
 from sonar.auth import store as auth_store
 from sonar.auth.emails import normalize_email
 from sonar.auth.settings import AuthSettings, auth_settings
+from sonar.banking.client import EnableBankingClient, default_http
+from sonar.banking.settings import BankSettings, bank_settings, read_private_key
 from sonar.categorization.rules import load_taxonomy
 from sonar.categorization.store import reapply_rules, replace_taxonomy, uncategorized_count
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.recurring.store import sync_detected
-from sonar.web.app import create_app
+from sonar.web.app import STATIC_DIR, create_app
 
 
 def main() -> None:
@@ -55,8 +57,10 @@ def main() -> None:
 
 
 def serve() -> None:
-    """Run the web app; a partly configured Google sign-in refuses to start (SPEC §13 Sign-in)."""
-    app = create_app(_default_db_path(), auth=_auth_settings())
+    """Run the web app; a partly configured sign-in or bank sync refuses to start (SPEC §13)."""
+    auth = _auth_settings()
+    bank, bank_client = _bank()
+    app = create_app(_default_db_path(), auth=auth, bank=bank, bank_client=bank_client)
     uvicorn.run(
         app,
         host="127.0.0.1",
@@ -74,6 +78,20 @@ def _auth_settings() -> AuthSettings | None:
     except ValueError as error:
         print(error)
         raise SystemExit(1) from None
+
+
+def _bank() -> tuple[BankSettings | None, EnableBankingClient | None]:
+    """The bank settings and a client for them; (None, None) when bank sync is off."""
+    try:
+        bank = bank_settings(os.environ)
+        if bank is None:
+            return None, None
+        private_key = read_private_key(bank.key_path, STATIC_DIR)
+    except ValueError as error:
+        print(error)
+        raise SystemExit(1) from None
+    now = lambda: datetime.now(UTC)  # noqa: E731
+    return bank, EnableBankingClient(bank.app_id, private_key, default_http(), now)
 
 
 def _default_db_path() -> Path:

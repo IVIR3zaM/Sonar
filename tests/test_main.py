@@ -6,6 +6,8 @@ import pytest
 from fastapi import FastAPI
 
 from sonar.auth.settings import AUTH_ENV_VARS, AuthSettings
+from sonar.banking.settings import BANK_ENV_VARS, BankSettings
+from sonar.web.app import STATIC_DIR
 
 FULL_AUTH_ENV = {
     "SONAR_GOOGLE_CLIENT_ID": "client-id",
@@ -18,7 +20,7 @@ FULL_AUTH_ENV = {
 @pytest.fixture(autouse=True)
 def no_server_env(monkeypatch):
     """The developer's own shell must not turn sign-in on or move the port in these tests."""
-    for name in (*AUTH_ENV_VARS, "SONAR_API_TOKEN", "SONAR_PORT"):
+    for name in (*AUTH_ENV_VARS, *BANK_ENV_VARS, "SONAR_API_TOKEN", "SONAR_PORT"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -56,7 +58,9 @@ def test_server_db_path_is_sonar_db_path_when_set(monkeypatch, tmp_path):
 
         main()
 
-    mock_create_app.assert_called_once_with(tmp_path / "env.db", auth=None)
+    mock_create_app.assert_called_once_with(
+        tmp_path / "env.db", auth=None, bank=None, bank_client=None
+    )
     assert mock_uvicorn.run.call_args.args == (mock_create_app.return_value,)
     assert mock_uvicorn.run.call_args.kwargs == {
         "host": "127.0.0.1",
@@ -76,7 +80,9 @@ def test_server_db_path_defaults_to_data_sonar_db(monkeypatch):
 
         main()
 
-    mock_create_app.assert_called_once_with(Path("data/sonar.db"), auth=None)
+    mock_create_app.assert_called_once_with(
+        Path("data/sonar.db"), auth=None, bank=None, bank_client=None
+    )
 
 
 def _run_server(monkeypatch, env: dict[str, str]):
@@ -154,3 +160,55 @@ def test_full_auth_env_with_a_token_passes_the_token_to_the_app(monkeypatch):
     mock_create_app, _ = _run_server(monkeypatch, {**FULL_AUTH_ENV, "SONAR_API_TOKEN": "api-token"})
 
     assert mock_create_app.call_args.kwargs["auth"].api_token == "api-token"
+
+
+def test_bank_env_off_passes_no_bank_to_the_app(monkeypatch):
+    mock_create_app, _ = _run_server(monkeypatch, {})
+
+    assert mock_create_app.call_args.kwargs["bank"] is None
+    assert mock_create_app.call_args.kwargs["bank_client"] is None
+
+
+def test_full_bank_env_passes_settings_and_a_client_to_the_app(monkeypatch, tmp_path):
+    key_path = tmp_path / "bank.pem"
+    env = {
+        "SONAR_ENABLE_BANKING_APP_ID": "app-id",
+        "SONAR_ENABLE_BANKING_KEY_PATH": str(key_path),
+    }
+    with (
+        patch("sonar.__main__.read_private_key", return_value=b"pem") as read_key,
+        patch("sonar.__main__.EnableBankingClient") as client_class,
+    ):
+        mock_create_app, _ = _run_server(monkeypatch, env)
+
+    read_key.assert_called_once_with(key_path, STATIC_DIR)
+    assert mock_create_app.call_args.kwargs["bank"] == BankSettings(
+        app_id="app-id", key_path=key_path, redirect_url="http://127.0.0.1:8000/bank/callback"
+    )
+    assert mock_create_app.call_args.kwargs["bank_client"] is client_class.return_value
+
+
+def test_partial_bank_env_refuses_to_start(monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        _run_server(monkeypatch, {"SONAR_ENABLE_BANKING_APP_ID": "app-id"})
+
+    assert exit_info.value.code == 1
+    assert "SONAR_ENABLE_BANKING_KEY_PATH" in capsys.readouterr().out
+
+
+def test_bank_key_in_the_served_static_files_refuses_to_start(monkeypatch, capsys):
+    env = {
+        "SONAR_ENABLE_BANKING_APP_ID": "app-id",
+        "SONAR_ENABLE_BANKING_KEY_PATH": str(STATIC_DIR / "sonar.css"),
+    }
+    monkeypatch.setattr("sys.argv", ["sonar"])
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    with patch("sonar.__main__.uvicorn") as mock_uvicorn, pytest.raises(SystemExit) as exit_info:
+        from sonar.__main__ import main
+
+        main()
+
+    assert exit_info.value.code == 1
+    mock_uvicorn.run.assert_not_called()
+    assert "static files" in capsys.readouterr().out

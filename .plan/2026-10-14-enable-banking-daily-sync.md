@@ -54,7 +54,7 @@ Definition of done: verify passes; the visual gate passes for the Settings card 
 | N10 | owner live check on prod | gate | N08,N09 | -/- | 0 | 0 | TODO | |
 | N11 | plan acceptance | check | N10 | -/sonnet | 0 | 0 | TODO | |
 | N12 | Enable Banking client | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
-| N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 0 | 0 | TODO | |
+| N13 | Connect flow and Settings card | exec | N06 | sonnet/opus | 1 | 0 | DONE | |
 | N14 | bank banner | exec | N13 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
@@ -515,4 +515,11 @@ exec: DONE · 1407 passed
 - Added 0012_bank_connection.sql, banking/consent.py (pure rules) and banking/store.py
 - Banner 'failed' uses today as date if last_sync_at is missing; naive consent end raises ValueError
 check: PASS 3/3
+verify: PASS
+
+### N13 try 1 · 2026-10-14
+exec: DONE · 1429 passed
+- bank routes in pages/bank.py, render_settings_page lifted, bank card in settings.html, serve() wires bank settings and client
+- sonar.css rebuilt, no class change; test_main create_app asserts now pass bank=None, bank_client=None
+check: PASS 4/4
 verify: PASS

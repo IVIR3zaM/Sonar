@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -17,6 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from sonar.auth.settings import AuthSettings
+from sonar.banking.settings import BankSettings
 from sonar.categorization.groups import LABELS as GROUP_LABELS
 from sonar.categorization.groups import TRANSFER
 from sonar.categorization.service import CategoryNotFound, RuleNotFound, reapply_stored_taxonomy
@@ -27,6 +28,7 @@ from sonar.web import access, charts
 from sonar.web.api import build_api_router
 from sonar.web.display import cadence, days_until, display_date, eur
 from sonar.web.pages import auth as auth_pages
+from sonar.web.pages import bank as bank_pages
 from sonar.web.pages import (
     categories,
     dashboard,
@@ -84,6 +86,9 @@ def create_app(
     today: Callable[[], date] = date.today,
     auth: AuthSettings | None = None,
     google: auth_pages.GoogleClient | None = None,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    bank: BankSettings | None = None,
+    bank_client: bank_pages.BankClient | None = None,
 ) -> FastAPI:
     """Build the Sonar FastAPI app, migrating `db_path` on startup.
 
@@ -96,6 +101,9 @@ def create_app(
     With `auth`, every page and API call needs a Google sign-in (SPEC §13
     Sign-in); `google` defaults to authlib's client, tests pass a fake.
     Without it no session or sign-in route exists at all.
+
+    With `bank` (and its `bank_client`), the bank connect routes and the Settings
+    card exist (SPEC §13 Bank sync); without it they do not. `now` is the UTC clock.
     """
 
     @asynccontextmanager
@@ -109,6 +117,8 @@ def create_app(
         yield
 
     app = FastAPI(lifespan=lifespan)
+    bank_on = bank is not None and bank_client is not None
+    app.state.bank_enabled = bank_on
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(build_api_router(db_path, today))
     app.include_router(dashboard.build_router(db_path, today, templates))
@@ -121,6 +131,10 @@ def create_app(
     app.include_router(payoff.build_router(db_path, today, templates))
     app.include_router(settings.build_router(db_path, today, templates))
     app.include_router(categories.build_router(db_path, today, templates))
+    if bank_on:
+        app.include_router(
+            bank_pages.build_router(db_path, today, now, bank, bank_client, templates)
+        )
     if auth is not None:
         google = google or auth_pages.google_client(auth)
         app.include_router(auth_pages.build_router(auth, google, templates))

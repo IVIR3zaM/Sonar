@@ -42,7 +42,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | preflight | check | - | -/- | 0 | 0 | TODO | |
+| N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | SPEC amendment and settled amount | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N03 | paid window and remaining advances | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
 | N04 | seasonal projection and suggested advance | exec | N03 | sonnet/opus | 0 | 0 | TODO | |
@@ -323,3 +323,6 @@ Done when:
   /energy/meters/<id> after `POST /api/energy/meters` creates one
 
 ## Log
+
+### N01 try 1 · 2026-10-15
+check: PASS 4/4

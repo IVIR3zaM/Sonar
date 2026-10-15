@@ -1,5 +1,5 @@
 # Energy monitor
-status: RUNNING
+status: DONE
 created: 2026-10-12 · updated: 2026-10-15
 goal: Per gas or electricity meter, Sonar shows the cost so far, the advances paid, the projected settlement and a suggested advance, from hand-entered readings, meter exchanges and billing periods, on an Energy page, a dashboard card and in the forecast.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -50,7 +50,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N11 | -/- | 0 | 1 | DONE | |
-| N10 | plan acceptance | check | N12 | -/sonnet | 0 | 1 | TODO | |
+| N10 | plan acceptance | check | N12 | -/sonnet | 1 | 1 | DONE | |
 | N11 | energy card layout | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
 | N12 | API meter shape | exec | N09 | haiku/haiku | 1 | 0 | DONE | |
 
@@ -438,3 +438,7 @@ exec: DONE · 1702 passed
 - API meter item drops month_figures; test asserts exact key set
 - MeterView.month_figures kept for the Energy page chart and service tests
 check: PASS 3/3
+
+### N10 try 1 · 2026-10-15
+check: PASS 3/3
+verify: PASS

@@ -52,7 +52,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
-| N11 | SPEC Energy billing cycle bullet | exec | N01 | sonnet/sonnet | 1 | 0 | VERIFYING | |
+| N11 | SPEC Energy billing cycle bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -397,3 +397,6 @@ check: PASS 2/2
 
 ### N02 try 1 · 2026-10-15
 check: PASS 4/4
+
+### N11 try 1 · 2026-10-15
+verify: PASS

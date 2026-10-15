@@ -23,7 +23,8 @@ from sonar.energy.usage import check_series
 
 _PERIOD_SELECT = """
     SELECT p.id, p.start_date, p.settlement_date, p.base_fee_cents, p.unit_price_micro,
-           p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_kwh, c.name
+           p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_kwh, c.name,
+           p.settled_cents
     FROM energy_periods p LEFT JOIN categories c ON c.id = p.category_id
 """
 
@@ -188,13 +189,23 @@ def add_period(conn: sqlite3.Connection, meter_id: int, period: BillingPeriod) -
             """
             INSERT INTO energy_periods (
                 meter_id, start_date, settlement_date, base_fee_cents, unit_price_micro,
-                state_factor_e4, calorific_value_e4, advance_cents, expected_kwh, category_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                state_factor_e4, calorific_value_e4, advance_cents, expected_kwh, category_id,
+                settled_cents
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (meter_id, *_period_values(period), category_id),
+            (meter_id, *_period_values(period), category_id, period.settled_cents),
         )
         _check_periods(conn, meter_id)
     return cursor.lastrowid
+
+
+def period_settled_cents(conn: sqlite3.Connection, period_id: int) -> int | None:
+    row = conn.execute(
+        "SELECT settled_cents FROM energy_periods WHERE id = ?", (period_id,)
+    ).fetchone()
+    if row is None:
+        raise EnergyNotFound(period_id)
+    return row[0]
 
 
 def update_period(conn: sqlite3.Connection, period_id: int, period: BillingPeriod) -> None:
@@ -206,10 +217,10 @@ def update_period(conn: sqlite3.Connection, period_id: int, period: BillingPerio
             UPDATE energy_periods SET
                 start_date = ?, settlement_date = ?, base_fee_cents = ?, unit_price_micro = ?,
                 state_factor_e4 = ?, calorific_value_e4 = ?, advance_cents = ?,
-                expected_kwh = ?, category_id = ?
+                expected_kwh = ?, category_id = ?, settled_cents = ?
             WHERE id = ?
             """,
-            (*_period_values(period), category_id, period_id),
+            (*_period_values(period), category_id, period.settled_cents, period_id),
         )
         _check_periods(conn, meter_id)
 
@@ -322,6 +333,7 @@ def _periods(conn: sqlite3.Connection, meter_id: int) -> list[Stored[BillingPeri
                 advance_cents=advance,
                 expected_kwh=expected,
                 category=category,
+                settled_cents=settled,
             ),
         )
         for (
@@ -335,5 +347,6 @@ def _periods(conn: sqlite3.Connection, meter_id: int) -> list[Stored[BillingPeri
             advance,
             expected,
             category,
+            settled,
         ) in rows
     ]

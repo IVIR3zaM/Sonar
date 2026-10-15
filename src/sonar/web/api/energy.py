@@ -70,6 +70,7 @@ class PeriodIn(_StrictModel):
     advance_cents: StrictInt
     expected_kwh: StrictInt
     category: StrictStr | None = None
+    settled_cents: StrictInt | None = None
 
 
 def _day(text: str, field: str) -> date:
@@ -98,6 +99,7 @@ def _period(body: PeriodIn) -> BillingPeriod:
         advance_cents=body.advance_cents,
         expected_kwh=body.expected_kwh,
         category=body.category,
+        settled_cents=body.settled_cents,
     )
 
 

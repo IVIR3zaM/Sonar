@@ -59,6 +59,7 @@ class BillingPeriod:
     advance_cents: int  # per month
     expected_kwh: int  # per year
     category: str | None
+    settled_cents: int | None = None  # signed as on the bill; None = not settled
 
 
 def check_period(period: BillingPeriod, kind: str) -> None:

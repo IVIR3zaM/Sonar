@@ -137,6 +137,18 @@ def test_periods_round_trip_and_read_the_category_by_name(conn):
     assert list_periods(conn, meter) == []
 
 
+@pytest.mark.parametrize("settled", [-3169, 4200, None])
+def test_settled_amount_round_trips_through_add_and_update(conn, settled):
+    meter = _gas(conn)
+
+    period = add_period(conn, meter, _period(settled_cents=settled))
+    assert list_periods(conn, meter)[0].item.settled_cents == settled
+    update_period(conn, period, _period(settled_cents=-27_013))
+    assert list_periods(conn, meter)[0].item.settled_cents == -27_013
+    update_period(conn, period, _period(settled_cents=settled))
+    assert list_periods(conn, meter)[0].item.settled_cents == settled
+
+
 def test_a_deleted_category_reads_back_as_none(conn):
     meter = _gas(conn)
     conn.execute("INSERT INTO categories (name, type) VALUES ('Gas bill', 'fixed')")

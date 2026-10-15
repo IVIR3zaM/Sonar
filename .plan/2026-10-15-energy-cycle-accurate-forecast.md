@@ -43,8 +43,8 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | SPEC amendment and settled amount | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
-| N03 | paid window and remaining advances | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
+| N02 | settled amount | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
+| N03 | paid window and remaining advances | exec | N02,N11 | sonnet/opus | 0 | 0 | TODO | |
 | N04 | seasonal projection and suggested advance | exec | N03 | sonnet/opus | 0 | 0 | TODO | |
 | N05 | meter page | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -52,6 +52,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
+| N11 | SPEC Energy billing cycle bullet | exec | N01 | sonnet/sonnet | 1 | 0 | VERIFYING | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -64,34 +65,79 @@ Done when:
 - C3 [cmd] `ls src/sonar/migrations/0014_*.sql && test -z "$(ls src/sonar/migrations/0015_* 2>/dev/null)"`
 - C4 [cmd] `test -w .git/index && git status --porcelain >/dev/null` exits 0
 
-## N02 SPEC amendment and settled amount
-Do: Add the SPEC §13 "Energy billing cycle" bullet after the Energy bullet (SPEC.md:261), stating D2-D9 and
-  D12-D15 in plain words (the meter page, the cycle chart and the remembered toggles amend the Energy
-  bullet's Page and Chart sentences). Then store the settled amount: a nullable signed `settled_cents` on
-  `BillingPeriod` (last field, default None), migration `0015_energy_settled.sql` adding the column, store
-  read and write, and the JSON API key in POST/PUT and every period item.
-Context: D1 layout, D3 settled amount (signed as on the bill; null = none; API key `settled_cents`, int or
-  null, default null; a non-int is a 422 like the other keys). Model at `src/sonar/energy/model.py:52`;
-  store select `src/sonar/energy/store.py:26`, add/update `store.py:183-215`; API `PeriodIn`
-  `src/sonar/web/api/energy.py:63`, `_period` `:90`, `_period_item` `:122`; migration test pattern
-  `tests/migrations/test_0014.py`. Existing periods read back with `settled_cents` None. No page change here.
-Read: `SPEC.md` (§13 Energy bullet only), `src/sonar/energy/model.py`, `src/sonar/energy/store.py`,
-  `src/sonar/web/api/energy.py`, `src/sonar/migrations/0014_energy.sql`, `tests/migrations/test_0014.py`
-Write: `SPEC.md`, `src/sonar/energy/model.py`, `src/sonar/energy/store.py`, `src/sonar/web/api/energy.py`,
-  `src/sonar/migrations/0015_energy_settled.sql`, `tests/migrations/test_0015.py`,
-  `tests/energy/test_store.py`, `tests/web/test_api_energy.py`
-Test first: a period added with `settled_cents=-3169` reads back with -3169 from `list_periods`; fails
-  because the field does not exist.
+## N02 settled amount
+Do: Store a period's settled amount: a nullable signed `settled_cents` on `BillingPeriod` (last field,
+  default None), migration `0015_energy_settled.sql` adding the column, store read and write, and the JSON
+  API key in POST/PUT and every period item. The Energy page has no settled field yet (N06 adds it), so its
+  period edit must keep the stored `settled_cents` instead of writing None. SPEC.md is not touched here.
+Context: the working tree already holds this node's model, store, API, migration and test changes
+  (uncommitted, passing): check them against this brief, keep what fits, finish the rest. Settled amount
+  (D3): signed as on the bill, negative back-payment, positive refund; null = none; API key
+  `settled_cents`, int or null, default null, a non-int is a 422 like the other keys; existing periods read
+  back None. Model `src/sonar/energy/model.py:52`; store select `src/sonar/energy/store.py:24`, add/update
+  `store.py:184-217`, `_periods` `:310`; API `PeriodIn` `src/sonar/web/api/energy.py:63`, `_period` `:91`,
+  `_period_item`. Page edit route `src/sonar/web/pages/energy.py:382-389` builds the period from the form
+  (`_period_from` `:107`, no settled field) and calls `update_period`: inside the same write, read the
+  stored period's `settled_cents` by period id (owner lookup `store.py:239`, `list_periods` `:179`) and
+  carry it over; add-period and "Start new period" store None. No template change.
+Read: `src/sonar/energy/model.py`, `src/sonar/energy/store.py`, `src/sonar/web/api/energy.py`,
+  `src/sonar/web/pages/energy.py:100-160,370-395`, `tests/migrations/test_0014.py`,
+  `tests/web/test_energy_page.py:446-476`
+Write: `src/sonar/energy/model.py`, `src/sonar/energy/store.py`, `src/sonar/web/api/energy.py`,
+  `src/sonar/web/pages/energy.py`, `src/sonar/migrations/0015_energy_settled.sql`,
+  `tests/migrations/test_0015.py`, `tests/energy/test_store.py`, `tests/web/test_api_energy.py`,
+  `tests/web/test_energy_page.py`
+Test first: a period stored with `settled_cents=-3169`, edited through `POST /energy/periods/<id>/edit`,
+  still reads back -3169 from `list_periods`; fails because the page writes None.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/migrations/test_0015.py tests/energy/test_store.py` passes: a period stored
   before 0015 survives with `settled_cents` None; add and update round-trip negative, positive and None
 - C2 [cmd] `uv run pytest -q tests/web/test_api_energy.py -k settled` passes: POST and PUT with
   `settled_cents` -27013 answer it in the item and in `GET /api/energy`; omitted reads null; a string is 422
-- C3 [review] SPEC.md has the new §13 bullet right after the Energy bullet, covering the grace window and
-  paid since, the settled amount and its exclusion, remaining advances, advance count, seasonal projection,
-  worst case, suggested advance, the meter page split, the cycle chart (D12, D15) and the remembered
-  toggles replacing "done without script", with no real names or IBANs
+- C3 [cmd] `uv run pytest -q tests/web/test_energy_page.py -k settled` passes: a page edit keeps a stored
+  -3169 and a stored None; a period added on the page stores None
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N11 SPEC Energy billing cycle bullet
+Do: Add a SPEC §13 bullet right after the Energy bullet (`SPEC.md:261`), headed "Energy billing cycle (§13
+  Energy; overrides its paid so far, remaining advances, projection, worst case, suggested advance, chart and
+  page rules)", in its neighbours' style, stating each rule below in plain words. SPEC only.
+Context ("previous period" = the meter's period with the latest settlement date before the current start):
+  - Paid window: from paid since = max(start, previous settlement + 15 days), else start, to min(today,
+    settlement + 14 days); category debits in it count, credits never; card: "paid since <date>".
+  - Settled amount: optional, signed as on the bill (negative back-payment, positive refund); form "Settled
+    amount (€)", API `settled_cents` int or null; empty in "Start new period"; shown in the period list; the
+    card shows "Last settlement: back-payment|refund X on <previous settlement date>" when the previous period
+    has one; no forecast effect. A category transaction equal to it, booked after that settlement, never counts.
+  - Advance count = max(1, round half up(base-fee months of the period × 11 ÷ 12)). Remaining advances =
+    advance × min(occurrences of the advance day (day of the latest counted debit, else of paid since) after
+    that debit (else from paid since) through settlement + 14 days, max(0, advance count − counted debits)).
+  - Seasonal projection in meter units: ratio month = latest calendar month inside the current period fully
+    measured before as_of; ratio = its units ÷ the same month a year earlier (fully measured, above 0, else
+    none); each remaining day d through settlement uses prev(d) × (1 + ratio) ÷ 2, prev(d) = usage on the same
+    day last year, converted by the current period's factors, priced by its price and per-day base fee; no
+    ratio or no prev(d): expected kWh ÷ 365. Example: 40 this Oct, 50 last Oct, 100 last Nov → 90 this Nov.
+  - Worst case per remaining day = max(seasonal, expected ÷ 365, last year's kWh that day when known); the
+    current daily rate no longer counts. Suggested advance = the whole period's projected cost ÷ advance
+    count, rounded up to whole euros; none only without a projection.
+  - Meter page `/energy/meters/{id}` (unknown 404, nav Energy current): readings table with edit and delete,
+    exchanges and periods with forms, Start new period; its forms redirect (303) to it and re-render 400 on
+    it. `/energy` keeps per meter the stats, chart, latest reading, add-reading form, a "History, periods
+    and exchanges" link and delete meter; this replaces the Energy bullet's Page sentence where they differ.
+  - Chart: current plus previous cycle, at most 24 months, oldest previous dropped; a month belongs to the
+    period in force on its 1st; no current period: latest and the one before, nothing projected; projected
+    months = current months after the last measured one through the settlement month (measured days before
+    as_of plus seasonal days); trend on actual months only; previous muted, current solid, projected outlined
+    or hatched with a dashed cost line, a legend entry each; under 640px the current cycle only.
+  - Toggles (replaces the Chart sentence's "done without script"): one small inline script on /energy keeps
+    each chart's Show values and Show trend in localStorage per chart and toggle, in try/catch; off by default.
+Read: `SPEC.md:225-262` (§13 head and the Energy bullet only)
+Write: `SPEC.md`
+Done when:
+- C1 [cmd] `grep -A1 "^- Energy (" SPEC.md | tail -1 | grep -q "^- Energy billing cycle ("` exits 0
+- C2 [review] every rule above is in, with its numbers (15/14 days, 11/12, the 90, 24 months, 640px), and no
+  person, supplier, IBAN or real amount is named
+- C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 paid window and remaining advances
 Do: In `energy/settlement.py`, count paid so far over the period's paid window with the previous period's
@@ -325,4 +371,29 @@ Done when:
 ## Log
 
 ### N01 try 1 · 2026-10-15
+check: PASS 4/4
+
+### N02 try 1 · 2026-10-15
+exec: BLOCKED · brief gives no text for D2-D9 and D12-D15 (grace window length, advance count, seasonal projection rules), so the SPEC section 13 bullet cannot be written without guessing; settled_cents code, migration 0015 and tests are done and pass
+
+### N02 replan 1 · 2026-10-15
+plan: REPLANNED +N11
+- cause: one brief held both the SPEC bullet and the code, and had no room to restate D2-D9 and D12-D15, so the executor could not write the bullet; the page edit dropped settled_cents with pages/energy.py outside Write
+- N02 is now the settled amount only: reuse the uncommitted model, store, API, migration and tests; pages/energy.py edit keeps the stored settled_cents (C3); SPEC.md left out
+- new N11 (deps N01, Write SPEC.md only) writes the Energy billing cycle bullet with every rule restated; N03 now depends on N02 and N11
+
+### N11 try 1 · 2026-10-15
+exec: DONE · 1716 passed
+- Added SPEC §13 Energy billing cycle bullet after the Energy bullet
+- Wrote the equals-settled-amount rule as an amount match
+
+### N02 try 1 · 2026-10-15
+exec: DONE · 1719 passed
+- settled_cents on BillingPeriod, migration 0015, store/API round-trip, tests
+- page edit carries over stored settled_cents via new store.period_settled_cents; add stores None
+
+### N11 try 1 · 2026-10-15
+check: PASS 2/2
+
+### N02 try 1 · 2026-10-15
 check: PASS 4/4

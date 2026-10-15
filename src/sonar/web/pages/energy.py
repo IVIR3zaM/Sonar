@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -29,6 +29,7 @@ from sonar.energy.store import (
     delete_meter,
     delete_period,
     delete_reading,
+    period_settled_cents,
     update_exchange,
     update_period,
     update_reading,
@@ -385,7 +386,10 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             f"period-{id}-edit",
             PERIOD_FIELDS,
             _period_from,
-            lambda conn, period: update_period(conn, id, period),
+            # The page has no settled field yet, so an edit keeps the stored amount.
+            lambda conn, period: update_period(
+                conn, id, replace(period, settled_cents=period_settled_cents(conn, id))
+            ),
         )
 
     @router.post("/energy/periods/{id}/delete")

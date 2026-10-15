@@ -33,6 +33,7 @@ PERIOD = {
     "advance_cents": 9_000,
     "expected_kwh": 15_000,
     "category": "Utilities",
+    "settled_cents": None,
 }
 
 
@@ -208,6 +209,36 @@ def test_a_reading_on_an_exchange_date_is_a_400_naming_date(client):
 
     assert response.status_code == 400
     assert response.json()["field"] == "date"
+
+
+def test_settled_cents_round_trips_in_post_put_and_get(client):
+    meter_id = _gas(client)
+
+    created = client.post(
+        f"/api/energy/meters/{meter_id}/periods", json={**PERIOD, "settled_cents": -27_013}
+    )
+    period_id = created.json()["id"]
+    listed = client.get("/api/energy").json()["meters"][0]["periods"][0]
+    updated = client.put(f"/api/energy/periods/{period_id}", json={**PERIOD, "settled_cents": -100})
+    omitted = client.put(
+        f"/api/energy/periods/{period_id}",
+        json={k: v for k, v in PERIOD.items() if k != "settled_cents"},
+    )
+
+    assert created.json()["settled_cents"] == -27_013
+    assert listed["settled_cents"] == -27_013
+    assert updated.json()["settled_cents"] == -100
+    assert omitted.json()["settled_cents"] is None
+
+
+def test_a_string_settled_cents_is_a_422(client):
+    meter_id = _gas(client)
+
+    response = client.post(
+        f"/api/energy/meters/{meter_id}/periods", json={**PERIOD, "settled_cents": "12"}
+    )
+
+    assert response.status_code == 422
 
 
 def test_an_overlapping_period_is_a_400_naming_start_date(client):

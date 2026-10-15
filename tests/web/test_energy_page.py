@@ -474,6 +474,26 @@ def test_add_edit_and_delete_a_period(client, db_path):
     assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
 
 
+@pytest.mark.parametrize("settled", [-3_169, None])
+def test_a_page_edit_keeps_the_stored_settled_amount(client, db_path, settled):
+    meter = _electricity_meter(db_path)
+    period = _store(db_path, lambda conn: add_period(conn, meter, _period(settled_cents=settled)))
+
+    edited = client.post(f"/energy/periods/{period}/edit", data={**NEW_PERIOD, "unit_price": "32"})
+
+    assert edited.status_code == 303
+    after = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
+    assert (after.unit_price_micro, after.settled_cents) == (320_000, settled)
+
+
+def test_a_period_added_on_the_page_has_no_settled_amount(client, db_path):
+    meter = _electricity_meter(db_path)
+
+    client.post(f"/energy/meters/{meter}/periods", data=NEW_PERIOD)
+
+    assert _store(db_path, lambda conn: list_periods(conn, meter))[0].item.settled_cents is None
+
+
 def test_a_gas_period_takes_the_state_factor_and_calorific_value(client, db_path):
     meter = _gas_meter(db_path)
 

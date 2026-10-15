@@ -1,4 +1,4 @@
-"""The energy page (SPEC §13 Energy): meters, readings, exchanges and billing periods."""
+"""The energy pages (SPEC §13 Energy): the meters overview and one meter's history."""
 
 from __future__ import annotations
 
@@ -29,6 +29,9 @@ from sonar.energy.store import (
     delete_meter,
     delete_period,
     delete_reading,
+    meter_of_exchange,
+    meter_of_period,
+    meter_of_reading,
     period_settled_cents,
     update_exchange,
     update_period,
@@ -228,17 +231,29 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
     ) -> HTMLResponse:
         # Shared by the GET route and every POST error path, so a 400 re-render
         # shows the page a fresh GET would, plus the one form that failed.
-        conn = connect(db_path)
-        try:
-            views = load_energy(conn, today())
-            categories = [category.name for category in list_categories(conn)]
-        finally:
-            conn.close()
+        views, _ = _load()
         return templates.TemplateResponse(
             request,
             "energy.html",
             {
                 "cards": [_card(view, today()) for view in views],
+                "error": error,
+            },
+            status_code=status_code,
+        )
+
+    def _render_meter_page(
+        request: Request, meter_id: int, status_code: int = 200, error: dict | None = None
+    ) -> HTMLResponse:
+        views, categories = _load()
+        view = next((view for view in views if view.id == meter_id), None)
+        if view is None:
+            return _not_found(request)
+        return templates.TemplateResponse(
+            request,
+            "energy_meter.html",
+            {
+                "meter_card": _card(view, today()),
                 "category_options": [("", "None"), *((name, name) for name in categories)],
                 "error": error,
                 "values": {
@@ -250,17 +265,32 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             status_code=status_code,
         )
 
+    def _load() -> tuple[list[MeterView], list[str]]:
+        conn = connect(db_path)
+        try:
+            return load_energy(conn, today()), [c.name for c in list_categories(conn)]
+        finally:
+            conn.close()
+
     def _not_found(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(
             request, "error.html", {"message": "No such energy record"}, status_code=404
         )
 
-    def _run(action: Callable[[sqlite3.Connection], object]) -> None:
+    def _run[T](action: Callable[[sqlite3.Connection], T]) -> T:
         conn = connect(db_path)
         try:
-            action(conn)
+            return action(conn)
         finally:
             conn.close()
+
+    def _back_to(meter_id: int | None) -> str:
+        return "/energy" if meter_id is None else f"/energy/meters/{meter_id}"
+
+    def _render_back(request: Request, meter_id: int | None, error: dict) -> HTMLResponse:
+        if meter_id is None:
+            return _render_energy_page(request, status_code=400, error=error)
+        return _render_meter_page(request, meter_id, status_code=400, error=error)
 
     async def _submit(
         request: Request,
@@ -268,23 +298,32 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         field_names: tuple[str, ...],
         build: Callable[[dict[str, str]], object],
         write: Callable[[sqlite3.Connection, object], object],
+        meter_of: Callable[[sqlite3.Connection], int] | None = None,
     ) -> HTMLResponse | RedirectResponse:
-        """Parse, write and redirect; a bad entry re-renders with 400 and `form` open."""
+        """Parse, write and redirect; a bad entry re-renders with 400 and `form` open.
+
+        With `meter_of` the page is that meter's page, otherwise the overview.
+        """
         values = await _form_values(request, field_names)
+        meter_id = None
         try:
+            meter_id = _run(meter_of) if meter_of else None
             item = build(values)
             _run(lambda conn: write(conn, item))
         except EnergyNotFound:
             return _not_found(request)
         except ValueError as error:  # a parse error or a FieldError
             failure = {"form": form, "message": forms.friendly(error), "fields": values}
-            return _render_energy_page(request, status_code=400, error=failure)
-        return RedirectResponse("/energy", status_code=303)
+            return _render_back(request, meter_id, failure)
+        return RedirectResponse(_back_to(meter_id), status_code=303)
 
     def _delete(
-        request: Request, remove: Callable[[sqlite3.Connection], object]
+        request: Request,
+        remove: Callable[[sqlite3.Connection], object],
+        meter_of: Callable[[sqlite3.Connection], int] | None = None,
     ) -> HTMLResponse | RedirectResponse:
         try:
+            meter_id = _run(meter_of) if meter_of else None
             _run(remove)
         except EnergyNotFound:
             return _not_found(request)
@@ -293,11 +332,15 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             return _render_energy_page(
                 request, status_code=400, error={"form": "page", "message": message, "fields": {}}
             )
-        return RedirectResponse("/energy", status_code=303)
+        return RedirectResponse(_back_to(meter_id), status_code=303)
 
     @router.get("/energy", response_class=HTMLResponse)
     async def energy_page(request: Request) -> HTMLResponse:
         return _render_energy_page(request)
+
+    @router.get("/energy/meters/{id}", response_class=HTMLResponse)
+    async def meter_page(request: Request, id: int) -> HTMLResponse:
+        return _render_meter_page(request, id)
 
     # Meters
 
@@ -335,11 +378,16 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             READING_FIELDS,
             _reading_from,
             lambda conn, reading: update_reading(conn, id, reading),
+            meter_of=lambda conn: meter_of_reading(conn, id),
         )
 
     @router.post("/energy/readings/{id}/delete")
     async def delete_reading_route(request: Request, id: int):
-        return _delete(request, lambda conn: delete_reading(conn, id))
+        return _delete(
+            request,
+            lambda conn: delete_reading(conn, id),
+            lambda conn: meter_of_reading(conn, id),
+        )
 
     # Exchanges
 
@@ -351,6 +399,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             EXCHANGE_FIELDS,
             _exchange_from,
             lambda conn, exchange: add_exchange(conn, id, exchange),
+            meter_of=lambda conn: id,
         )
 
     @router.post("/energy/exchanges/{id}/edit")
@@ -361,11 +410,16 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             EXCHANGE_FIELDS,
             _exchange_from,
             lambda conn, exchange: update_exchange(conn, id, exchange),
+            meter_of=lambda conn: meter_of_exchange(conn, id),
         )
 
     @router.post("/energy/exchanges/{id}/delete")
     async def delete_exchange_route(request: Request, id: int):
-        return _delete(request, lambda conn: delete_exchange(conn, id))
+        return _delete(
+            request,
+            lambda conn: delete_exchange(conn, id),
+            lambda conn: meter_of_exchange(conn, id),
+        )
 
     # Billing periods
 
@@ -377,6 +431,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             PERIOD_FIELDS,
             _period_from,
             lambda conn, period: add_period(conn, id, period),
+            meter_of=lambda conn: id,
         )
 
     @router.post("/energy/periods/{id}/edit")
@@ -390,10 +445,15 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             lambda conn, period: update_period(
                 conn, id, replace(period, settled_cents=period_settled_cents(conn, id))
             ),
+            meter_of=lambda conn: meter_of_period(conn, id),
         )
 
     @router.post("/energy/periods/{id}/delete")
     async def delete_period_route(request: Request, id: int):
-        return _delete(request, lambda conn: delete_period(conn, id))
+        return _delete(
+            request,
+            lambda conn: delete_period(conn, id),
+            lambda conn: meter_of_period(conn, id),
+        )
 
     return router

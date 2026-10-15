@@ -1,0 +1,63 @@
+{#-
+  Energy form macros shared by the energy page and the meter page. Each form
+  `key` owns the error `err`, if any: it then shows what was typed instead of
+  its defaults.
+-#}
+{% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
+
+{% macro form_error(err) %}
+{%- if err %}
+<div id="form-error" role="alert" tabindex="-1" class="col-span-2 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ err.message }}</div>
+{%- endif %}
+{% endmacro %}
+
+{#- The form `key` owns the error, if any: it then shows what was typed
+    instead of its defaults, and its drawer opens. #}
+{% macro reading_form(key, action, err, defaults, unit, submit) %}
+{% set v = err.fields if err else defaults %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
+  {{ form_error(err) }}
+  {{ field("date", "Date", type="date", value=v.date, id=key ~ "-date", required=true) }}
+  {{ field("value", "Reading (" ~ unit ~ ")", value=v.value, id=key ~ "-value", required=true, help="Up to 3 decimals") }}
+  <div class="col-span-2">{{ button(submit, size="sm") }}</div>
+</form>
+{% endmacro %}
+
+{% macro exchange_form(key, action, err, defaults, unit, submit) %}
+{% set v = err.fields if err else defaults %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
+  {{ form_error(err) }}
+  <div class="col-span-2">{{ field("date", "Exchange date", type="date", value=v.date, id=key ~ "-date", required=true) }}</div>
+  {{ field("old_final", "Old meter final (" ~ unit ~ ")", value=v.old_final, id=key ~ "-old-final", required=true, help="Up to 3 decimals") }}
+  {{ field("new_start", "New meter start (" ~ unit ~ ")", value=v.new_start, id=key ~ "-new-start", required=true, help="Up to 3 decimals") }}
+  <div class="col-span-2">{{ button(submit, size="sm") }}</div>
+</form>
+{% endmacro %}
+
+{% macro period_form(key, action, err, defaults, kind, categories, submit) %}
+{% set v = err.fields if err else defaults %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
+  {{ form_error(err) }}
+  {{ field("start_date", "Start", type="date", value=v.start_date, id=key ~ "-start-date", required=true) }}
+  {{ field("settlement_date", "Settlement date", type="date", value=v.settlement_date, id=key ~ "-settlement-date", required=true, help="Last day of the period") }}
+  {{ field("base_fee", "Base fee per month (€)", value=v.base_fee, id=key ~ "-base-fee", required=true, help="e.g. 12.50") }}
+  {{ field("unit_price", "Unit price (ct/kWh)", value=v.unit_price, id=key ~ "-unit-price", required=true, help="Up to 4 decimals") }}
+  {% if kind == "gas" %}
+  {{ field("state_factor", "State factor", value=v.state_factor, id=key ~ "-state-factor", required=true, help="Zustandszahl, up to 4 decimals") }}
+  {{ field("calorific_value", "Calorific value (kWh/m³)", value=v.calorific_value, id=key ~ "-calorific-value", required=true, help="Brennwert, up to 4 decimals") }}
+  {% endif %}
+  {{ field("advance", "Advance per month (€)", value=v.advance, id=key ~ "-advance", required=true, help="Abschlag, e.g. 85.00") }}
+  {{ field("expected_kwh", "Expected usage per year (kWh)", type="number", value=v.expected_kwh, id=key ~ "-expected-kwh", required=true, attrs={"min": 0}) }}
+  <div class="col-span-2">{{ field("category", "Category of the advances", value=v.category, id=key ~ "-category", options=categories) }}</div>
+  <div class="col-span-2">{{ button(submit, size="sm") }}</div>
+</form>
+{% endmacro %}
+
+{% macro delete_form(key, action, confirm) %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="mt-2"
+      hx-post="{{ action }}" hx-confirm="{{ confirm }}"
+      hx-target="#main" hx-select="#main" hx-swap="outerHTML">
+  {{ button("Delete", variant="danger", size="sm") }}
+</form>
+{% endmacro %}

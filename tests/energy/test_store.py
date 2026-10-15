@@ -23,6 +23,9 @@ from sonar.energy.store import (
     list_meters,
     list_periods,
     list_readings,
+    meter_of_exchange,
+    meter_of_period,
+    meter_of_reading,
     rename_meter,
     update_exchange,
     update_period,
@@ -279,3 +282,21 @@ def test_electricity_period_rejects_gas_fields(conn):
 
     assert error.value.field == "state_factor_e4"
     assert list_periods(conn, meter) == []
+
+
+def test_the_meter_of_a_reading_exchange_or_period_is_found(conn):
+    first = _gas(conn)
+    second = add_meter(conn, Meter("Power", "electricity"))
+    reading = add_reading(conn, second, Reading(date(2026, 1, 1), 1_000))
+    exchange = add_exchange(conn, second, Exchange(date(2026, 2, 1), 2_000, 0))
+    period = add_period(conn, first, _period())
+
+    assert meter_of_reading(conn, reading) == second
+    assert meter_of_exchange(conn, exchange) == second
+    assert meter_of_period(conn, period) == first
+
+
+def test_the_meter_of_a_missing_record_is_not_found(conn):
+    for lookup in (meter_of_reading, meter_of_exchange, meter_of_period):
+        with pytest.raises(EnergyNotFound):
+            lookup(conn, 99)

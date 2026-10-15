@@ -9,14 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.db import connect
-from sonar.energy.model import BillingPeriod, Exchange, Meter, Reading
+from sonar.energy.model import BillingPeriod, Meter, Reading
 from sonar.energy.store import (
     add_meter,
     add_period,
     add_reading,
-    list_exchanges,
     list_meters,
-    list_periods,
     list_readings,
 )
 from sonar.web.app import create_app
@@ -133,18 +131,49 @@ def _input(page, selector: str) -> str:
 # Page and meters
 
 
-def test_a_reading_of_a_gas_meter_shows_in_its_meter_section(client, db_path):
+def test_the_card_shows_the_latest_reading_of_its_meter(client, db_path):
     meter = _gas_meter(db_path)
     _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 5), 12_345)))
+    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 9), 13_000)))
 
     sections = _page(client).select("[data-meter-id]")
 
     assert [section["data-meter-id"] for section in sections] == [str(meter)]
-    rows = sections[0].select("tbody [data-row]")
-    assert [row.select_one('[data-field="date"] time')["datetime"] for row in rows] == [
-        "2026-01-05"
-    ]
-    assert text(rows[0].select_one('[data-field="reading"]')) == "12.345"
+    latest = sections[0].select_one(f"#meter-{meter}-latest-reading")
+    assert latest.select_one('[data-field="date"] time')["datetime"] == "2026-01-09"
+    assert text(latest.select_one('[data-field="reading"]')) == "13.000"
+
+
+def test_a_card_without_readings_has_no_latest_reading(client, db_path):
+    meter = _gas_meter(db_path)
+
+    assert _page(client).select_one(f"#meter-{meter}-latest-reading") is None
+
+
+def test_the_card_has_stats_chart_add_reading_form_and_history_link_only(client, db_path):
+    meter = _with_months(
+        db_path,
+        [
+            (date(2026, 1, 1), 1_000_000),
+            (date(2026, 2, 1), 1_100_000),
+            (date(2026, 3, 1), 1_250_000),
+        ],
+    )
+    card = _page(client).select_one(f"#meter-{meter}")
+
+    assert card.select_one(f"#meter-{meter}-cost-so-far") is not None
+    assert card.select_one("[data-energy-chart]") is not None
+    assert card.select_one(f"#meter-{meter}-add-reading") is not None
+    assert card.select_one(f"#meter-{meter}-history")["href"] == f"/energy/meters/{meter}"
+    for gone in (
+        f"#meter-{meter}-readings",
+        f"#meter-{meter}-exchanges",
+        f"#meter-{meter}-periods",
+        f"#meter-{meter}-add-exchange",
+        f"#meter-{meter}-new-period",
+        "[data-reading-id]",
+    ):
+        assert card.select_one(gone) is None
 
 
 def test_no_meters_shows_the_add_meter_card_only(client):
@@ -158,44 +187,6 @@ def test_energy_is_a_nav_item_after_payoff(client):
     links = [a["href"] for a in _page(client).select("nav a[href]")]
 
     assert links[links.index("/payoff") + 1] == "/energy"
-
-
-def test_readings_list_newest_first_with_usage_and_kwh_per_day(client, db_path):
-    meter = _with_readings(db_path)
-    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 16), 1_125_000)))
-
-    rows = _page(client).select(f"#meter-{meter}-readings tbody [data-row]")
-
-    assert [row.select_one("time")["datetime"] for row in rows] == [
-        "2026-01-16",
-        "2026-01-11",
-        "2026-01-01",
-    ]
-    assert [text(row.select_one('[data-field="usage"]')) for row in rows] == [
-        "25.000",
-        "100.000",
-        "",
-    ]
-    # 25 kWh over 5 days and 100 kWh over 10 days; the first reading has no previous one.
-    assert [text(row.select_one('[data-field="kwh_per_day"]')) for row in rows] == [
-        "5",
-        "10",
-        "",
-    ]
-
-
-def test_gas_usage_is_converted_to_kwh_per_day_by_the_period(client, db_path):
-    meter = _gas_meter(db_path)
-    period = _period(state_factor_e4=9_500, calorific_value_e4=110_000)
-    _store(db_path, lambda conn: add_period(conn, meter, period))
-    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000)))
-    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 11), 101_000)))
-
-    row = _page(client).select(f"#meter-{meter}-readings tbody [data-row]")[0]
-
-    # 100 m³ in 10 days x 0.95 x 11 kWh per m³ = 104.5 kWh per day, rounded half up.
-    assert text(row.select_one('[data-field="usage"]')) == "100.000"
-    assert text(row.select_one('[data-field="kwh_per_day"]')) == "105"
 
 
 # Status
@@ -314,32 +305,6 @@ def test_add_reading(client, db_path):
     assert [s.item for s in stored] == [Reading(date(2026, 1, 5), 12_345)]
 
 
-def test_edit_reading_prefills_and_saves(client, db_path):
-    meter = _with_readings(db_path)
-    stored = _store(db_path, lambda conn: list_readings(conn, meter))[1]
-    form = _page(client).select_one(f"#reading-{stored.id}-edit")
-    assert form.select_one("input[name=value]")["value"] == "1100.000"
-    assert form.select_one("input[name=date]")["value"] == "2026-01-11"
-
-    response = client.post(form["action"], data={"date": "2026-01-12", "value": "1100.5"})
-
-    assert response.status_code == 303
-    updated = _store(db_path, lambda conn: list_readings(conn, meter))[1]
-    assert updated.item == Reading(date(2026, 1, 12), 1_100_500)
-
-
-def test_delete_reading(client, db_path):
-    meter = _with_readings(db_path)
-    stored = _store(db_path, lambda conn: list_readings(conn, meter))[1]
-    form = _page(client).select_one(f"#reading-{stored.id}-delete")
-    assert form["hx-confirm"]
-
-    response = client.post(form["action"])
-
-    assert response.status_code == 303
-    assert len(_store(db_path, lambda conn: list_readings(conn, meter))) == 1
-
-
 def test_a_dropping_reading_is_a_400_that_keeps_the_entry_and_writes_nothing(client, db_path):
     meter = _with_readings(db_path)
 
@@ -365,20 +330,6 @@ def test_a_reading_with_too_many_decimals_is_a_400(client, db_path):
     assert _input(soup(response), f"#meter-{meter}-add-reading input[name=value]") == "1.2345"
 
 
-def test_a_bad_edit_reopens_that_rows_drawer_with_the_entry(client, db_path):
-    meter = _with_readings(db_path)
-    stored = _store(db_path, lambda conn: list_readings(conn, meter))[1]
-
-    response = client.post(
-        f"/energy/readings/{stored.id}/edit", data={"date": "2026-01-11", "value": "abc"}
-    )
-
-    _error(response)
-    page = soup(response)
-    assert _input(page, f"#reading-{stored.id}-edit input[name=value]") == "abc"
-    assert page.select_one(f"#reading-{stored.id}-edit").find_parent("details").has_attr("open")
-
-
 def test_a_missing_reading_is_a_404(client):
     assert client.post("/energy/readings/99/delete").status_code == 404
     assert (
@@ -387,205 +338,6 @@ def test_a_missing_reading_is_a_404(client):
         ).status_code
         == 404
     )
-
-
-# Exchanges
-
-
-def test_add_edit_and_delete_an_exchange(client, db_path):
-    meter = _electricity_meter(db_path)
-    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000)))
-
-    added = client.post(
-        f"/energy/meters/{meter}/exchanges",
-        data={"date": "2026-02-01", "old_final": "1500", "new_start": "0,5"},
-    )
-
-    assert added.status_code == 303
-    stored = _store(db_path, lambda conn: list_exchanges(conn, meter))
-    assert [s.item for s in stored] == [Exchange(date(2026, 2, 1), 1_500_000, 500)]
-
-    form = _page(client).select_one(f"#exchange-{stored[0].id}-edit")
-    assert form.select_one("input[name=old_final]")["value"] == "1500.000"
-    edited = client.post(
-        form["action"], data={"date": "2026-02-02", "old_final": "1600", "new_start": "0"}
-    )
-    assert edited.status_code == 303
-    after = _store(db_path, lambda conn: list_exchanges(conn, meter))
-    assert [s.item for s in after] == [Exchange(date(2026, 2, 2), 1_600_000, 0)]
-
-    deleted = client.post(f"/energy/exchanges/{stored[0].id}/delete")
-    assert deleted.status_code == 303
-    assert _store(db_path, lambda conn: list_exchanges(conn, meter)) == []
-
-
-def test_an_exchange_on_a_reading_date_is_a_400(client, db_path):
-    meter = _with_readings(db_path)
-
-    response = client.post(
-        f"/energy/meters/{meter}/exchanges",
-        data={"date": "2026-01-11", "old_final": "1100", "new_start": "0"},
-    )
-
-    assert "2026-01-11" in _error(response)
-    assert _input(soup(response), f"#meter-{meter}-add-exchange input[name=old_final]") == "1100"
-
-
-# Billing periods
-
-NEW_PERIOD = {
-    "start_date": "2027-01-01",
-    "settlement_date": "2027-12-31",
-    "base_fee": "12,50",
-    "unit_price": "31.5",
-    "state_factor": "",
-    "calorific_value": "",
-    "advance": "60",
-    "expected_kwh": "3100",
-    "category": "Utilities",
-}
-
-
-def test_add_edit_and_delete_a_period(client, db_path):
-    meter = _electricity_meter(db_path)
-
-    added = client.post(f"/energy/meters/{meter}/periods", data=NEW_PERIOD)
-
-    assert added.status_code == 303
-    stored = _store(db_path, lambda conn: list_periods(conn, meter))
-    assert [s.item for s in stored] == [
-        _period(
-            start_date=date(2027, 1, 1),
-            settlement_date=date(2027, 12, 31),
-            base_fee_cents=1_250,
-            unit_price_micro=315_000,
-            advance_cents=6_000,
-            expected_kwh=3_100,
-        )
-    ]
-
-    form = _page(client).select_one(f"#period-{stored[0].id}-edit")
-    assert form.select_one("input[name=unit_price]")["value"] == "31.5000"
-    assert form.select_one("input[name=base_fee]")["value"] == "12.50"
-    edited = client.post(form["action"], data={**NEW_PERIOD, "unit_price": "32", "category": ""})
-    assert edited.status_code == 303
-    after = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
-    assert (after.unit_price_micro, after.category) == (320_000, None)
-
-    deleted = client.post(f"/energy/periods/{stored[0].id}/delete")
-    assert deleted.status_code == 303
-    assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
-
-
-@pytest.mark.parametrize("settled", [-3_169, None])
-def test_a_page_edit_keeps_the_stored_settled_amount(client, db_path, settled):
-    meter = _electricity_meter(db_path)
-    period = _store(db_path, lambda conn: add_period(conn, meter, _period(settled_cents=settled)))
-
-    edited = client.post(f"/energy/periods/{period}/edit", data={**NEW_PERIOD, "unit_price": "32"})
-
-    assert edited.status_code == 303
-    after = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
-    assert (after.unit_price_micro, after.settled_cents) == (320_000, settled)
-
-
-def test_a_period_added_on_the_page_has_no_settled_amount(client, db_path):
-    meter = _electricity_meter(db_path)
-
-    client.post(f"/energy/meters/{meter}/periods", data=NEW_PERIOD)
-
-    assert _store(db_path, lambda conn: list_periods(conn, meter))[0].item.settled_cents is None
-
-
-def test_a_gas_period_takes_the_state_factor_and_calorific_value(client, db_path):
-    meter = _gas_meter(db_path)
-
-    response = client.post(
-        f"/energy/meters/{meter}/periods",
-        data={**NEW_PERIOD, "state_factor": "0,95", "calorific_value": "11.0"},
-    )
-
-    assert response.status_code == 303
-    period = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
-    assert (period.state_factor_e4, period.calorific_value_e4) == (9_500, 110_000)
-
-
-def test_an_electricity_period_form_has_no_gas_fields(client, db_path):
-    meter = _electricity_meter(db_path)
-    page = _page(client)
-
-    form = page.select_one(f"#meter-{meter}-new-period")
-    assert form.select_one("input[name=state_factor]") is None
-    assert form.select_one("input[name=unit_price]") is not None
-
-
-def test_a_bad_price_is_a_400_that_keeps_every_entry(client, db_path):
-    meter = _electricity_meter(db_path)
-
-    response = client.post(
-        f"/energy/meters/{meter}/periods", data={**NEW_PERIOD, "unit_price": "12.34567"}
-    )
-
-    assert "Unit price" in _error(response)
-    form = soup(response).select_one(f"#meter-{meter}-new-period")
-    assert form.select_one("input[name=unit_price]")["value"] == "12.34567"
-    assert form.select_one("input[name=advance]")["value"] == "60"
-    assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
-
-
-def test_a_gas_period_without_a_state_factor_is_a_400(client, db_path):
-    meter = _gas_meter(db_path)
-
-    response = client.post(f"/energy/meters/{meter}/periods", data=NEW_PERIOD)
-
-    assert "State factor" in _error(response)
-
-
-def test_an_overlapping_period_is_a_400(client, db_path):
-    meter = _with_readings(db_path)
-
-    response = client.post(
-        f"/energy/meters/{meter}/periods", data={**NEW_PERIOD, "start_date": "2026-06-01"}
-    )
-
-    assert "overlaps" in _error(response)
-
-
-def test_the_new_period_form_is_prefilled_from_the_latest_period(client, db_path):
-    meter = _with_readings(db_path)
-
-    form = _page(client).select_one(f"#meter-{meter}-new-period")
-
-    def value(name: str) -> str:
-        return form.select_one(f"input[name={name}]")["value"]
-
-    assert value("start_date") == "2027-01-01"
-    assert value("settlement_date") == "2027-12-31"
-    assert value("base_fee") == "12.00"
-    assert value("unit_price") == "3.0000"
-    assert value("advance") == "50.00"
-    assert value("expected_kwh") == "3000"
-    assert form.select_one("select[name=category] option[selected]")["value"] == "Utilities"
-
-
-def test_category_choices_are_the_categories(client, db_path):
-    meter = _electricity_meter(db_path)
-
-    form = _page(client).select_one(f"#meter-{meter}-new-period")
-
-    assert [o["value"] for o in form.select("select[name=category] option")] == [
-        "",
-        "Utilities",
-        "Dining",
-    ]
-
-
-def test_the_new_period_form_is_empty_without_a_period(client, db_path):
-    meter = _electricity_meter(db_path)
-
-    form = _page(client).select_one(f"#meter-{meter}-new-period")
-
-    assert form.select_one("input[name=start_date]")["value"] == ""
 
 
 # Usage and cost chart

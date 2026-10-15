@@ -231,6 +231,21 @@ def delete_period(conn: sqlite3.Connection, period_id: int) -> None:
         conn.execute("DELETE FROM energy_periods WHERE id = ?", (period_id,))
 
 
+# Owners: the meter a record belongs to, for pages that return to it.
+
+
+def meter_of_reading(conn: sqlite3.Connection, reading_id: int) -> int:
+    return _owner(conn, "energy_readings", reading_id)
+
+
+def meter_of_exchange(conn: sqlite3.Connection, exchange_id: int) -> int:
+    return _owner(conn, "energy_exchanges", exchange_id)
+
+
+def meter_of_period(conn: sqlite3.Connection, period_id: int) -> int:
+    return _owner(conn, "energy_periods", period_id)
+
+
 # Helpers
 
 

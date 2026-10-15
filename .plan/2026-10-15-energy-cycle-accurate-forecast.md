@@ -46,7 +46,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N02 | settled amount | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
 | N03 | paid window and remaining advances | exec | N02,N11 | sonnet/opus | 1 | 0 | DONE | |
 | N04 | seasonal projection and suggested advance | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
-| N05 | meter page | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
+| N05 | meter page | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | cycle chart | exec | N06 | opus/opus | 0 | 0 | TODO | |
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -414,3 +414,9 @@ exec: DONE · 1746 passed
 - worst prev(d) counts last year's usage without a period, in current period's kWh; moved pins updated via expected_kwh in fixtures
 check: PASS 4/4
 verify: PASS
+
+### N05 try 1 · 2026-10-15
+exec: DONE · 1760 passed
+- Added /energy/meters/{id} (energy_meter.html) with readings, exchanges, periods; card slimmed to stats, chart, latest reading, add-reading, history link; form macros in components/energy_forms.html; store meter_of_reading/exchange/period
+- Edit/delete/add exchange/period redirect and 400 re-render on the owning meter page; add reading and meters stay on /energy; sonar.css rebuilt unchanged
+check: PASS 5/5

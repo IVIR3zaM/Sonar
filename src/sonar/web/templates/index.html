@@ -294,21 +294,29 @@
   {{ "Refund" if cents >= 0 else "Back-payment" }} {{ amount(cents | abs, colored=false, attrs={"data-kind": "refund" if cents >= 0 else "back-payment"}) }}
   {%- endmacro %}
   {% call card(title="Energy", subtitle="Projected settlement at the end of the billing period", id="energy-card") %}
-    <div class="{{ table_wrap }}">
-      <table id="energy" class="{{ table }}">
-        <thead><tr><th class="{{ th }}">Meter</th><th class="{{ th_num }}">Settlement</th><th class="{{ th }}">On</th><th class="{{ th_num }}">Worst case</th><th class="{{ th_num }}">Suggested advance</th></tr></thead>
-        <tbody>
-        {% for item in dashboard.energy %}
-          <tr data-row data-meter="{{ item.meter_name }}" class="{{ tr }}">
-            <td class="{{ td }}" data-field="name">{{ item.meter_name }}</td>
-            <td class="{{ td_num }}" data-field="settlement">{{ outcome(item.settlement_cents) }}</td>
-            <td class="{{ td }}" data-field="date">{{ date(item.settlement_date) }}</td>
-            <td class="{{ td_num }}" data-field="worst-case">{{ outcome(item.worst_settlement_cents) }}</td>
-            <td class="{{ td_num }}" data-field="suggested-advance">{% if item.suggested_advance_cents is not none %}{{ amount(item.suggested_advance_cents, colored=false) }} <span class="text-xs text-ink-muted">per month</span>{% else %}–{% endif %}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+    <div id="energy" class="divide-y divide-line">
+    {% for item in dashboard.energy %}
+      <div data-row data-meter="{{ item.meter_name }}" class="py-3 first:pt-0 last:pb-0">
+        <div class="flex items-baseline justify-between gap-3">
+          <span class="min-w-0 break-words font-medium text-ink" data-field="name">{{ item.meter_name }}</span>
+          <span class="whitespace-nowrap text-xs text-ink-muted" data-field="date">{{ date(item.settlement_date) }}</span>
+        </div>
+        <dl class="mt-2 space-y-1 text-sm">
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-muted">Settlement</dt>
+            <dd class="whitespace-nowrap text-right text-ink" data-field="settlement">{{ outcome(item.settlement_cents) }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-muted">Worst case</dt>
+            <dd class="whitespace-nowrap text-right text-ink" data-field="worst-case">{{ outcome(item.worst_settlement_cents) }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-muted">Suggested advance</dt>
+            <dd class="whitespace-nowrap text-right text-ink" data-field="suggested-advance">{% if item.suggested_advance_cents is not none %}{{ amount(item.suggested_advance_cents, colored=false) }} <span class="text-xs text-ink-muted">per month</span>{% else %}–{% endif %}</dd>
+          </div>
+        </dl>
+      </div>
+    {% endfor %}
     </div>
   {% endcall %}
   {% endif %}

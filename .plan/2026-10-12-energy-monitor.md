@@ -49,8 +49,9 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N06 | Energy page | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N11 | -/- | 0 | 1 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
+| N11 | energy card layout | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the Tailwind CLI builds
@@ -264,13 +265,37 @@ Done when:
   without a current period; `/api/dashboard` has `energy`
 - C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
+## N11 energy card layout
+Do: Replace the 5-column `#energy` table in the dashboard's `#energy-card` with one stacked block per meter
+  that fits the half-width card at desktop, ~800px and 375px: a line with the meter name and the settlement
+  date, then three label/value rows (Settlement, Worst case, Suggested advance) with the label on the left and
+  the value right-aligned on one line. Rebuild `sonar.css`.
+Context: card at src/sonar/web/templates/index.html:290-314 sits beside `#debts-card` (:270) in the
+  `lg:grid-cols-2` grid (:40). Keep every hook the tests use: `[data-meter]` per meter holding
+  `data-field` `name`, `date`, `settlement`, `worst-case`, `suggested-advance`; the `outcome` macro wording
+  "Refund X" / "Back-payment X" with `data-kind`; "–" when the suggested advance is none, "per month" after it.
+  Amounts must not wrap (`whitespace-nowrap` on each value) and the card must not scroll sideways; use a
+  `<dl>` or plain divs, no new component macro (one use only). D11 content is unchanged.
+Read: `src/sonar/web/templates/index.html:1-20,265-317`, `src/sonar/web/templates/components/stat.html`, `tests/web/test_dashboard_page.py:742-817`, `tests/html.py`
+Write: `src/sonar/web/templates/index.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_dashboard_page.py`
+Test first: a dashboard test asserting `#energy-card` contains no `table` while each `[data-meter]` still
+  holds the five `data-field` hooks; it fails on the current table markup.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_dashboard_page.py -k energy` passes, including the no-table test
+  and the existing settlement, refund and no-card tests unchanged in what they assert
+- C2 [review] `#energy-card` in index.html renders per meter a name/date line and three label/value rows with
+  `whitespace-nowrap` values, no `overflow-x-auto` wrapper and no inline `<style>`; `sonar.css` is rebuilt
+- C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N09 visual check
 Do: gate, pre-authorized (D13). Start the app per config `visual_recipe` on a temp DB (import the newest sample,
   set salary day and balance), then run a scratch loader from the session scratchpad that posts synthetic
   data through `/api/energy`: "Gas" with one exchange and "Electricity", about 14 months of readings each,
   one settled and one current period each with a seeded `fixed` category, current settlement dates inside
-  the forecast window. Check /energy and / at desktop and 375px, light and dark (read_page first, scaled
-  screenshots only where layout matters), toggling "Show values" and "Show trend" on and off.
+  the forecast window. Check /energy and / at desktop, ~800px and 375px, light and dark (read_page first,
+  scaled screenshots only where layout matters), toggling "Show values" and "Show trend" on and off.
+  Accepted as they are: value labels overlapping the trend lines, and the URL staying the POST URL after a
+  400 form error.
 Done when:
 - C1 [visual] /energy shows per meter the status stats, one chart with usage columns and a cost line, the
   readings, exchanges and periods sections and their forms, with no horizontal scroll at 375px
@@ -278,7 +303,9 @@ Done when:
   in light and dark, at desktop and 375px
 - C3 [visual] the dashboard shows the Energy card after Installments and loans with each meter's refund or
   back-payment, date, worst case and suggested advance, and the settlement in the due list or income card
-- C4 [visual] an invalid reading shows the inline error with the entered value kept
+- C4 [visual] in the Energy card at desktop, ~800px and 375px every amount sits on one line ("Back-payment X €"
+  unwrapped) and nothing is clipped or needs scrolling inside the card
+- C5 [visual] an invalid reading shows the inline error with the entered value kept
 
 ## N10 plan acceptance
 Do: Check the whole plan against verify, SPEC §11 and §12 and the Energy bullet.
@@ -360,3 +387,19 @@ exec: DONE · 1701 passed
 - energy.service.settlement_summaries, Dashboard.energy, in-window settlements added to due/inflows in cashflow.service, #energy-card in index.html
 - Summaries use the estimate date; suggested advance may be None (shown as a dash); sonar.css rebuilt, no class changes
 check: PASS 3/3
+
+### N09 try 1 · 2026-10-15
+human: Dashboard Energy card too cramped: half-width column with 5 columns; 'Back-payment 422,03 €' wraps over 3 lines; at ~800px viewport the Worst case and Suggested advance columns are clipped and only reachable by scrolling inside the card. Owner accepts the value-label/trend-line overlap and the POST-URL-after-error as they are.
+
+### N09 replan 1 · 2026-10-15
+plan: REPLANNED +N11
+- Gate failed: dashboard Energy card cramped; 5-column table in a half-width card wraps amounts and clips columns at ~800px
+- N11 replaces the table with stacked per-meter label/value rows, nowrap values, same data hooks; N09 now depends on N11
+- N09 brief adds an ~800px viewport, a no-wrap/no-clip criterion C4, and records the owner-accepted label/trend overlap and POST URL after a 400
+
+### N11 try 1 · 2026-10-15
+exec: DONE · 1702 passed
+- Energy card: per-meter stacked block (name/date line, dl rows with nowrap values), no table; sonar.css rebuilt
+- Added no-table test; kept id=energy on the container and all data-field hooks
+check: PASS 2/2
+verify: PASS

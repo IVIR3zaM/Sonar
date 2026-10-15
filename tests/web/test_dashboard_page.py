@@ -785,6 +785,19 @@ def test_energy_card_lists_the_projected_settlement_per_meter(tmp_path):
     assert cents(row.select_one('[data-field="suggested-advance"]')) > 0
 
 
+def test_energy_card_stacks_each_meter_instead_of_a_table(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    _add_energy_meter(db_path, "Power")
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    assert page.select_one("#energy-card table") is None
+    [row] = page.select("#energy-card [data-meter]")
+    assert set(fields(row)) == {"name", "date", "settlement", "worst-case", "suggested-advance"}
+
+
 def test_energy_card_words_a_positive_settlement_as_a_refund(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path, UTILITIES_TOML)

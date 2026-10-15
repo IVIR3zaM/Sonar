@@ -1,5 +1,5 @@
 # Bank sync schedule and feedback
-status: WAITING
+status: DONE
 created: 2026-10-15 · updated: 2026-10-15
 goal: The scheduled Enable Banking sync runs at 06:30, 09:00 and 12:00 Berlin time, and the Settings bank card shows Berlin time and a visible Sync now loading state.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -35,7 +35,7 @@ Definition of done: the timer template lists the three times; SPEC, README and t
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | three daily sync times | exec | - | haiku/haiku | 1 | 1 | DONE | |
 | N02 | bank card Berlin time and Sync now loading | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | visual check | gate | N01,N02 | -/- | 0 | 0 | TODO | |
+| N03 | visual check | gate | N01,N02 | -/- | 0 | 0 | DONE | |
 
 ## N01 three daily sync times
 Do: Make the bank sync timer run at 06:30, 09:00 and 12:00 Berlin time and make SPEC and the deploy README say

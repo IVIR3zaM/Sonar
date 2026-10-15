@@ -1,5 +1,5 @@
 # Energy cycle-accurate forecast
-status: WAITING
+status: RUNNING
 created: 2026-10-15 · updated: 2026-10-15
 goal: The Energy monitor's current-period figures (paid so far, projection, worst case, suggested advance) follow how the supplier bills, with a settled amount per period, a per-meter history page, a two-cycle chart with projected months and remembered chart toggles, recorded as a SPEC §13 amendment.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -50,7 +50,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | cycle chart | exec | N06 | opus/opus | 1 | 1 | DONE | |
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N08 | -/- | 0 | 0 | DONE | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | SPEC Energy billing cycle bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 

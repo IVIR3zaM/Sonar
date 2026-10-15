@@ -42,7 +42,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
-| N02 | energy model, usage and SPEC | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | energy model, usage and SPEC | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | migration and energy store | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | settlement math | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
 | N05 | energy service and JSON API | exec | N03,N04 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -309,3 +309,10 @@ plan: REPLANNED
 
 ### N01 try 1 · 2026-10-15
 check: PASS 4/4
+
+### N02 try 1 · 2026-10-15
+exec: DONE · 1550 passed
+- Added sonar.energy model.py (Meter, Reading, Exchange, BillingPeriod, FieldError, check_period/check_periods) and usage.py (continuous_series, check_series, daily_usage), plus tests and the SPEC §13 Energy bullet
+- Date fields are reading_date/exchange_date (a field named date would shadow the type); series are list[tuple[date, int]] in milli; daily_usage returns Fractions in meter units (milli/1000)
+check: PASS 3/3
+verify: PASS

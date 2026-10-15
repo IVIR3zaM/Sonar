@@ -1,5 +1,5 @@
 # Bank sync schedule and feedback
-status: RUNNING
+status: WAITING
 created: 2026-10-15 · updated: 2026-10-15
 goal: The scheduled Enable Banking sync runs at 06:30, 09:00 and 12:00 Berlin time, and the Settings bank card shows Berlin time and a visible Sync now loading state.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -33,33 +33,36 @@ Definition of done: the timer template lists the three times; SPEC, README and t
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | three daily sync times | exec | - | haiku/haiku | 1 | 0 | RUNNING | |
+| N01 | three daily sync times | exec | - | haiku/haiku | 1 | 1 | DONE | |
 | N02 | bank card Berlin time and Sync now loading | exec | - | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | visual check | gate | N01,N02 | -/- | 0 | 0 | TODO | |
 
 ## N01 three daily sync times
 Do: Make the bank sync timer run at 06:30, 09:00 and 12:00 Berlin time and make SPEC and the deploy README say
-  so. No code changes; nothing under `src/` or `tests/`.
-Context: Timer (deploy/terraform/templates/sonar-bank-sync.timer.tftpl): replace the one `OnCalendar=` with three
-  lines `OnCalendar=*-*-* 06:30:00 Europe/Berlin`, `OnCalendar=*-*-* 09:00:00 Europe/Berlin`,
-  `OnCalendar=*-*-* 12:00:00 Europe/Berlin`; keep `Persistent=true`; Description becomes
-  "Run the Sonar bank sync at 06:30, 09:00 and 12:00". Service (sonar-bank-sync.service.tftpl:2): Description
-  becomes "Sonar scheduled bank sync". SPEC.md:10: "a daily Enable Banking sync" -> "a scheduled Enable Banking
-  sync". SPEC.md:259 (§13 Bank sync bullet): "run daily at 06:30 Berlin time" -> "run at 06:30, 09:00 and 12:00
-  Berlin time (leaving the fourth of Enable Banking's daily calls for Sync now)", and after the sentence ending
-  "`GET /api/bank` returns the status." add "Settings shows the last sync in Berlin time.".
-  deploy/README.md:263: "every day at 06:30 Berlin time" -> "at 06:30, 09:00 and 12:00 Berlin time, leaving the
-  fourth of Enable Banking's four daily calls for Sync now". deploy/README.md:293: "the daily runs" -> "the
-  scheduled runs". Change nothing else in these files.
+  so (D1, D2). No code changes; nothing under `src/` or `tests/`. If the tree already holds these exact edits,
+  keep them and change nothing.
+Context: D1 timer (deploy/terraform/templates/sonar-bank-sync.timer.tftpl): three lines
+  `OnCalendar=*-*-* 06:30:00 Europe/Berlin`, `... 09:00:00 ...`, `... 12:00:00 ...` in place of the one;
+  `Persistent=true` kept; `Description=Run the Sonar bank sync at 06:30, 09:00 and 12:00`. Service
+  (sonar-bank-sync.service.tftpl:2): `Description=Sonar scheduled bank sync`.
+  D2 SPEC.md:10 "a daily Enable Banking sync" -> "a scheduled Enable Banking sync". SPEC.md:259 (§13 Bank sync):
+  "run daily at 06:30 Berlin time" -> "run at 06:30, 09:00 and 12:00 Berlin time (leaving the fourth of Enable
+  Banking's daily calls for Sync now)"; after "`GET /api/bank` returns the status." insert
+  " Settings shows the last sync in Berlin time.". deploy/README.md:263 "every day at 06:30 Berlin time" ->
+  "at 06:30, 09:00 and 12:00 Berlin time, leaving the fourth of Enable Banking's four daily calls for Sync now".
+  deploy/README.md:293 "the daily runs" -> "the scheduled runs". Nothing else in these files changes.
+  `.gitignore` and the plan file are not this node's; leave them untouched.
 Read: `deploy/terraform/templates/sonar-bank-sync.timer.tftpl`, `deploy/terraform/templates/sonar-bank-sync.service.tftpl`, `SPEC.md:8-12`, `SPEC.md:259`, `deploy/README.md:261-293`
 Write: `deploy/terraform/templates/sonar-bank-sync.timer.tftpl`, `deploy/terraform/templates/sonar-bank-sync.service.tftpl`, `SPEC.md`, `deploy/README.md`
 Test first: -
 Done when:
 - C1 [cmd] `test "$(grep -cE '^OnCalendar=\*-\*-\* (06:30|09:00|12:00):00 Europe/Berlin$' deploy/terraform/templates/sonar-bank-sync.timer.tftpl)" = 3 && grep -q '^Persistent=true$' deploy/terraform/templates/sonar-bank-sync.timer.tftpl`
-- C2 [cmd] `! grep -rnE "daily at 06:30|every day at 06:30|every morning|a daily Enable Banking|the daily runs" SPEC.md deploy/README.md deploy/terraform/templates/`
-- C3 [review] the timer and service Descriptions, SPEC.md:10, the §13 Bank sync bullet and README lines 263
-  and 293 read exactly as in Context; `git diff --stat` touches only the four Write files
-- C4 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
+- C2 [cmd] `grep -qxF 'Description=Run the Sonar bank sync at 06:30, 09:00 and 12:00' deploy/terraform/templates/sonar-bank-sync.timer.tftpl && grep -qxF 'Description=Sonar scheduled bank sync' deploy/terraform/templates/sonar-bank-sync.service.tftpl`
+- C3 [cmd] `grep -qF 'by a scheduled Enable Banking sync (§13 Bank sync).' SPEC.md && grep -qF "run at 06:30, 09:00 and 12:00 Berlin time (leaving the fourth of Enable Banking's daily calls for Sync now), by Sync now" SPEC.md && grep -qF 'returns the status. Settings shows the last sync in Berlin time. With neither variable set' SPEC.md`
+- C4 [cmd] `grep -qF "at 06:30, 09:00 and 12:00 Berlin time, leaving the fourth of Enable Banking's four daily calls for Sync now. With both unset" deploy/README.md && grep -qF 'shows the scheduled runs; ' deploy/README.md`
+- C5 [cmd] `! grep -rnE "daily at 06:30|every day at 06:30|every morning|a daily Enable Banking|the daily runs" SPEC.md deploy/README.md deploy/terraform/templates/`
+- C6 [cmd] `test -z "$(git status --porcelain -- src tests)"`
+- C7 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 
 ## N02 bank card Berlin time and Sync now loading
 Do: On the Settings bank card, show Last sync in Berlin time through a new pure filter, change the subtitle, and
@@ -129,3 +132,32 @@ exec: DONE · 1710 passed
 - existing sync-now button test now reads the idle label
 check: PASS 5/5
 verify: PASS
+
+### N01 try 1 · 2026-10-15
+exec: DONE · tests: 1710 passed
+- Edits already present in working tree and match brief: timer runs 06:30, 09:00, 12:00 Berlin; service and timer Descriptions, SPEC.md:10 and 259, README 263 and 293 updated; no further change needed
+- No file changed by this try; verified C1 and C2 greps, pytest and ruff check exit 0
+check: PASS 3/3
+verify: FAIL C3
+- C3 verify brief - the exact-wording comparison against Context cannot be evaluated: the verify brief carries no Context text, so the descriptions and the SPEC/README lines are not evidenced as exact - expected the text as in Context
+- C3 git diff --stat - the stat lists .gitignore (insurance/ entry) and the plan file besides the four Write files, so the stat does not touch only the four - expected only the four Write paths in the diff
+
+### N01 try 2 · 2026-10-15
+exec: DONE · tests: 1710 passed, ruff check and format clean
+- Timer runs 06:30, 09:00, 12:00 Berlin; timer and service Descriptions reworded; SPEC §13 bank sync and line 10, deploy README lines 263 and 293 updated
+- Edits were already present in the tree from try 1; verified against Context, no further edits. .gitignore and plan file changes predate this node and were left untouched
+check: PASS 3/3
+verify: FAIL C3
+- C3 SPEC.md:10, §13 Bank sync bullet, deploy/README.md:263 and :293, timer/service Description - the brief gives no Context text, so exact wording cannot be matched; not evidenced
+
+### N01 replan 1 · 2026-10-15
+plan: REPLANNED
+- Cause: C3 was a [review] comparing wording against Context, which the verify brief does not carry; its git diff --stat clause also caught the pre-existing .gitignore and plan-file changes
+- New brief: exact wording moved into [cmd] grep -F criteria C2-C4 (descriptions, SPEC, README); scope check is C6 git status on src and tests only; no [review] left
+- Brief tells the executor to keep edits already in the tree and leave .gitignore alone; all new [cmd]s dry-run green on the current tree
+
+### N01 try 1 · 2026-10-15
+exec: DONE · tests: 1710 passed
+- Timer, service, SPEC §13 and deploy README edits were already in the tree; verified C1 to C6 and kept them, no file changed
+- Kept the existing tree edits as the brief allows; no further edits made
+check: PASS 7/7

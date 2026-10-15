@@ -260,7 +260,7 @@ How the deploy job behaves:
 
 ## Bank sync
 
-Optional. With both Enable Banking values set, Sonar reads the Deutsche Bank Girokonto itself and a systemd timer runs `sonar bank-sync` every day at 06:30 Berlin time. With both unset, the app deploys and runs as before and the timer only prints "Bank sync is not configured."
+Optional. With both Enable Banking values set, Sonar reads the Deutsche Bank Girokonto itself and a systemd timer runs `sonar bank-sync` at 06:30, 09:00 and 12:00 Berlin time, leaving the fourth of Enable Banking's four daily calls for Sync now. With both unset, the app deploys and runs as before and the timer only prints "Bank sync is not configured."
 
 1. In the Enable Banking Control Panel, create a production application in restricted mode (your own linked account only) and keep its application id and the private key `.pem` it generates.
 2. Register `https://<sonar_hostname>/bank/callback` as a redirect URL of that application.
@@ -290,4 +290,4 @@ Sonar shares the Gateway VM with Gateway and Kita, and the bucket with both.
 - **Never destroy the volume.** It has `prevent_destroy` and Hetzner delete protection, because the SQLite database lives on it.
 - **Secrets:** state lives in R2, not on your machine, and holds secrets; keep the bucket private. `backend.hcl` holds your R2 credentials; terraform copies them into the gitignored `.terraform/` directory and into any saved `-out` plan files. Never share `.terraform/`, plan files, `terraform.tfvars`, or your SSH key. All four are gitignored; never commit them.
 - **Logs:** `ssh root@<server_ipv4> journalctl -u sonar`. Sonar's access log (uvicorn) and its nginx access log (`sonar_no_query` format) omit query strings, so the OAuth `code` and `state` of the bank and Google callbacks are never logged.
-- **Bank sync:** `journalctl -u sonar-bank-sync` shows the daily runs; `systemctl list-timers sonar-bank-sync.timer` shows the next one.
+- **Bank sync:** `journalctl -u sonar-bank-sync` shows the scheduled runs; `systemctl list-timers sonar-bank-sync.timer` shows the next one.

@@ -1,8 +1,10 @@
 [Unit]
-Description=Run the Sonar bank sync every morning
+Description=Run the Sonar bank sync at 06:30, 09:00 and 12:00
 
 [Timer]
 OnCalendar=*-*-* 06:30:00 Europe/Berlin
+OnCalendar=*-*-* 09:00:00 Europe/Berlin
+OnCalendar=*-*-* 12:00:00 Europe/Berlin
 Persistent=true
 
 [Install]

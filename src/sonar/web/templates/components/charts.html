@@ -172,16 +172,52 @@
 </ul>
 {%- endmacro %}
 
-{#- figures: MonthFigure list (month, kwh, cost_cents), oldest first; the last
-    24 are drawn. Usage (kWh) and cost (€) have no common unit, so each series
-    is scaled to its own peak. Value labels and trend lines are in the markup
-    but invisible until the checkboxes beside the chart are checked, which the
-    group-has variants read without any script. #}
-{% macro energy_chart(id, figures) %}
-{%- set months = figures[-24:] -%}
+{#- months: ChartMonth list (month, kwh, cost_cents, cycle, projected), oldest
+    first: the previous billing cycle, then the current one, its projected
+    months last; the last 24 are drawn. Usage (kWh) and cost (€) have no common
+    unit, so each series is scaled to its own peak; the trends fit the measured
+    months only. Value labels and trend lines are in the markup but invisible
+    until the checkboxes beside the chart are checked, which the group-has
+    variants read without any script. Small screens see the current cycle only
+    when it has at least two months to draw. #}
+{% macro energy_chart(id, months) %}
+{%- set months = months[-24:] -%}
 {%- if months|length < 2 %}
 <p id="{{ id }}-empty" data-energy-chart-empty class="text-sm text-ink-muted">Not enough full months yet for a chart. It needs readings that cover at least two whole calendar months.</p>
 {%- else %}
+{%- set current = months|selectattr("cycle", "equalto", "current")|list -%}
+{%- set narrow = current|length >= 2 -%}
+{%- set has_previous = months|selectattr("cycle", "equalto", "previous")|list|length > 0 -%}
+{%- set has_projected = months|selectattr("projected")|list|length > 0 -%}
+<div id="{{ id }}" data-energy-chart class="group/energy">
+  <div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+    <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="values" class="accent-accent">Show values</label>
+    <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="trend" class="accent-accent">Show trend</label>
+  </div>
+  <div data-view="all" class="{{ 'hidden sm:block' if narrow }}">{{ _energy_svg(months) }}</div>
+  {%- if narrow %}
+  <div data-view="current" class="sm:hidden">{{ _energy_svg(current) }}</div>
+  {%- endif %}
+  <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+    {%- if has_previous %}
+    <li data-legend="previous" class="{{ 'hidden sm:inline-flex' if narrow else 'inline-flex' }} items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500/40 dark:bg-sky-400/40" aria-hidden="true"></span>Previous cycle (kWh)</li>
+    {%- endif %}
+    <li data-legend="current" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500 dark:bg-sky-400" aria-hidden="true"></span>Current cycle (kWh)</li>
+    {%- if has_projected %}
+    <li data-legend="projected" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm border border-dashed border-sky-500 bg-sky-500/10 dark:border-sky-400" aria-hidden="true"></span>Projected (kWh)</li>
+    {%- endif %}
+    <li data-legend="cost" class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3 bg-amber-500 dark:bg-amber-400" aria-hidden="true"></span>Cost (€)</li>
+    {%- if has_projected %}
+    <li data-legend="cost-projected" class="inline-flex items-center gap-1.5"><span class="w-3 border-t-2 border-dashed border-amber-500 dark:border-amber-400" aria-hidden="true"></span>Projected cost (€)</li>
+    {%- endif %}
+  </ul>
+</div>
+{%- endif %}
+{%- endmacro %}
+
+{#- One view of energy_chart: columns per month, the cost line solid over the
+    measured months and dashed over the projected ones. #}
+{% macro _energy_svg(months) %}
 {%- set slot = 28 -%}
 {%- set height = 100 -%}
 {%- set top = 14 -%}
@@ -189,64 +225,74 @@
 {%- set width = months|length * slot -%}
 {%- set kwh = months|map(attribute="kwh")|list -%}
 {%- set costs = months|map(attribute="cost_cents")|list -%}
+{%- set measured = months|rejectattr("projected")|list|length -%}
 {%- set heights = charts.columns(kwh, height) -%}
 {%- set cost_points = charts.own_scale_points(costs, slot, height) -%}
-{%- set usage_trend = charts.trend_line(kwh, slot, height) -%}
-{%- set cost_trend = charts.trend_line(costs, slot, height) -%}
 {%- set summary = "Monthly usage in kWh and cost in euro, " ~ charts.month_label(months[0].month) ~ " to " ~ charts.month_label(months[-1].month) -%}
+{%- if measured < months|length %}{% set summary = summary ~ ", projected from " ~ charts.month_label(months[measured].month) %}{% endif -%}
 {%- set show_values = "invisible group-has-[[data-toggle=values]:checked]/energy:visible" -%}
 {%- set show_trend = "invisible group-has-[[data-toggle=trend]:checked]/energy:visible" -%}
-<div id="{{ id }}" data-energy-chart class="group/energy">
-  <div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-    <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="values" class="accent-accent">Show values</label>
-    <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="trend" class="accent-accent">Show trend</label>
-  </div>
-  <div class="overflow-x-auto">
-    <svg role="img" aria-label="{{ summary }}" viewBox="0 {{ -top }} {{ width }} {{ top + height + below }}"
-         width="{{ width * 5 // 4 }}" class="block max-w-none">
-      <title>{{ summary }}</title>
-      <g data-series="usage" class="fill-sky-500 dark:fill-sky-400">
-        {%- for f in months %}
-        <rect x="{{ loop.index0 * slot + 5 }}" y="{{ height - heights[loop.index0] }}" width="{{ slot - 10 }}" height="{{ heights[loop.index0] }}"
-              data-kwh="{{ f.kwh }}">
-          <title>{{ charts.month_label(f.month) }}: {{ f.kwh }} kWh</title>
-        </rect>
-        {%- endfor %}
-      </g>
-      <g data-series="cost" fill="none" stroke-width="2" class="stroke-amber-500 dark:stroke-amber-400">
-        <polyline points="{{ cost_points|map('join', ',')|join(' ') }}"></polyline>
-        {%- for x, y in cost_points %}
-        <circle cx="{{ x }}" cy="{{ y }}" r="2.5" stroke-width="0" data-cents="{{ costs[loop.index0] }}"
-                class="fill-amber-500 dark:fill-amber-400">
-          <title>{{ charts.month_label(months[loop.index0].month) }}: {{ costs[loop.index0]|eur }}</title>
-        </circle>
-        {%- endfor %}
-      </g>
-      {#- A nested svg clips a trend that runs past the plot, so the line stays straight. #}
-      <svg x="0" y="-2" width="{{ width }}" height="{{ height + 4 }}" viewBox="0 -2 {{ width }} {{ height + 4 }}" aria-hidden="true">
-        <line data-trend="usage" x1="{{ usage_trend[0][0] }}" y1="{{ usage_trend[0][1] }}" x2="{{ usage_trend[1][0] }}" y2="{{ usage_trend[1][1] }}"
-              stroke-width="2" stroke-dasharray="5 3" class="{{ show_trend }} stroke-sky-800 dark:stroke-sky-200"></line>
-        <line data-trend="cost" x1="{{ cost_trend[0][0] }}" y1="{{ cost_trend[0][1] }}" x2="{{ cost_trend[1][0] }}" y2="{{ cost_trend[1][1] }}"
-              stroke-width="2" stroke-dasharray="5 3" class="{{ show_trend }} stroke-amber-800 dark:stroke-amber-200"></line>
-      </svg>
-      <g aria-hidden="true" font-size="8" text-anchor="middle">
-        {%- for f in months %}
-        {%- set x = loop.index0 * slot + slot // 2 %}
-        <text data-value-label="usage" x="{{ x }}" y="{{ height + 9 }}"
-              class="{{ show_values }} fill-sky-700 dark:fill-sky-300">{{ f.kwh }}</text>
-        <text data-value-label="cost" x="{{ x }}" y="{{ cost_points[loop.index0][1] - 5 }}"
-              class="{{ show_values }} fill-amber-700 dark:fill-amber-300">{{ charts.compact_eur(f.cost_cents) }}</text>
-        <text data-part="axis" x="{{ x }}" y="{{ height + 16 }}" text-anchor="end" dominant-baseline="central"
-              transform="rotate(-90 {{ x }} {{ height + 16 }})"
-              class="fill-gray-500 dark:fill-gray-400">{{ charts.month_label(f.month) }}</text>
-        {%- endfor %}
-      </g>
+<div class="overflow-x-auto">
+  <svg role="img" aria-label="{{ summary }}" viewBox="0 {{ -top }} {{ width }} {{ top + height + below }}"
+       width="{{ width * 5 // 4 }}" class="block max-w-none">
+    <title>{{ summary }}</title>
+    <g data-series="usage">
+      {%- for f in months %}
+      {%- if f.projected %}
+      {%- set look = "fill-sky-500/10 stroke-sky-500 dark:fill-sky-400/10 dark:stroke-sky-400" %}
+      {%- elif f.cycle == "previous" %}
+      {%- set look = "fill-sky-500/40 dark:fill-sky-400/40" %}
+      {%- else %}
+      {%- set look = "fill-sky-500 dark:fill-sky-400" %}
+      {%- endif %}
+      <rect x="{{ loop.index0 * slot + 5 }}" y="{{ height - heights[loop.index0] }}" width="{{ slot - 10 }}" height="{{ heights[loop.index0] }}"
+            data-kwh="{{ f.kwh }}" data-cycle="{{ f.cycle }}" data-projected="{{ 'true' if f.projected else 'false' }}"
+            {% if f.projected %}stroke-width="1" stroke-dasharray="3 2" {% endif %}class="{{ look }}">
+        <title>{{ charts.month_label(f.month) }}: {{ f.kwh }} kWh{{ " projected" if f.projected }}</title>
+      </rect>
+      {%- endfor %}
+    </g>
+    {{ _cost_series("cost", cost_points[:measured], costs[:measured], months[:measured], "", "") }}
+    {%- if measured < months|length %}
+    {#- The dashed line starts at the last measured month so the two lines join. #}
+    {%- set joined = cost_points[measured - 1:measured] if measured else [] %}
+    {{ _cost_series("cost-projected", cost_points[measured:], costs[measured:], months[measured:], joined, "5 3") }}
+    {%- endif %}
+    {%- if measured >= 2 %}
+    {%- set usage_trend = charts.trend_line(kwh[:measured], slot, height, peak=kwh|map('abs')|max) %}
+    {%- set cost_trend = charts.trend_line(costs[:measured], slot, height, peak=costs|map('abs')|max) %}
+    {#- A nested svg clips a trend that runs past the plot, so the line stays straight. #}
+    <svg x="0" y="-2" width="{{ width }}" height="{{ height + 4 }}" viewBox="0 -2 {{ width }} {{ height + 4 }}" aria-hidden="true">
+      <line data-trend="usage" x1="{{ usage_trend[0][0] }}" y1="{{ usage_trend[0][1] }}" x2="{{ usage_trend[1][0] }}" y2="{{ usage_trend[1][1] }}"
+            stroke-width="2" stroke-dasharray="5 3" class="{{ show_trend }} stroke-sky-800 dark:stroke-sky-200"></line>
+      <line data-trend="cost" x1="{{ cost_trend[0][0] }}" y1="{{ cost_trend[0][1] }}" x2="{{ cost_trend[1][0] }}" y2="{{ cost_trend[1][1] }}"
+            stroke-width="2" stroke-dasharray="5 3" class="{{ show_trend }} stroke-amber-800 dark:stroke-amber-200"></line>
     </svg>
-  </div>
-  <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-    <li data-legend="usage" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500 dark:bg-sky-400" aria-hidden="true"></span>Usage (kWh)</li>
-    <li data-legend="cost" class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3 bg-amber-500 dark:bg-amber-400" aria-hidden="true"></span>Cost (€)</li>
-  </ul>
+    {%- endif %}
+    <g aria-hidden="true" font-size="8" text-anchor="middle">
+      {%- for f in months %}
+      {%- set x = loop.index0 * slot + slot // 2 %}
+      <text data-value-label="usage" x="{{ x }}" y="{{ height + 9 }}"
+            class="{{ show_values }} fill-sky-700 dark:fill-sky-300">{{ f.kwh }}</text>
+      <text data-value-label="cost" x="{{ x }}" y="{{ cost_points[loop.index0][1] - 5 }}"
+            class="{{ show_values }} fill-amber-700 dark:fill-amber-300">{{ charts.compact_eur(f.cost_cents) }}</text>
+      <text data-part="axis" x="{{ x }}" y="{{ height + 16 }}" text-anchor="end" dominant-baseline="central"
+            transform="rotate(-90 {{ x }} {{ height + 16 }})"
+            class="fill-gray-500 dark:fill-gray-400">{{ charts.month_label(f.month) }}</text>
+      {%- endfor %}
+    </g>
+  </svg>
 </div>
-{%- endif %}
+{%- endmacro %}
+
+{% macro _cost_series(name, points, costs, months, joined, dashes) %}
+<g data-series="{{ name }}" fill="none" stroke-width="2" class="stroke-amber-500 dark:stroke-amber-400">
+  <polyline points="{{ (joined|list + points)|map('join', ',')|join(' ') }}"{% if dashes %} stroke-dasharray="{{ dashes }}"{% endif %}></polyline>
+  {%- for x, y in points %}
+  <circle cx="{{ x }}" cy="{{ y }}" r="2.5" stroke-width="0" data-cents="{{ costs[loop.index0] }}"
+          class="fill-amber-500 dark:fill-amber-400">
+    <title>{{ charts.month_label(months[loop.index0].month) }}: {{ costs[loop.index0]|eur }}{{ " projected" if dashes }}</title>
+  </circle>
+  {%- endfor %}
+</g>
 {%- endmacro %}

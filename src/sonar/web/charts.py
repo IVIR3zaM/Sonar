@@ -240,10 +240,15 @@ def trend(values: Sequence[int]) -> list[Fraction]:
 
 
 def trend_line(
-    values: Sequence[int], slot: int, height: int
+    values: Sequence[int], slot: int, height: int, peak: int | None = None
 ) -> tuple[tuple[int, int], tuple[int, int]]:
-    """End points of the trend, first slot's center to the last, on the series' own scale."""
-    peak = max((abs(v) for v in values), default=0)
+    """End points of the trend, first slot's center to the last.
+
+    The scale is the series' own peak, or `peak` when the trend fits only the first part
+    of a longer series drawn on that series' scale.
+    """
+    if peak is None:
+        peak = max((abs(v) for v in values), default=0)
     fitted = trend(values)
 
     def y(value: Fraction) -> int:

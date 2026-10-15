@@ -101,13 +101,16 @@ def test_a_period_without_category_counts_no_advances(conn):
     assert view.status.paid_cents == 0
 
 
-def test_month_figures_are_present_for_fully_covered_months(conn):
+def test_chart_months_are_the_full_months_then_the_projected_rest_of_the_cycle(conn):
     meter_id = _meter_with_readings(conn)
     add_reading(conn, meter_id, Reading(date(2026, 2, 1), 310_000))
 
     [view] = load_energy(conn, TODAY)
 
-    assert [(f.month, f.kwh) for f in view.month_figures] == [(date(2026, 1, 1), 310)]
+    [january, *rest] = view.chart_months
+    assert (january.month, january.kwh, january.projected) == (date(2026, 1, 1), 310, False)
+    assert [m.month for m in rest] == [date(2026, month, 1) for month in range(2, 13)]
+    assert all(m.projected and m.cycle == "current" for m in rest)
 
 
 def test_a_meter_without_readings_still_loads(conn):
@@ -116,7 +119,7 @@ def test_a_meter_without_readings_still_loads(conn):
     [view] = load_energy(conn, TODAY)
 
     assert view.status is None
-    assert view.month_figures == []
+    assert view.chart_months == []
 
 
 def test_settlement_summaries_list_meters_with_a_projection(conn):

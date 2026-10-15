@@ -439,7 +439,7 @@ def test_a_chart_per_meter_has_both_series_and_a_trend_for_each(client, db_path)
     page = _page(client)
 
     charts = page.select("[data-energy-chart]")
-    chart = page.select_one(f"#meter-{meter} [data-energy-chart]")
+    chart = page.select_one(f"#meter-{meter} [data-energy-chart] [data-view=all]")
     months = len(chart.select('[data-series="usage"] rect'))
 
     assert len(charts) == 1
@@ -492,9 +492,72 @@ def test_the_chart_is_a_labelled_image_naming_both_series_and_units(client, db_p
 
 
 def test_fewer_than_two_months_shows_an_empty_state_instead_of_a_chart(client, db_path):
-    meter = _with_months(db_path, [(date(2026, 1, 1), 1_000_000), (date(2026, 2, 1), 1_100_000)])
+    meter = _electricity_meter(db_path)
+    january = _period(settlement_date=date(2026, 1, 31))
+    _store(db_path, lambda conn: add_period(conn, meter, january))
+    for day, value_milli in [(date(2026, 1, 1), 1_000_000), (date(2026, 2, 1), 1_100_000)]:
+        reading = Reading(day, value_milli)
+        _store(db_path, lambda conn, reading=reading: add_reading(conn, meter, reading))
 
     card = _page(client).select_one(f"#meter-{meter}")
 
     assert card.select_one("[data-energy-chart]") is None
     assert card.select_one("[data-energy-chart-empty]") is not None
+
+
+def _with_two_cycles(db_path) -> int:
+    """2025 and 2026 periods; Nov and Dec 2025 and Jan 2026 measured, the rest of 2026 projected."""
+    meter = _electricity_meter(db_path)
+    last_year = _period(start_date=date(2025, 1, 1), settlement_date=date(2025, 12, 31))
+    _store(db_path, lambda conn: add_period(conn, meter, last_year))
+    _store(db_path, lambda conn: add_period(conn, meter, _period()))
+    for day, value_milli in [
+        (date(2025, 11, 1), 1_000_000),
+        (date(2025, 12, 1), 1_300_000),
+        (date(2026, 1, 1), 1_650_000),
+        (date(2026, 2, 1), 1_950_000),
+    ]:
+        reading = Reading(day, value_milli)
+        _store(db_path, lambda conn, reading=reading: add_reading(conn, meter, reading))
+    return meter
+
+
+def _cycles(view) -> list[tuple[str, str]]:
+    return [
+        (rect["data-cycle"], rect["data-projected"])
+        for rect in view.select('[data-series="usage"] rect')
+    ]
+
+
+def test_the_chart_marks_previous_current_and_projected_months(client, db_path):
+    _with_two_cycles(db_path)
+
+    full = _page(client).select_one("[data-energy-chart] [data-view=all]")
+
+    assert _cycles(full) == (
+        [("previous", "false")] * 2 + [("current", "false")] + [("current", "true")] * 11
+    )
+    assert full.select_one('[data-series="cost"]') is not None
+    assert full.select_one('[data-series="cost-projected"]') is not None
+
+
+def test_the_chart_legend_names_every_series(client, db_path):
+    _with_two_cycles(db_path)
+
+    chart = _page(client).select_one("[data-energy-chart]")
+
+    assert {item["data-legend"] for item in chart.select("[data-legend]")} == {
+        "previous",
+        "current",
+        "projected",
+        "cost",
+        "cost-projected",
+    }
+
+
+def test_the_chart_has_a_current_cycle_only_view_for_small_screens(client, db_path):
+    _with_two_cycles(db_path)
+
+    current = _page(client).select_one("[data-energy-chart] [data-view=current]")
+
+    assert _cycles(current) == [("current", "false")] + [("current", "true")] * 11

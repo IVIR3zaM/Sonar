@@ -48,7 +48,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N04 | seasonal projection and suggested advance | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | meter page | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | cycle chart | exec | N06 | opus/opus | 0 | 0 | TODO | |
+| N07 | cycle chart | exec | N06 | opus/opus | 1 | 1 | DONE | |
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
@@ -306,7 +306,7 @@ Done when:
 - C2 [cmd] `uv run pytest -q tests/web/test_energy_page.py -k chart` passes: rects carry `data-cycle` and
   `data-projected`, cost and projected cost series, all legend entries, the current-only view
 - C3 [review] no float or `date.today` in settlement.py; projected days reuse N04's seasonal function
-- C4 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
+- C4 [cmd] `out=$(mktemp) && TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$out" --minify && cmp "$out" src/sonar/web/static/sonar.css` (tree sonar.css equals a fresh rebuild)
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N08 remembered chart toggles
@@ -426,3 +426,27 @@ exec: DONE · 1773 passed
 - Card: paid since hint, last settlement line, advance count and worst case hints; meter page: Settled amount field (create/edit/prefill) and settled in period list; edit no longer keeps the stored amount
 - Last settlement shown only with a current period and a settled previous period; sonar.css unchanged (no new classes)
 check: PASS 4/4
+
+### N07 try 1 · 2026-10-15
+exec: DONE · 1786 passed
+- settlement.cycle_months -> ChartMonth(month,kwh,cost_cents,cycle,projected); MeterView.chart_months replaces month_figures; energy_chart draws all/current views, cost and cost-projected series, per-cycle legend; trend_line takes optional peak; sonar.css rebuilt
+- no projection when the current period has no usage yet (same rule as meter_status, shared _usage_end); data-projected is true/false
+- current-only view and hidden-on-mobile full view only when the current cycle has 2+ months, else the full view shows at all widths; legend shows previous/projected entries only when present
+check: FAIL C4
+- C4 exit 1: \ No newline at end of file
+
+### N07 try 2 · 2026-10-15
+exec: BLOCKED · C4 cannot pass before commit: the node must change sonar.css (brief requires hidden sm:block, sky/amber classes absent from HEAD css) and git diff --exit-code compares the unstaged tree to the index; tree sonar.css is byte-identical to a fresh v4.3.3 rebuild (cmp), all other checks pass (1786 passed, ruff clean)
+
+### N07 replan 1 · 2026-10-15
+plan: REPLANNED
+- cause: C4 git diff --exit-code cannot pass before commit since the node must change sonar.css
+- C4 now rebuilds to a temp file and cmps it with the tree sonar.css; Do, Context and other criteria unchanged
+
+### N07 try 1 · 2026-10-15
+exec: DONE · 1786 passed
+- cycle_months/ChartMonth in settlement.py replace MeterView.month_figures; energy_chart draws previous muted, current solid, projected dashed, cost and cost-projected series, legend, data-view all/current; sonar.css rebuilt
+- projected months merge daily_kwh with seasonal_daily_kwh from as_of, priced by _rest_cost; trend_line takes optional peak so the trend over measured months shares the full chart scale
+- tree already held a partial try; continued it; .gitignore insurance/ change is not this node's and was left untouched
+check: PASS 4/4
+verify: PASS

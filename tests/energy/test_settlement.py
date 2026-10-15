@@ -9,9 +9,11 @@ from sonar.energy.settlement import (
     MonthFigure,
     cost,
     current_period,
+    cycle_months,
     daily_kwh,
     meter_status,
     month_figures,
+    round_half_up,
     same_day_last_year,
     seasonal_daily_kwh,
     worst_daily_kwh,
@@ -510,3 +512,103 @@ def test_suggested_advance_is_none_without_a_projection():
     usage = usage_of((date(2025, 12, 1), 0), (date(2026, 1, 1), kwh(100)))
     status = meter_status("electricity", [JANUARY], usage, [], date(2026, 1, 5))
     assert status.suggested_advance_cents is None
+
+
+# --- cycle chart months ----------------------------------------------------
+
+GAS_PREVIOUS = gas_period(date(2025, 9, 3), date(2026, 8, 25))
+GAS_CURRENT = gas_period(date(2026, 8, 26), date(2027, 8, 25))
+GAS_TODAY = date(2026, 10, 10)
+
+
+def gas_cycle_usage():
+    return usage_of(
+        (date(2025, 7, 1), 0),
+        (date(2025, 10, 1), kwh(90)),
+        (date(2026, 1, 1), kwh(600)),
+        (date(2026, 4, 1), kwh(1100)),
+        (date(2026, 9, 1), kwh(1250)),
+        (date(2026, 10, 10), kwh(1350)),
+    )
+
+
+def gas_cycle_months():
+    return cycle_months("gas", [GAS_PREVIOUS, GAS_CURRENT], gas_cycle_usage(), GAS_TODAY)
+
+
+def months_from(first: date, count: int) -> list[date]:
+    return [
+        date(first.year + (first.month - 1 + i) // 12, (first.month - 1 + i) % 12 + 1, 1)
+        for i in range(count)
+    ]
+
+
+def test_cycle_months_split_previous_current_and_projected():
+    months = gas_cycle_months()
+    shape = [(m.month, m.cycle, m.projected) for m in months]
+    assert shape == (
+        [(month, "previous", False) for month in months_from(date(2025, 10, 1), 11)]
+        + [(date(2026, 9, 1), "current", False)]
+        + [(month, "current", True) for month in months_from(date(2026, 10, 1), 11)]
+    )
+
+
+def test_cycle_months_actual_months_are_the_month_figures():
+    usage = gas_cycle_usage()
+    figures = {
+        f.month: (f.kwh, f.cost_cents)
+        for f in month_figures("gas", [GAS_PREVIOUS, GAS_CURRENT], usage)
+    }
+    for month in gas_cycle_months():
+        if not month.projected:
+            assert (month.kwh, month.cost_cents) == figures[month.month]
+
+
+def projected_days(first: date, last: date) -> dict[date, Fraction]:
+    usage = gas_cycle_usage()
+    measured = daily_kwh("gas", [GAS_PREVIOUS, GAS_CURRENT], usage)
+    seasonal = seasonal_daily_kwh("gas", GAS_CURRENT, usage, GAS_TODAY)
+    both = {**measured, **seasonal}
+    return {day: kwh for day, kwh in both.items() if first <= day <= last}
+
+
+def expected_figures(days: dict[date, Fraction], fee_days: int, month_days: int):
+    total = sum(days.values(), start=Fraction(0))
+    cost_cents = total * 98_600 / 10**4 + Fraction(995 * fee_days, month_days)
+    return round_half_up(total), round_half_up(cost_cents)
+
+
+def test_cycle_months_october_sums_measured_days_and_seasonal_days():
+    days = projected_days(date(2026, 10, 1), date(2026, 10, 31))
+    assert len(days) == 31
+    october = next(m for m in gas_cycle_months() if m.month == date(2026, 10, 1))
+    assert (october.kwh, october.cost_cents) == expected_figures(days, 31, 31)
+
+
+def test_cycle_months_settlement_month_stops_at_the_settlement_date():
+    days = projected_days(date(2027, 8, 1), date(2027, 8, 31))
+    assert max(days) == date(2027, 8, 25)
+    august = gas_cycle_months()[-1]
+    assert august.month == date(2027, 8, 1)
+    assert (august.kwh, august.cost_cents) == expected_figures(days, 25, 31)
+
+
+def test_cycle_months_without_a_current_period_show_the_latest_and_the_one_before():
+    months = cycle_months("gas", [GAS_PREVIOUS, GAS_CURRENT], gas_cycle_usage(), date(2027, 9, 1))
+    assert {m.cycle for m in months} == {"previous", "current"}
+    assert not any(m.projected for m in months)
+    assert [m.month for m in months if m.cycle == "current"] == [date(2026, 9, 1)]
+
+
+def test_cycle_months_project_nothing_without_usage_in_the_current_period():
+    usage = usage_of((date(2025, 7, 1), 0), (date(2026, 8, 1), kwh(900)))
+    months = cycle_months("gas", [GAS_PREVIOUS, GAS_CURRENT], usage, GAS_TODAY)
+    assert months and not any(m.projected for m in months)
+
+
+def test_cycle_months_keep_the_latest_24():
+    first = electricity_period(date(2024, 1, 1), date(2024, 12, 31))
+    latest = electricity_period(date(2025, 1, 1), date(2026, 6, 30))
+    usage = usage_of((date(2024, 1, 1), 0), (date(2026, 7, 1), kwh(9000)))
+    months = cycle_months("electricity", [first, latest], usage, date(2026, 8, 1))
+    assert [m.month for m in months] == months_from(date(2024, 7, 1), 24)

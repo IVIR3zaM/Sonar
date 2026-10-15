@@ -24,6 +24,7 @@ CENTS_PER_MICRO_EURO_KWH = Fraction(1, 10**4)  # µ€ per kWh to cents per kWh
 WHOLE_EURO_CENTS = 100
 GRACE_DAYS = 14  # a bill settles late: its last advance and the settlement itself fall this far out
 ADVANCES_PER_YEAR = 11
+CHART_MONTHS = 24
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,15 @@ class MonthFigure:
     month: date  # first day of the calendar month
     kwh: int
     cost_cents: int
+
+
+@dataclass(frozen=True)
+class ChartMonth:
+    month: date  # first day of the calendar month
+    kwh: int
+    cost_cents: int
+    cycle: str  # "previous" or "current"
+    projected: bool
 
 
 @dataclass(frozen=True)
@@ -114,6 +124,80 @@ def month_figures(
     return figures
 
 
+def cycle_months(
+    kind: str, periods: Sequence[BillingPeriod], usage: DailyUsage, today: date
+) -> list[ChartMonth]:
+    """The previous and the current billing cycle month by month, the latest 24.
+
+    A month belongs to the period in force on its 1st. The current cycle is the period in
+    force today (none: the latest, without a projection); its months after the last full
+    one are projected through the settlement month.
+    """
+    in_force = current_period(periods, today)
+    current = in_force or max(periods, key=lambda p: p.settlement_date, default=None)
+    if current is None:
+        return []
+    previous = _previous_period(periods, current)
+    cycles = {"previous": previous, "current": current}
+    actual = [
+        ChartMonth(figure.month, figure.kwh, figure.cost_cents, cycle, projected=False)
+        for figure in month_figures(kind, periods, usage)
+        for cycle, period in cycles.items()
+        if period is not None and period_on([period], figure.month) is not None
+    ]
+    projected = _projected_months(kind, periods, current, usage, actual) if in_force else []
+    return (actual + projected)[-CHART_MONTHS:]
+
+
+def _projected_months(
+    kind: str,
+    periods: Sequence[BillingPeriod],
+    period: BillingPeriod,
+    usage: DailyUsage,
+    actual: list[ChartMonth],
+) -> list[ChartMonth]:
+    """Measured days before `as_of` plus the seasonal days after, priced by the period."""
+    as_of = _usage_end(period, usage)
+    if as_of is None:
+        return []
+    kwh_by_day = {
+        **daily_kwh(kind, periods, usage),
+        **seasonal_daily_kwh(kind, period, usage, as_of),
+    }
+    last_actual = max((m.month for m in actual if m.cycle == "current"), default=None)
+    months = []
+    for month in _cycle_month_starts(period):
+        if last_actual is not None and month <= last_actual:
+            continue
+        last = min(month.replace(day=days_in_month(month)), period.settlement_date)
+        days = {day: kwh_by_day[day] for day in _days(month, last) if day in kwh_by_day}
+        total = sum(days.values(), start=Fraction(0))
+        cost_cents = round_half_up(_rest_cost(period, days))
+        months.append(ChartMonth(month, round_half_up(total), cost_cents, "current", True))
+    return months
+
+
+def _usage_end(period: BillingPeriod, usage: DailyUsage) -> date | None:
+    """The day after the last measured day of the period; None without usage in it.
+
+    Usage covers [first point, last point), so the last point ends the days so far.
+    """
+    first_day = max(period.start_date, min(usage, default=date.max))
+    end = min(
+        max(usage, default=date.min) + timedelta(days=1), period.settlement_date + timedelta(days=1)
+    )
+    return end if first_day < end else None
+
+
+def _cycle_month_starts(period: BillingPeriod) -> Iterator[date]:
+    """First days of the months whose 1st falls in the period."""
+    month = period.start_date.replace(day=1)
+    while month <= period.settlement_date:
+        if month >= period.start_date:
+            yield month
+        month = (month + timedelta(days=31)).replace(day=1)
+
+
 def meter_status(
     kind: str,
     periods: Sequence[BillingPeriod],
@@ -137,12 +221,8 @@ def meter_status(
     )
     remaining_advances = period.advance_cents * due_count
 
-    # Usage covers [first point, last point), so the last point ends the days so far.
-    first_day = max(period.start_date, min(usage, default=date.max))
-    end = min(
-        max(usage, default=date.min) + timedelta(days=1), period.settlement_date + timedelta(days=1)
-    )
-    if first_day >= end:
+    end = _usage_end(period, usage)
+    if end is None:
         return MeterStatus(
             None,
             None,
@@ -157,6 +237,7 @@ def meter_status(
             None,
         )
 
+    first_day = max(period.start_date, min(usage))
     cost_so_far = _exact_cost(periods, kwh_by_day, first_day, end - timedelta(days=1))
     projected = cost_so_far + _rest_cost(period, seasonal_daily_kwh(kind, period, usage, end))
     worst = cost_so_far + _rest_cost(period, worst_daily_kwh(kind, period, usage, end))

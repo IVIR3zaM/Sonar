@@ -10,11 +10,11 @@ from sonar.categorization.store import transactions_with_category
 from sonar.energy.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.energy.settlement import (
     Booking,
+    ChartMonth,
     MeterStatus,
-    MonthFigure,
     current_period,
+    cycle_months,
     meter_status,
-    month_figures,
 )
 from sonar.energy.store import (
     Stored,
@@ -34,7 +34,7 @@ class MeterView:
     exchanges: list[Stored[Exchange]]
     readings: list[Stored[Reading]]
     status: MeterStatus | None  # None without a period in force today
-    month_figures: list[MonthFigure]
+    chart_months: list[ChartMonth]  # the previous and the current cycle
 
 
 def load_energy(conn: sqlite3.Connection, today: date) -> list[MeterView]:
@@ -62,7 +62,7 @@ def _meter_view(
         exchanges=exchanges,
         readings=readings,
         status=meter_status(kind, billing, usage, _bookings(transactions, in_force), today),
-        month_figures=month_figures(kind, billing, usage),
+        chart_months=cycle_months(kind, billing, usage, today),
     )
 
 

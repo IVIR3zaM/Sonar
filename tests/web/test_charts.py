@@ -618,15 +618,45 @@ def test_trend_line_runs_from_the_first_to_the_last_slot_on_the_series_scale():
     assert trend_line([0, 0], slot=10, height=50) == ((5, 50), (15, 50))
 
 
+def test_trend_line_can_use_a_wider_scale_than_its_own_values():
+    assert trend_line([10, 20], slot=10, height=50, peak=40) == ((5, 38), (15, 25))
+
+
+def chart_month(i: int, cycle: str = "current", projected: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(
+        month=date(2024 + i // 12, i % 12 + 1, 1),
+        kwh=100 + i,
+        cost_cents=5000 + i,
+        cycle=cycle,
+        projected=projected,
+    )
+
+
 def test_energy_chart_macro_draws_the_last_24_months_with_axis_labels(render):
-    figures = [
-        SimpleNamespace(month=date(2024 + i // 12, i % 12 + 1, 1), kwh=100 + i, cost_cents=5000 + i)
-        for i in range(30)
-    ]
+    figures = [chart_month(i) for i in range(30)]
+
+    soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
+    full = soup.select_one("[data-view=all]")
+
+    assert len(full.select('[data-series="usage"] rect')) == 24
+    assert [t.get_text() for t in full.select("[data-part=axis]")][0] == month_label(
+        figures[6].month
+    )
+
+
+def test_energy_chart_trend_runs_over_the_actual_months_only(render):
+    figures = [chart_month(0), chart_month(1), chart_month(2, projected=True)]
+
+    soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
+    usage_trend = soup.select_one("[data-view=all] [data-trend=usage]")
+
+    assert (usage_trend["x1"], usage_trend["x2"]) == ("14", "42")
+
+
+def test_energy_chart_without_two_current_months_has_no_current_only_view(render):
+    figures = [chart_month(0, "previous"), chart_month(1, "previous"), chart_month(2)]
 
     soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
 
-    assert len(soup.select('[data-series="usage"] rect')) == 24
-    assert [t.get_text() for t in soup.select("[data-part=axis]")][0] == month_label(
-        figures[6].month
-    )
+    assert soup.select_one("[data-view=current]") is None
+    assert len(soup.select("[data-view=all] rect")) == 3

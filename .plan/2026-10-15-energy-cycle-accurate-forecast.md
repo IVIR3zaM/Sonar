@@ -44,7 +44,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | settled amount | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
-| N03 | paid window and remaining advances | exec | N02,N11 | sonnet/opus | 0 | 0 | TODO | |
+| N03 | paid window and remaining advances | exec | N02,N11 | sonnet/opus | 1 | 0 | DONE | |
 | N04 | seasonal projection and suggested advance | exec | N03 | sonnet/opus | 0 | 0 | TODO | |
 | N05 | meter page | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -399,4 +399,11 @@ check: PASS 2/2
 check: PASS 4/4
 
 ### N11 try 1 · 2026-10-15
+verify: PASS
+
+### N03 try 1 · 2026-10-15
+exec: DONE · 1729 passed
+- meter_status takes signed bookings; paid window, settled-amount exclusion, advance_count and capped remaining advances; MeterStatus gains paid_since and advance_count
+- service passes all category transactions; energy page pins moved to 29650 refund and 14350 back payment
+check: PASS 4/4
 verify: PASS

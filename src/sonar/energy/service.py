@@ -9,7 +9,7 @@ from datetime import date
 from sonar.categorization.store import transactions_with_category
 from sonar.energy.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.energy.settlement import (
-    Advance,
+    Booking,
     MeterStatus,
     MonthFigure,
     current_period,
@@ -61,19 +61,19 @@ def _meter_view(
         periods=periods,
         exchanges=exchanges,
         readings=readings,
-        status=meter_status(kind, billing, usage, _advances(transactions, in_force), today),
+        status=meter_status(kind, billing, usage, _bookings(transactions, in_force), today),
         month_figures=month_figures(kind, billing, usage),
     )
 
 
-def _advances(transactions: list, period: BillingPeriod | None) -> list[Advance]:
-    """Debits filed under the period's category, as positive cents; credits are ignored."""
+def _bookings(transactions: list, period: BillingPeriod | None) -> list[Booking]:
+    """Signed amounts filed under the period's category; the math picks the advances."""
     if period is None or period.category is None:
         return []
     return [
-        (transaction.booking_date, -transaction.amount_cents)
+        (transaction.booking_date, transaction.amount_cents)
         for transaction, category in transactions
-        if category == period.category and transaction.amount_cents < 0
+        if category == period.category
     ]
 
 

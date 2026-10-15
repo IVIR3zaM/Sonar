@@ -214,13 +214,13 @@ def test_status_stats_carry_cents(client, db_path):
     assert stat("paid") == 5_000
     assert stat("left") == 5_000 - 687
     # Projected: 10 kWh a day at 3 ct all year plus 12 fees is 25350 cents in all.
-    # 5000 paid + 11 more advances of 5000 (3 Feb .. 3 Dec) - 25350 = 34650 refund.
+    # 5000 paid + 10 more advances of 5000 (11 a year, one paid) - 25350 = 29650 refund.
     settlement = page.select_one(f"#meter-{meter}-settlement")
-    assert cents(settlement) == 34_650
+    assert cents(settlement) == 29_650
     assert settlement["data-kind"] == "refund"
-    assert stat("worst-case") == 34_650
-    # (25350 - 5000) / 11 advances = 1850, rounded up to whole euros.
-    assert stat("suggested-advance") == 1_900
+    assert stat("worst-case") == 29_650
+    # (25350 - 5000) / 10 advances = 2035, rounded up to whole euros.
+    assert stat("suggested-advance") == 2_100
     assert page.select_one(f"#meter-{meter}-settlement-date")["datetime"] == "2026-12-31"
 
 
@@ -232,9 +232,9 @@ def test_a_back_payment_is_worded_as_such(client, db_path):
 
     settlement = _page(client).select_one(f"#meter-{meter}-settlement")
 
-    # Nothing paid: 12 advances of 1000 (the 1st of each month) - 25350 projected.
+    # Nothing paid: 11 advances of 1000 (11 a year) - 25350 projected.
     assert settlement["data-kind"] == "back-payment"
-    assert cents(settlement) == 13_350
+    assert cents(settlement) == 14_350
 
 
 def test_a_meter_without_a_current_period_shows_no_projection(client, db_path):

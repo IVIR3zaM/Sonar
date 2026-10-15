@@ -19,6 +19,8 @@ FIELD_HINTS = {
     "date": "pick a date",
     "int": "enter a whole number",
     "percent": "enter a percent like 3.5",
+    "decimal3": "enter a number with up to 3 decimals, like 1234.567",
+    "decimal4": "enter a number with up to 4 decimals, like 8.1234",
 }
 
 
@@ -52,6 +54,13 @@ DOMAIN_ERROR_HINTS = {
     "interest_bp must be positive when set": "Interest must be positive when set.",
     "value must not be blank": "Match value must not be blank.",
     "field must be one of": "Match field must be counterparty or mandate.",
+    "unit price must be positive": "Unit price must be positive.",
+    "base_fee_cents must not be negative": "Base fee must not be negative.",
+    "advance_cents must not be negative": "Advance must not be negative.",
+    "expected_kwh must not be negative": "Expected usage must not be negative.",
+    "state_factor_e4 is required": "State factor is required for gas and must be positive.",
+    "calorific_value_e4 is required": "Calorific value is required for gas and must be positive.",
+    "settlement date must not be before": "Settlement date must not be before the start date.",
 }
 
 
@@ -61,3 +70,30 @@ def friendly(error: ValueError) -> str:
         if needle in text:
             return human
     return text
+
+
+def parse_scaled(text: str, places: int) -> int:
+    """Parse a non-negative decimal with at most `places` decimals into an integer
+    of 10**-places units, e.g. "12,345" at 3 places -> 12345.
+
+    Accepts one "." or "," as the decimal separator and no thousands separator,
+    like parse_cents; raises ValueError for blank, malformed or too precise text.
+    """
+    text = text.strip()
+    if not text:
+        raise ValueError("Empty number")
+    if sum(text.count(separator) for separator in ".,") > 1:
+        raise ValueError("Multiple decimal separators")
+    whole, _, fraction = text.replace(",", ".").partition(".")
+    if not whole or not (whole + fraction).isascii() or not (whole + fraction).isdecimal():
+        raise ValueError("Invalid number")
+    if len(fraction) > places:
+        raise ValueError("Too many decimal places")
+    return int(whole + fraction.ljust(places, "0"))
+
+
+def format_scaled(value: int, places: int) -> str:
+    """The inverse of parse_scaled, for form prefills and displayed readings."""
+    sign = "-" if value < 0 else ""
+    whole, fraction = divmod(abs(value), 10**places)
+    return f"{sign}{whole}.{fraction:0{places}d}"

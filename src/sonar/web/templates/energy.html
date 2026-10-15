@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/empty.html" import empty %}
+
+{% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
+{% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
+{% set th_num = th ~ " text-right" %}
+{% set td = "py-3 pr-4 align-top text-ink last:pr-0" %}
+{% set td_num = td ~ " text-right whitespace-nowrap tabular-nums" %}
+{% set section_title = "text-xs font-semibold uppercase tracking-wide text-ink-muted" %}
+{% set summary = "inline-flex cursor-pointer select-none items-center rounded-control px-2 py-1 text-xs font-medium text-accent hover:bg-accent-soft" %}
+{% set drawer = "mt-2 rounded-control border border-line bg-surface-muted/50 p-3" %}
+{% set kind_options = [("gas", "Gas"), ("electricity", "Electricity")] %}
+
+{% macro form_error(err) %}
+{%- if err %}
+<div id="form-error" role="alert" tabindex="-1" class="col-span-2 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ err.message }}</div>
+{%- endif %}
+{% endmacro %}
+
+{#- The form `key` owns the error, if any: it then shows what was typed
+    instead of its defaults, and its drawer opens. #}
+{% macro reading_form(key, action, err, defaults, unit, submit) %}
+{% set v = err.fields if err else defaults %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
+  {{ form_error(err) }}
+  {{ field("date", "Date", type="date", value=v.date, id=key ~ "-date", required=true) }}
+  {{ field("value", "Reading (" ~ unit ~ ")", value=v.value, id=key ~ "-value", required=true, help="Up to 3 decimals") }}
+  <div class="col-span-2">{{ button(submit, size="sm") }}</div>
+</form>
+{% endmacro %}
+
+{% macro exchange_form(key, action, err, defaults, unit, submit) %}
+{% set v = err.fields if err else defaults %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
+  {{ form_error(err) }}
+  <div class="col-span-2">{{ field("date", "Exchange date", type="date", value=v.date, id=key ~ "-date", required=true) }}</div>
+  {{ field("old_final", "Old meter final (" ~ unit ~ ")", value=v.old_final, id=key ~ "-old-final", required=true, help="Up to 3 decimals") }}
+  {{ field("new_start", "New meter start (" ~ unit ~ ")", value=v.new_start, id=key ~ "-new-start", required=true, help="Up to 3 decimals") }}
+  <div class="col-span-2">{{ button(submit, size="sm") }}</div>
+</form>
+{% endmacro %}
+
+{% macro period_form(key, action, err, defaults, kind, categories, submit) %}
+{% set v = err.fields if err else defaults %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
+  {{ form_error(err) }}
+  {{ field("start_date", "Start", type="date", value=v.start_date, id=key ~ "-start-date", required=true) }}
+  {{ field("settlement_date", "Settlement date", type="date", value=v.settlement_date, id=key ~ "-settlement-date", required=true, help="Last day of the period") }}
+  {{ field("base_fee", "Base fee per month (€)", value=v.base_fee, id=key ~ "-base-fee", required=true, help="e.g. 12.50") }}
+  {{ field("unit_price", "Unit price (ct/kWh)", value=v.unit_price, id=key ~ "-unit-price", required=true, help="Up to 4 decimals") }}
+  {% if kind == "gas" %}
+  {{ field("state_factor", "State factor", value=v.state_factor, id=key ~ "-state-factor", required=true, help="Zustandszahl, up to 4 decimals") }}
+  {{ field("calorific_value", "Calorific value (kWh/m³)", value=v.calorific_value, id=key ~ "-calorific-value", required=true, help="Brennwert, up to 4 decimals") }}
+  {% endif %}
+  {{ field("advance", "Advance per month (€)", value=v.advance, id=key ~ "-advance", required=true, help="Abschlag, e.g. 85.00") }}
+  {{ field("expected_kwh", "Expected usage per year (kWh)", type="number", value=v.expected_kwh, id=key ~ "-expected-kwh", required=true, attrs={"min": 0}) }}
+  <div class="col-span-2">{{ field("category", "Category of the advances", value=v.category, id=key ~ "-category", options=categories) }}</div>
+  <div class="col-span-2">{{ button(submit, size="sm") }}</div>
+</form>
+{% endmacro %}
+
+{% macro delete_form(key, action, confirm) %}
+<form id="{{ key }}" method="post" action="{{ action }}" class="mt-2"
+      hx-post="{{ action }}" hx-confirm="{{ confirm }}"
+      hx-target="#main" hx-select="#main" hx-swap="outerHTML">
+  {{ button("Delete", variant="danger", size="sm") }}
+</form>
+{% endmacro %}
+
+{#- A projected settlement is worded by its sign: a refund or a back-payment. #}
+{% macro outcome(cents, id) -%}
+{{ amount(cents | abs, colored=false, id=id, attrs={"data-kind": "refund" if cents >= 0 else "back-payment"}) }}
+{%- endmacro %}
+
+{% block content %}
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Energy</h1>
+  <p class="mt-1 text-sm text-ink-muted">Gas and electricity meters, what the current billing period costs, and the settlement ahead.</p>
+</header>
+
+{% if error and error.form == "page" %}
+<div id="form-error" role="alert" tabindex="-1" class="mb-6 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ error.message }}</div>
+{% endif %}
+
+<div class="space-y-6">
+  {% for m in cards %}
+  {% set meter = m.view.meter %}
+  {% set status = m.view.status %}
+  {% set pre = "meter-" ~ m.view.id %}
+  {% call card(id=pre, attrs={"data-meter-id": m.view.id}) %}
+  <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold text-ink" data-field="name">{{ meter.name }}</h2>
+      {{ badge(meter.kind, tone="accent", attrs={"data-field": "kind"}) }}
+    </div>
+    {% if m.is_empty %}
+    <form id="{{ pre }}-delete" method="post" action="/energy/meters/{{ m.view.id }}/delete"
+          hx-post="/energy/meters/{{ m.view.id }}/delete" hx-confirm="Delete {{ meter.name }}? This cannot be undone."
+          hx-target="#main" hx-select="#main" hx-swap="outerHTML">
+      {{ button("Delete meter", variant="danger", size="sm") }}
+    </form>
+    {% endif %}
+  </header>
+
+  {% if status %}
+  <dl class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    {{ stat("Paid so far", value=amount(status.paid_cents, colored=false, id=pre ~ "-paid")) }}
+    {% if status.cost_so_far_cents is not none %}
+    {{ stat("Cost so far", value=amount(status.cost_so_far_cents, colored=false, id=pre ~ "-cost-so-far"), hint="as of " ~ date(status.as_of)) }}
+    {{ stat("Left", value=amount(status.left_cents, id=pre ~ "-left"), hint="paid minus cost so far") }}
+    {{ stat("Projected refund" if status.settlement_cents >= 0 else "Projected back-payment", value=outcome(status.settlement_cents, pre ~ "-settlement"), hint=("on " ~ date(m.current.settlement_date, id=pre ~ "-settlement-date"))) }}
+    {{ stat("Worst case refund" if status.worst_settlement_cents >= 0 else "Worst case back-payment", value=outcome(status.worst_settlement_cents, pre ~ "-worst-case"), hint="at the highest daily usage") }}
+    {% if status.suggested_advance_cents is not none %}
+    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint="per month") }}
+    {% else %}
+    {{ stat("Suggested advance", value="–", hint="no advance left in this period") }}
+    {% endif %}
+    {% endif %}
+  </dl>
+  {% if status.cost_so_far_cents is none %}
+  <p id="{{ pre }}-no-usage" class="text-sm text-ink-muted">No readings in the current period yet, so there is no cost or projection.</p>
+  {% endif %}
+  {% elif m.latest %}
+  <p id="{{ pre }}-settled" class="text-sm text-ink-muted">No billing period is in force today. The latest one ended {{ date(m.latest.item.settlement_date) }} and is settled.</p>
+  {% else %}
+  <p id="{{ pre }}-no-period" class="text-sm text-ink-muted">Add a billing period to see costs and a projection.</p>
+  {% endif %}
+
+  <section class="mt-6">
+    <h3 class="{{ section_title }}">Readings</h3>
+    {% if m.readings %}
+    <div class="{{ table_wrap }}">
+      <table id="{{ pre }}-readings" class="w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th class="{{ th }}">Date</th>
+            <th class="{{ th_num }}">Reading ({{ m.unit }})</th>
+            <th class="{{ th_num }}">Usage ({{ m.unit }})</th>
+            <th class="{{ th_num }}">kWh per day</th>
+            <th class="{{ th }}"><span class="sr-only">Manage</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in m.readings %}
+          {% set reading = row.stored.item %}
+          {% set key = "reading-" ~ row.stored.id ~ "-edit" %}
+          {% set err = error if error and error.form == key else none %}
+          <tr data-row data-reading-id="{{ row.stored.id }}" class="border-t border-line">
+            <td class="{{ td }}" data-field="date">{{ date(reading.reading_date) }}</td>
+            <td class="{{ td_num }}" data-field="reading">{{ reading.value_milli | scaled(3) }}</td>
+            <td class="{{ td_num }}" data-field="usage">{% if row.usage_milli is not none %}{{ row.usage_milli | scaled(3) }}{% endif %}</td>
+            <td class="{{ td_num }}" data-field="kwh_per_day">{% if row.kwh_per_day is not none %}{{ row.kwh_per_day }}{% endif %}</td>
+            <td class="{{ td }}">
+              <details{% if err %} open{% endif %}>
+                <summary class="{{ summary }}">Edit</summary>
+                <div class="{{ drawer }}">{{ reading_form(key, "/energy/readings/" ~ row.stored.id ~ "/edit", err, values.reading(reading), m.unit, "Save") }}</div>
+              </details>
+              {{ delete_form("reading-" ~ row.stored.id ~ "-delete", "/energy/readings/" ~ row.stored.id ~ "/delete", "Delete this reading? This cannot be undone.") }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="mt-2 text-sm text-ink-muted">No readings yet.</p>
+    {% endif %}
+    {% set key = pre ~ "-add-reading" %}
+    {% set err = error if error and error.form == key else none %}
+    <div class="{{ drawer }}">
+      <h4 class="mb-2 text-sm font-semibold text-ink">Add a reading</h4>
+      {{ reading_form(key, "/energy/meters/" ~ m.view.id ~ "/readings", err, {"date": "", "value": ""}, m.unit, "Add reading") }}
+    </div>
+  </section>
+
+  <section class="mt-6">
+    <h3 class="{{ section_title }}">Meter exchanges</h3>
+    {% if m.view.exchanges %}
+    <ul id="{{ pre }}-exchanges" class="mt-2 divide-y divide-line">
+      {% for stored in m.view.exchanges %}
+      {% set exchange = stored.item %}
+      {% set key = "exchange-" ~ stored.id ~ "-edit" %}
+      {% set err = error if error and error.form == key else none %}
+      <li data-row data-exchange-id="{{ stored.id }}" class="py-3">
+        <p class="text-sm text-ink">
+          <span data-field="date">{{ date(exchange.exchange_date) }}</span>:
+          <span data-field="old_final" class="tabular-nums">{{ exchange.old_final_milli | scaled(3) }}</span> {{ m.unit }} on the old meter,
+          <span data-field="new_start" class="tabular-nums">{{ exchange.new_start_milli | scaled(3) }}</span> {{ m.unit }} on the new one
+        </p>
+        <details{% if err %} open{% endif %}>
+          <summary class="{{ summary }}">Edit</summary>
+          <div class="{{ drawer }}">{{ exchange_form(key, "/energy/exchanges/" ~ stored.id ~ "/edit", err, values.exchange(exchange), m.unit, "Save") }}</div>
+        </details>
+        {{ delete_form("exchange-" ~ stored.id ~ "-delete", "/energy/exchanges/" ~ stored.id ~ "/delete", "Delete this meter exchange? This cannot be undone.") }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mt-2 text-sm text-ink-muted">No exchanges. Add one when the meter was swapped.</p>
+    {% endif %}
+    {% set key = pre ~ "-add-exchange" %}
+    {% set err = error if error and error.form == key else none %}
+    <details{% if err %} open{% endif %} class="mt-2">
+      <summary class="{{ summary }}">Add an exchange</summary>
+      <div class="{{ drawer }}">{{ exchange_form(key, "/energy/meters/" ~ m.view.id ~ "/exchanges", err, {"date": "", "old_final": "", "new_start": ""}, m.unit, "Add exchange") }}</div>
+    </details>
+  </section>
+
+  <section class="mt-6">
+    <h3 class="{{ section_title }}">Billing periods</h3>
+    {% if m.view.periods %}
+    <ul id="{{ pre }}-periods" class="mt-2 divide-y divide-line">
+      {% for stored in m.view.periods | reverse %}
+      {% set period = stored.item %}
+      {% set key = "period-" ~ stored.id ~ "-edit" %}
+      {% set err = error if error and error.form == key else none %}
+      <li data-row data-period-id="{{ stored.id }}" class="py-3">
+        <p class="text-sm font-medium text-ink">{{ date(period.start_date) }} – {{ date(period.settlement_date) }}</p>
+        <dl class="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+          <div><dt class="text-xs text-ink-muted">Base fee per month</dt><dd data-field="base_fee">{{ amount(period.base_fee_cents, colored=false) }}</dd></div>
+          <div><dt class="text-xs text-ink-muted">Unit price</dt><dd data-field="unit_price" class="tabular-nums">{{ period.unit_price_micro | scaled(4) }} ct/kWh</dd></div>
+          {% if meter.kind == "gas" %}
+          <div><dt class="text-xs text-ink-muted">State factor</dt><dd data-field="state_factor" class="tabular-nums">{{ period.state_factor_e4 | scaled(4) }}</dd></div>
+          <div><dt class="text-xs text-ink-muted">Calorific value</dt><dd data-field="calorific_value" class="tabular-nums">{{ period.calorific_value_e4 | scaled(4) }} kWh/m³</dd></div>
+          {% endif %}
+          <div><dt class="text-xs text-ink-muted">Advance per month</dt><dd data-field="advance">{{ amount(period.advance_cents, colored=false) }}</dd></div>
+          <div><dt class="text-xs text-ink-muted">Expected usage per year</dt><dd data-field="expected_kwh" class="tabular-nums">{{ period.expected_kwh }} kWh</dd></div>
+          <div><dt class="text-xs text-ink-muted">Category</dt><dd data-field="category">{{ period.category or "–" }}</dd></div>
+        </dl>
+        <details{% if err %} open{% endif %}>
+          <summary class="{{ summary }}">Edit</summary>
+          <div class="{{ drawer }}">{{ period_form(key, "/energy/periods/" ~ stored.id ~ "/edit", err, values.period(period), meter.kind, category_options, "Save") }}</div>
+        </details>
+        {{ delete_form("period-" ~ stored.id ~ "-delete", "/energy/periods/" ~ stored.id ~ "/delete", "Delete this billing period? This cannot be undone.") }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mt-2 text-sm text-ink-muted">No billing periods yet.</p>
+    {% endif %}
+    {% set key = pre ~ "-new-period" %}
+    {% set err = error if error and error.form == key else none %}
+    <details{% if err or not m.latest %} open{% endif %} class="mt-2">
+      <summary class="{{ summary }}">{{ "Start new period" if m.latest else "Add a billing period" }}</summary>
+      <div class="{{ drawer }}">{{ period_form(key, "/energy/meters/" ~ m.view.id ~ "/periods", err, m.new_period, meter.kind, category_options, "Add period") }}</div>
+    </details>
+  </section>
+  {% endcall %}
+  {% endfor %}
+
+  {% set key = "add-meter" %}
+  {% set err = error if error and error.form == key else none %}
+  {% set v = err.fields if err else {"name": "", "kind": "gas"} %}
+  {% call card(title="Add a meter", subtitle="One per gas or electricity meter.", id="add-meter-card") %}
+  <form id="add-meter" method="post" action="/energy/meters" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    {{ form_error(err) }}
+    {{ field("name", "Name", value=v.name, id="add-meter-name", required=true, attrs={"placeholder": "e.g. Flat gas"}) }}
+    {{ field("kind", "Kind", value=v.kind, id="add-meter-kind", options=kind_options) }}
+    <div class="sm:col-span-2">{{ button("Add meter") }}</div>
+  </form>
+  {% endcall %}
+</div>
+{% endblock %}

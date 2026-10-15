@@ -24,7 +24,7 @@ from sonar.categorization.service import CategoryNotFound, RuleNotFound, reapply
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.debts.store import DebtNotFound, DraftNotFound
 from sonar.recurring.store import PaymentNotFound
-from sonar.web import access, charts
+from sonar.web import access, charts, forms
 from sonar.web.api import build_api_router
 from sonar.web.display import cadence, days_until, display_date, eur
 from sonar.web.pages import auth as auth_pages
@@ -33,6 +33,7 @@ from sonar.web.pages import (
     categories,
     dashboard,
     debts,
+    energy,
     import_,
     legal,
     lights_on,
@@ -74,6 +75,7 @@ def _group_label(category_type: str | None) -> str | None:
 templates.env.filters["money"] = _format_cents
 templates.env.filters["percent"] = _format_percent
 templates.env.filters["eur"] = eur
+templates.env.filters["scaled"] = forms.format_scaled
 templates.env.filters["date"] = display_date
 templates.env.filters["cadence"] = cadence
 templates.env.filters["days_until"] = days_until
@@ -130,6 +132,7 @@ def create_app(
     app.include_router(recurring.build_router(db_path, today, templates))
     app.include_router(debts.build_router(db_path, today, templates))
     app.include_router(payoff.build_router(db_path, today, templates))
+    app.include_router(energy.build_router(db_path, today, templates))
     app.include_router(settings.build_router(db_path, today, templates))
     app.include_router(categories.build_router(db_path, today, templates))
     app.include_router(legal.build_router(templates))

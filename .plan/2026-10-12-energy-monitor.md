@@ -1,5 +1,5 @@
 # Energy monitor
-status: WAITING
+status: RUNNING
 created: 2026-10-12 · updated: 2026-10-15
 goal: Per gas or electricity meter, Sonar shows the cost so far, the advances paid, the projected settlement and a suggested advance, from hand-entered readings, meter exchanges and billing periods, on an Energy page, a dashboard card and in the forecast.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -49,7 +49,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N06 | Energy page | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N11 | -/- | 0 | 1 | TODO | |
+| N09 | visual check | gate | N11 | -/- | 0 | 1 | DONE | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | energy card layout | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
 

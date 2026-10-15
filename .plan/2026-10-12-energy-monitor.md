@@ -44,7 +44,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
 | N02 | energy model, usage and SPEC | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | migration and energy store | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
-| N04 | settlement math | exec | N02 | sonnet/opus | 1 | 0 | VERIFYING | |
+| N04 | settlement math | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | energy service and JSON API | exec | N03,N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | Energy page | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -332,3 +332,4 @@ check: PASS 3/3
 
 ### N04 try 1 · 2026-10-15
 check: PASS 3/3
+verify: PASS

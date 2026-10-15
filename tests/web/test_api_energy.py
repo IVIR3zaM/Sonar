@@ -99,7 +99,7 @@ def test_get_lists_a_meter_with_its_status_and_paid_advances(client, db_path):
     assert meter["periods"][0]["category"] == "Utilities"
     assert [r["date"] for r in meter["readings"]] == ["2026-01-01", "2026-01-11"]
     assert meter["exchanges"] == []
-    assert meter["month_figures"] == []
+    assert set(meter) == {"id", "name", "kind", "status", "periods", "exchanges", "readings"}
 
 
 def test_status_is_null_without_a_current_period(client):

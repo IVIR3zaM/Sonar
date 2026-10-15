@@ -132,7 +132,6 @@ def _meter_item(view: MeterView) -> dict:
         "periods": [_period_item(period) for period in view.periods],
         "exchanges": [_exchange_item(exchange) for exchange in view.exchanges],
         "readings": [_reading_item(reading) for reading in view.readings],
-        "month_figures": _jsonable(view.month_figures),
     }
 
 

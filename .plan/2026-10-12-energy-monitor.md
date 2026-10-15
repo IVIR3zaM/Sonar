@@ -50,8 +50,9 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N11 | -/- | 0 | 1 | DONE | |
-| N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
+| N10 | plan acceptance | check | N12 | -/sonnet | 0 | 1 | TODO | |
 | N11 | energy card layout | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
+| N12 | API meter shape | exec | N09 | haiku/haiku | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the Tailwind CLI builds
@@ -307,6 +308,23 @@ Done when:
   unwrapped) and nothing is clipped or needs scrolling inside the card
 - C5 [visual] an invalid reading shows the inline error with the entered value kept
 
+## N12 API meter shape
+Do: Make each meter item of `GET /api/energy` carry exactly the keys D10 and the SPEC §13 Energy bullet list:
+  `id, name, kind, status, periods, exchanges, readings`. Drop the extra `month_figures` key from the API only.
+Context: D10 fixes `GET /api/energy` → `{meters: [{id, name, kind, status, periods, exchanges, readings}]}`
+  (SPEC.md:261, "API:" sentence). The extra key is added at src/sonar/web/api/energy.py:135 and asserted at
+  tests/web/test_api_energy.py:102. `MeterView.month_figures` (src/sonar/energy/service.py:37) stays: the
+  Energy page chart uses it (src/sonar/web/templates/energy.html:138) and tests/energy/test_service.py
+  covers it. Change no SPEC text, service, settlement or template.
+Read: `src/sonar/web/api/energy.py:104-137`, `tests/web/test_api_energy.py:80-110`
+Write: `src/sonar/web/api/energy.py`, `tests/web/test_api_energy.py`
+Test first: replace the assertion at tests/web/test_api_energy.py:102 with one that the meter item's key set
+  equals `{"id", "name", "kind", "status", "periods", "exchanges", "readings"}`; it fails on the extra key.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_api_energy.py` passes, including the exact key-set assertion
+- C2 [cmd] `! grep -n "month_figures" src/sonar/web/api/energy.py tests/web/test_api_energy.py`
+- C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N10 plan acceptance
 Do: Check the whole plan against verify, SPEC §11 and §12 and the Energy bullet.
 Done when:
@@ -403,3 +421,20 @@ exec: DONE · 1702 passed
 - Added no-table test; kept id=energy on the container and all data-field hooks
 check: PASS 2/2
 verify: PASS
+
+### N10 try 1 · 2026-10-15
+check: PASS 3/3
+verify: FAIL C5
+- C5 src/sonar/web/api/energy.py:126-135 - GET /api/energy meter items carry an extra month_figures key (asserted in tests/web/test_api_energy.py:102); SPEC §13 Energy lists exactly {id, name, kind, status, periods, exchanges, readings} - SPEC bullet and code must agree
+
+### N10 replan 1 · 2026-10-15
+plan: REPLANNED +N12
+- cause: C5 GET /api/energy meter items carry month_figures, outside D10 and the SPEC §13 Energy API shape
+- fix node N12 (exec, haiku) drops month_figures from the API item only and asserts the exact key set; MeterView and the chart keep it
+- N10 now depends on N12; its brief is unchanged
+
+### N12 try 1 · 2026-10-15
+exec: DONE · 1702 passed
+- API meter item drops month_figures; test asserts exact key set
+- MeterView.month_figures kept for the Energy page chart and service tests
+check: PASS 3/3

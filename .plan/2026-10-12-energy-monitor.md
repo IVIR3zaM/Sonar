@@ -43,8 +43,8 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
 | N02 | energy model, usage and SPEC | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | migration and energy store | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
-| N04 | settlement math | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
+| N03 | migration and energy store | exec | N02 | sonnet/sonnet | 1 | 0 | DONE | |
+| N04 | settlement math | exec | N02 | sonnet/opus | 1 | 0 | VERIFYING | |
 | N05 | energy service and JSON API | exec | N03,N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | Energy page | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -316,3 +316,19 @@ exec: DONE · 1550 passed
 - Date fields are reading_date/exchange_date (a field named date would shadow the type); series are list[tuple[date, int]] in milli; daily_usage returns Fractions in meter units (milli/1000)
 check: PASS 3/3
 verify: PASS
+
+### N03 try 1 · 2026-10-15
+exec: DONE · 1588 passed
+- 0014_energy.sql (4 tables), energy/store.py with Stored[T](id, item) wrappers; writes re-check series/periods in the transaction and roll back on FieldError
+- unique-date IntegrityError mapped to FieldError date, duplicate meter name to FieldError name; category by LEFT JOIN
+
+### N04 try 1 · 2026-10-15
+exec: DONE · 1588 passed
+- energy/settlement.py: daily_kwh, cost, month_figures, current_period, meter_status, MeterStatus; 22 tests
+- Choices: last year's rate is the mean daily kWh of the same days (needs a period each day); suggested advance unclamped; as_of capped at settlement+1; advance day clamped to month length
+
+### N03 try 1 · 2026-10-15
+check: PASS 3/3
+
+### N04 try 1 · 2026-10-15
+check: PASS 3/3

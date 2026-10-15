@@ -345,6 +345,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         remove: Callable[[sqlite3.Connection], object],
         meter_of: Callable[[sqlite3.Connection], int] | None = None,
     ) -> HTMLResponse | RedirectResponse:
+        meter_id = None
         try:
             meter_id = _run(meter_of) if meter_of else None
             _run(remove)
@@ -355,6 +356,9 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             return _render_energy_page(
                 request, status_code=400, error={"form": "page", "message": message, "fields": {}}
             )
+        except ValueError as error:  # the store rejected a delete that breaks the series
+            failure = {"form": "page", "message": forms.friendly(error), "fields": {}}
+            return _render_back(request, meter_id, failure)
         return RedirectResponse(_back_to(meter_id), status_code=303)
 
     @router.get("/energy", response_class=HTMLResponse)

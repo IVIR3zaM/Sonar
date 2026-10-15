@@ -51,8 +51,9 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N07 | cycle chart | exec | N06 | opus/opus | 1 | 1 | DONE | |
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | DONE | |
-| N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
+| N10 | plan acceptance | check | N12 | -/sonnet | 0 | 1 | TODO | |
 | N11 | SPEC Energy billing cycle bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
+| N12 | delete errors inline | exec | N09 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -353,6 +354,34 @@ Done when:
 - C7 [visual] the dashboard Energy card lists both meters with the same settlement, worst case and suggested
   advance as /energy; nothing wraps, clips or scrolls sideways at 375px in light or dark
 
+## N12 delete errors inline
+Do: A delete the store rejects with a FieldError (deleting a reading or exchange makes the meter's continuous
+  series drop or clash, `src/sonar/energy/store.py:117-121`, `:169-173`) currently escapes `_delete`
+  (`src/sonar/web/pages/energy.py:343-358`) as a 500. Make `_delete` catch it like `_submit` does
+  (`energy.py:334-339`, `forms.friendly`) and re-render the record's meter page with status 400 and a
+  page-level error; the store already rolls the delete back. Give `energy_meter.html` the page-level alert
+  `energy.html:29-31` has (same `id="form-error"`, same markup and classes).
+Context: SPEC §12: a rejected entry answers 400 with an inline error and writes nothing; D13: meter-page forms
+  re-render their 400 on the meter page (`_render_back`, `energy.py:313-316`). The MeterNotEmpty path on
+  /energy stays as it is. The JSON API already answers 400 here; leave `web/api/energy.py` unchanged.
+  Reusing the existing classes leaves `sonar.css` unchanged; C3 confirms it.
+Read: `src/sonar/web/pages/energy.py:298-358`, `src/sonar/web/templates/energy.html:29-31`,
+  `src/sonar/web/templates/energy_meter.html:1-30`, `src/sonar/energy/usage.py:38-51`,
+  `tests/web/test_energy_meter_page.py:187-215`, `tests/html.py`
+Write: `src/sonar/web/pages/energy.py`, `src/sonar/web/templates/energy_meter.html`,
+  `tests/web/test_energy_meter_page.py`
+Test first: on a meter with readings and an exchange whose removal makes the series drop, POST
+  `/energy/exchanges/{id}/delete` answers 400 (now 500), the response is the meter page with `#form-error`
+  naming the drop, and the exchange is still stored; the same for a reading delete that the series rejects.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_energy_meter_page.py -k rejected_delete` passes: both deletes
+  answer 400 with the meter page and `#form-error`, and the record count is unchanged
+- C2 [review] `_delete` handles a ValueError by re-rendering the record's meter page (or /energy when it has
+  no meter) with status 400 via the existing helpers; no 500 path remains for a store rejection; the meter
+  page's alert matches `energy.html:29-31`
+- C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N10 plan acceptance
 Do: Check the whole plan against verify, SPEC §11 and §12 and the new Energy billing cycle bullet.
 Done when:
@@ -360,7 +389,8 @@ Done when:
 - C2 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o src/sonar/web/static/sonar.css --minify && git diff --exit-code src/sonar/web/static/sonar.css`
 - C3 [cmd] `! grep -rnE "float|date\.today|datetime\.now" src/sonar/energy`
 - C4 [review] SPEC §11 checklist holds and SPEC §12 UI acceptance holds for /energy and the meter page
-  (base.html, component macros, no inline `<style>`, 400 inline errors keeping values, `eur` amounts,
+  (base.html, component macros, no inline `<style>`, 400 inline errors keeping values, a rejected delete
+  answering 400 with an inline error and nothing written, `eur` amounts,
   `money` prefills, usable without script)
 - C5 [review] the SPEC §13 Energy billing cycle bullet matches the code: grace window and paid since,
   settled amount and its exclusion, remaining advances, advance count, seasonal projection, worst case,
@@ -456,4 +486,22 @@ exec: DONE · 1787 passed
 - energy.html: one data-energy-chart-memory script restores/saves each chart toggle in localStorage
 - key energy-chart:<chart id>:<toggle>, stored as 1/0, all storage calls in try/catch
 check: PASS 2/2
+verify: PASS
+
+### N10 try 1 · 2026-10-15
+check: PASS 3/3
+verify: FAIL C4
+- C4 src/sonar/web/pages/energy.py:343-358 - _delete catches only EnergyNotFound and MeterNotEmpty, so deleting an exchange/reading whose removal makes the continuous series drop (FieldError from check_series) gives a plain 500 on POST /energy/exchanges/{id}/delete (verified by smoke; the API returns 400 {error, field}) - expected a status 400 re-render with an inline error and nothing written
+
+### N10 replan 1 · 2026-10-15
+plan: REPLANNED +N12
+- cause: C4 failed, a delete the series check rejects (FieldError from check_series) escapes _delete in web/pages/energy.py:343-358 as a 500
+- N12 makes _delete re-render the meter page with 400 and a page-level alert, tests both reading and exchange deletes; N10 now depends on N12 and its C4 names rejected deletes
+- no new gate: the alert reuses energy.html:29-31 markup and classes, sonar.css unchanged
+
+### N12 try 1 · 2026-10-15
+exec: DONE · 1789 passed
+- _delete catches ValueError and re-renders via _render_back with a page error; energy_meter.html gets the #form-error alert
+- reading-delete test seeds an already-dropping series via raw SQL, since the store cannot otherwise reject a reading delete
+check: PASS 3/3
 verify: PASS

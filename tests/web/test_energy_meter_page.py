@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sonar.db import connect
 from sonar.energy.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.energy.store import (
+    add_exchange,
     add_meter,
     add_period,
     add_reading,
@@ -250,6 +251,45 @@ def test_an_exchange_on_a_reading_date_is_a_400(client, db_path):
 
     assert "2026-01-11" in _error(response)
     assert _input(soup(response), f"#meter-{meter}-add-exchange input[name=old_final]") == "1100"
+
+
+def test_rejected_delete_of_an_exchange_answers_400_on_the_meter_page(client, db_path):
+    meter = _electricity_meter(db_path)
+    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000_000)))
+    exchange = Exchange(date(2026, 1, 6), 1_000_000, 0)
+    exchange_id = _store(db_path, lambda conn: add_exchange(conn, meter, exchange))
+    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 11), 100_000)))
+
+    response = client.post(f"/energy/exchanges/{exchange_id}/delete")
+
+    assert "drops on 2026-01-11" in _error(response)
+    assert soup(response).select_one(f"#meter-{meter}-history-card") is not None
+    assert len(_store(db_path, lambda conn: list_exchanges(conn, meter))) == 1
+
+
+def test_rejected_delete_of_a_reading_answers_400_on_the_meter_page(client, db_path):
+    meter = _electricity_meter(db_path)
+    # A series that already drops (written around the store) rejects every later delete.
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executemany(
+            "INSERT INTO energy_readings (meter_id, reading_date, value_milli) VALUES (?, ?, ?)",
+            [
+                (meter, "2026-01-01", 1_000_000),
+                (meter, "2026-01-11", 500_000),
+                (meter, "2026-01-21", 2_000_000),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    last = _store(db_path, lambda conn: list_readings(conn, meter))[-1]
+
+    response = client.post(f"/energy/readings/{last.id}/delete")
+
+    assert "drops on 2026-01-11" in _error(response)
+    assert soup(response).select_one(f"#meter-{meter}-history-card") is not None
+    assert len(_store(db_path, lambda conn: list_readings(conn, meter))) == 3
 
 
 # Billing periods

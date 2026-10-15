@@ -26,6 +26,10 @@
   <p class="mt-1 text-sm text-ink-muted">Readings, meter exchanges and billing periods.</p>
 </header>
 
+{% if error and error.form == "page" %}
+<div id="form-error" role="alert" tabindex="-1" class="mb-6 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ error.message }}</div>
+{% endif %}
+
 <div class="space-y-6" data-meter-id="{{ m.view.id }}">
   {% call card(id=pre ~ "-history-card") %}
   <section>

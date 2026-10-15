@@ -118,5 +118,18 @@
   </form>
   {% endcall %}
 </div>
+<script data-energy-chart-memory>
+  // The checkboxes already work without this; it only remembers them per chart.
+  // Blocked storage leaves the default (off), so every access is guarded.
+  document.querySelectorAll("[data-energy-chart]").forEach(function (chart) {
+    chart.querySelectorAll("[data-toggle]").forEach(function (box) {
+      var key = "energy-chart:" + chart.id + ":" + box.dataset.toggle;
+      try { box.checked = localStorage.getItem(key) === "1"; } catch (e) {}
+      box.addEventListener("change", function () {
+        try { localStorage.setItem(key, box.checked ? "1" : "0"); } catch (e) {}
+      });
+    });
+  });
+</script>
 {% endblock %}
 

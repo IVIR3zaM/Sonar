@@ -561,3 +561,21 @@ def test_the_chart_has_a_current_cycle_only_view_for_small_screens(client, db_pa
     current = _page(client).select_one("[data-energy-chart] [data-view=current]")
 
     assert _cycles(current) == [("current", "false")] + [("current", "true")] * 11
+
+
+def test_toggle_memory_script_keeps_the_chart_toggles_in_local_storage(client, db_path):
+    _with_two_cycles(db_path)
+
+    page = _page(client)
+    scripts = page.select("script[data-energy-chart-memory]")
+
+    assert len(scripts) == 1
+    script = scripts[0].string
+    assert "localStorage" in script and "data-toggle" in script
+    assert script.count("try") >= 2 and script.count("catch") >= 2
+    assert [
+        box.has_attr("checked") for box in page.select("[data-energy-chart] [data-toggle]")
+    ] == [
+        False,
+        False,
+    ]

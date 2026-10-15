@@ -1,5 +1,5 @@
 # Energy cycle-accurate forecast
-status: RUNNING
+status: DONE
 created: 2026-10-15 · updated: 2026-10-15
 goal: The Energy monitor's current-period figures (paid so far, projection, worst case, suggested advance) follow how the supplier bills, with a settled amount per period, a per-meter history page, a two-cycle chart with projected months and remembered chart toggles, recorded as a SPEC §13 amendment.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -51,7 +51,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N07 | cycle chart | exec | N06 | opus/opus | 1 | 1 | DONE | |
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | DONE | |
-| N10 | plan acceptance | check | N12 | -/sonnet | 0 | 1 | TODO | |
+| N10 | plan acceptance | check | N12 | -/sonnet | 1 | 1 | DONE | |
 | N11 | SPEC Energy billing cycle bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N12 | delete errors inline | exec | N09 | sonnet/sonnet | 1 | 0 | DONE | |
 
@@ -503,5 +503,9 @@ plan: REPLANNED +N12
 exec: DONE · 1789 passed
 - _delete catches ValueError and re-renders via _render_back with a page error; energy_meter.html gets the #form-error alert
 - reading-delete test seeds an already-dropping series via raw SQL, since the store cannot otherwise reject a reading delete
+check: PASS 3/3
+verify: PASS
+
+### N10 try 1 · 2026-10-15
 check: PASS 3/3
 verify: PASS

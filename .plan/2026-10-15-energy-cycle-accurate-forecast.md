@@ -47,7 +47,7 @@ Definition of done: SPEC §13 amended; tests pin the 14-day grace with both bill
 | N03 | paid window and remaining advances | exec | N02,N11 | sonnet/opus | 1 | 0 | DONE | |
 | N04 | seasonal projection and suggested advance | exec | N03 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | meter page | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
+| N06 | energy card figures and settled form | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | cycle chart | exec | N06 | opus/opus | 0 | 0 | TODO | |
 | N08 | remembered chart toggles | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
@@ -420,3 +420,9 @@ exec: DONE · 1760 passed
 - Added /energy/meters/{id} (energy_meter.html) with readings, exchanges, periods; card slimmed to stats, chart, latest reading, add-reading, history link; form macros in components/energy_forms.html; store meter_of_reading/exchange/period
 - Edit/delete/add exchange/period redirect and 400 re-render on the owning meter page; add reading and meters stay on /energy; sonar.css rebuilt unchanged
 check: PASS 5/5
+
+### N06 try 1 · 2026-10-15
+exec: DONE · 1773 passed
+- Card: paid since hint, last settlement line, advance count and worst case hints; meter page: Settled amount field (create/edit/prefill) and settled in period list; edit no longer keeps the stored amount
+- Last settlement shown only with a current period and a settled previous period; sonar.css unchanged (no new classes)
+check: PASS 4/4

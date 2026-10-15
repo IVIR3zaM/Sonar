@@ -19,7 +19,7 @@ from sonar.energy.store import (
     list_readings,
 )
 from sonar.web.app import create_app
-from tests.html import soup, text
+from tests.html import cents, soup, text
 from tests.seed import seed
 
 TODAY = date(2026, 1, 11)
@@ -298,24 +298,66 @@ def test_add_edit_and_delete_a_period(client, db_path):
     assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
 
 
-@pytest.mark.parametrize("settled", [-3_169, None])
-def test_a_page_edit_keeps_the_stored_settled_amount(client, db_path, settled):
+@pytest.mark.parametrize(
+    ("typed", "stored"),
+    [("-31,69", -3_169), ("31.69", 3_169), ("0", 0), ("", None)],
+)
+def test_settled_amount_is_stored_signed_on_create_and_edit(client, db_path, typed, stored):
     meter = _electricity_meter(db_path)
-    period = _store(db_path, lambda conn: add_period(conn, meter, _period(settled_cents=settled)))
 
-    edited = client.post(f"/energy/periods/{period}/edit", data={**NEW_PERIOD, "unit_price": "32"})
+    created = client.post(f"/energy/meters/{meter}/periods", data={**NEW_PERIOD, "settled": typed})
 
+    assert created.status_code == 303
+    period = _store(db_path, lambda conn: list_periods(conn, meter))[0]
+    assert period.item.settled_cents == stored
+    edited = client.post(
+        f"/energy/periods/{period.id}/edit", data={**NEW_PERIOD, "settled": "-5,00"}
+    )
     assert edited.status_code == 303
     after = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
-    assert (after.unit_price_micro, after.settled_cents) == (320_000, settled)
+    assert after.settled_cents == -500
+    cleared = client.post(f"/energy/periods/{period.id}/edit", data={**NEW_PERIOD, "settled": ""})
+    assert cleared.status_code == 303
+    assert _store(db_path, lambda conn: list_periods(conn, meter))[0].item.settled_cents is None
 
 
-def test_a_period_added_on_the_page_has_no_settled_amount(client, db_path):
+def test_an_invalid_settled_amount_is_a_400_that_keeps_the_value(client, db_path):
     meter = _electricity_meter(db_path)
 
-    client.post(f"/energy/meters/{meter}/periods", data=NEW_PERIOD)
+    response = client.post(f"/energy/meters/{meter}/periods", data={**NEW_PERIOD, "settled": "abc"})
 
-    assert _store(db_path, lambda conn: list_periods(conn, meter))[0].item.settled_cents is None
+    assert "Settled amount" in _error(response)
+    form = soup(response).select_one(f"#meter-{meter}-new-period")
+    assert form.select_one("input[name=settled]")["value"] == "abc"
+    assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
+
+
+def test_the_edit_form_prefills_the_settled_amount_and_new_period_leaves_it_empty(client, db_path):
+    meter = _electricity_meter(db_path)
+    period = _store(db_path, lambda conn: add_period(conn, meter, _period(settled_cents=-3_169)))
+
+    page = _page(client, meter)
+
+    assert _input(page, f"#period-{period}-edit input[name=settled]") == "-31.69"
+    assert _input(page, f"#meter-{meter}-new-period input[name=settled]") == ""
+
+
+def test_the_period_list_shows_the_settled_amount(client, db_path):
+    meter = _electricity_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _period(settled_cents=-3_169)))
+
+    row = _page(client, meter).select_one(f"#meter-{meter}-periods [data-row]")
+
+    assert cents(row.select_one('[data-field="settled"]')) == -3_169
+
+
+def test_the_period_list_shows_a_dash_without_a_settled_amount(client, db_path):
+    meter = _electricity_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _period()))
+
+    row = _page(client, meter).select_one(f"#meter-{meter}-periods [data-row]")
+
+    assert text(row.select_one('[data-field="settled"]')) == "–"
 
 
 def test_a_gas_period_takes_the_state_factor_and_calorific_value(client, db_path):

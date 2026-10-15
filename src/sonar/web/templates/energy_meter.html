@@ -121,6 +121,7 @@
           {% endif %}
           <div><dt class="text-xs text-ink-muted">Advance per month</dt><dd data-field="advance">{{ amount(period.advance_cents, colored=false) }}</dd></div>
           <div><dt class="text-xs text-ink-muted">Expected usage per year</dt><dd data-field="expected_kwh" class="tabular-nums">{{ period.expected_kwh }} kWh</dd></div>
+          <div><dt class="text-xs text-ink-muted">Settled amount</dt><dd data-field="settled">{% if period.settled_cents is not none %}{{ amount(period.settled_cents) }}{% else %}–{% endif %}</dd></div>
           <div><dt class="text-xs text-ink-muted">Category</dt><dd data-field="category">{{ period.category or "–" }}</dd></div>
         </dl>
         <details{% if err %} open{% endif %}>

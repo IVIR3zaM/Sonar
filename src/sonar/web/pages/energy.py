@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -32,7 +32,6 @@ from sonar.energy.store import (
     meter_of_exchange,
     meter_of_period,
     meter_of_reading,
-    period_settled_cents,
     update_exchange,
     update_period,
     update_reading,
@@ -54,6 +53,7 @@ PERIOD_FIELDS = (
     "advance",
     "expected_kwh",
     "category",
+    "settled",
 )
 UNITS = {"gas": "m³", "electricity": "kWh"}
 
@@ -73,6 +73,7 @@ class MeterCard:
     current: BillingPeriod | None
     latest: Stored[BillingPeriod] | None
     new_period: dict[str, str]  # the "Start new period" form's prefill
+    last_settlement: tuple[int, date] | None  # signed cents and date of the previous bill
 
     @property
     def is_empty(self) -> bool:
@@ -123,6 +124,7 @@ def _period_from(values: dict[str, str]) -> BillingPeriod:
         advance_cents=forms.field("Advance", values["advance"], "amount", parse_signed_cents),
         expected_kwh=forms.field("Expected kWh", values["expected_kwh"], "int", int),
         category=values["category"].strip() or None,
+        settled_cents=_optional("Settled amount", values["settled"], "amount", parse_signed_cents),
     )
 
 
@@ -154,6 +156,9 @@ def _period_values(period: BillingPeriod | None) -> dict[str, str]:
         "advance": forms.format_scaled(period.advance_cents, 2),
         "expected_kwh": str(period.expected_kwh),
         "category": period.category or "",
+        "settled": ""
+        if period.settled_cents is None
+        else forms.format_scaled(period.settled_cents, 2),
     }
 
 
@@ -177,6 +182,7 @@ def _next_period_values(latest: Stored[BillingPeriod] | None) -> dict[str, str]:
         **_period_values(latest.item),
         "start_date": (settles + timedelta(days=1)).isoformat(),
         "settlement_date": _one_year_later(settles).isoformat(),
+        "settled": "",  # the new bill is not in yet
     }
 
 
@@ -210,16 +216,33 @@ def _reading_rows(view: MeterView) -> list[ReadingRow]:
     return list(reversed(rows))
 
 
+def _last_settlement(
+    periods: list[BillingPeriod], current: BillingPeriod | None
+) -> tuple[int, date] | None:
+    """The bill of the period right before the current one, when its amount is known."""
+    if current is None:
+        return None
+    earlier = [period for period in periods if period.settlement_date < current.start_date]
+    if not earlier:
+        return None
+    previous = max(earlier, key=lambda period: period.settlement_date)
+    if previous.settled_cents is None:
+        return None
+    return previous.settled_cents, previous.settlement_date
+
+
 def _card(view: MeterView, today: date) -> MeterCard:
     periods = [stored.item for stored in view.periods]
     latest = view.periods[-1] if view.periods else None
+    current = current_period(periods, today)
     return MeterCard(
         view=view,
         unit=UNITS[view.meter.kind],
         readings=_reading_rows(view),
-        current=current_period(periods, today),
+        current=current,
         latest=latest,
         new_period=_next_period_values(latest),
+        last_settlement=_last_settlement(periods, current),
     )
 
 
@@ -441,10 +464,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             f"period-{id}-edit",
             PERIOD_FIELDS,
             _period_from,
-            # The page has no settled field yet, so an edit keeps the stored amount.
-            lambda conn, period: update_period(
-                conn, id, replace(period, settled_cents=period_settled_cents(conn, id))
-            ),
+            lambda conn, period: update_period(conn, id, period),
             meter_of=lambda conn: meter_of_period(conn, id),
         )
 

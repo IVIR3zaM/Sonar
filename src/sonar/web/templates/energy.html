@@ -52,19 +52,23 @@
 
   {% if status %}
   <dl class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    {{ stat("Paid so far", value=amount(status.paid_cents, colored=false, id=pre ~ "-paid")) }}
+    {{ stat("Paid so far", value=amount(status.paid_cents, colored=false, id=pre ~ "-paid"), hint="paid since " ~ date(status.paid_since, id=pre ~ "-paid-since")) }}
     {% if status.cost_so_far_cents is not none %}
     {{ stat("Cost so far", value=amount(status.cost_so_far_cents, colored=false, id=pre ~ "-cost-so-far"), hint="as of " ~ date(status.as_of)) }}
     {{ stat("Left", value=amount(status.left_cents, id=pre ~ "-left"), hint="paid minus cost so far") }}
     {{ stat("Projected refund" if status.settlement_cents >= 0 else "Projected back-payment", value=outcome(status.settlement_cents, pre ~ "-settlement"), hint=("on " ~ date(m.current.settlement_date, id=pre ~ "-settlement-date"))) }}
-    {{ stat("Worst case refund" if status.worst_settlement_cents >= 0 else "Worst case back-payment", value=outcome(status.worst_settlement_cents, pre ~ "-worst-case"), hint="at the highest daily usage") }}
+    {{ stat("Worst case refund" if status.worst_settlement_cents >= 0 else "Worst case back-payment", value=outcome(status.worst_settlement_cents, pre ~ "-worst-case"), hint="at the highest of seasonal, expected and last year's usage") }}
     {% if status.suggested_advance_cents is not none %}
-    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint="per month") }}
+    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint="per month, over " ~ status.advance_count ~ (" advance" if status.advance_count == 1 else " advances")) }}
     {% else %}
     {{ stat("Suggested advance", value="–", hint="no advance left in this period") }}
     {% endif %}
     {% endif %}
   </dl>
+  {% if m.last_settlement %}
+  {% set settled_cents, settled_on = m.last_settlement %}
+  <p id="{{ pre }}-last-settlement" data-kind="{{ 'refund' if settled_cents >= 0 else 'back-payment' }}" class="mt-3 text-sm text-ink-muted">Last settlement: {{ "refund" if settled_cents >= 0 else "back-payment" }} {{ amount(settled_cents | abs, colored=false) }} on {{ date(settled_on) }}</p>
+  {% endif %}
   {% if status.cost_so_far_cents is none %}
   <p id="{{ pre }}-no-usage" class="text-sm text-ink-muted">No readings in the current period yet, so there is no cost or projection.</p>
   {% endif %}

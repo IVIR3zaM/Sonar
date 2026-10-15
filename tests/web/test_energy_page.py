@@ -231,6 +231,79 @@ def test_a_back_payment_is_worded_as_such(client, db_path):
     assert cents(settlement) == 14_350
 
 
+def _with_previous_period(db_path, settled: int | None) -> int:
+    meter = _with_readings(db_path)
+    previous = _period(
+        start_date=date(2025, 1, 1), settlement_date=date(2025, 12, 31), settled_cents=settled
+    )
+    _store(db_path, lambda conn: add_period(conn, meter, previous))
+    return meter
+
+
+def test_paid_so_far_says_since_when(client, db_path):
+    meter = _with_readings(db_path)
+
+    since = _page(client).select_one(f"#meter-{meter}-paid-since")
+
+    assert since["datetime"] == "2026-01-01"
+
+
+def test_paid_since_follows_the_previous_settlement(client, db_path):
+    meter = _with_previous_period(db_path, None)
+
+    since = _page(client).select_one(f"#meter-{meter}-paid-since")
+
+    assert since["datetime"] == "2026-01-15"  # the previous settlement date + 15 days
+
+
+def test_the_last_settlement_of_a_back_payment(client, db_path):
+    meter = _with_previous_period(db_path, -3_169)
+
+    line = _page(client).select_one(f"#meter-{meter}-last-settlement")
+
+    assert line["data-kind"] == "back-payment"
+    assert text(line) == "Last settlement: back-payment 31,69 € on 31 Dec 2025"
+    assert line.select_one("time")["datetime"] == "2025-12-31"
+
+
+def test_the_last_settlement_of_a_refund(client, db_path):
+    meter = _with_previous_period(db_path, 1_250)
+
+    line = _page(client).select_one(f"#meter-{meter}-last-settlement")
+
+    assert line["data-kind"] == "refund"
+    assert text(line) == "Last settlement: refund 12,50 € on 31 Dec 2025"
+
+
+def test_no_last_settlement_without_a_settled_previous_period(client, db_path):
+    unsettled = _with_previous_period(db_path, None)
+
+    assert _page(client).select_one(f"#meter-{unsettled}-last-settlement") is None
+
+
+def test_no_last_settlement_without_a_previous_period(client, db_path):
+    meter = _with_readings(db_path)
+
+    assert _page(client).select_one(f"#meter-{meter}-last-settlement") is None
+
+
+def test_the_suggested_advance_hint_names_the_advance_count(client, db_path):
+    meter = _with_readings(db_path, expected_kwh=3_650)
+
+    stat = _page(client).select_one(f"#meter-{meter}-suggested-advance").parent.parent
+
+    assert "11 advances" in text(stat)
+
+
+def test_the_worst_case_hint_names_what_it_takes_the_highest_of(client, db_path):
+    meter = _with_readings(db_path, expected_kwh=3_650)
+
+    stat = _page(client).select_one(f"#meter-{meter}-worst-case").parent.parent
+
+    assert "highest" in text(stat)
+    assert "last year" in text(stat)
+
+
 def test_a_meter_without_a_current_period_shows_no_projection(client, db_path):
     meter = _electricity_meter(db_path)
     past = _period(start_date=date(2025, 1, 1), settlement_date=date(2025, 12, 31))

@@ -1,6 +1,6 @@
 # Energy monitor
-status: READY
-created: 2026-10-12 · updated: 2026-10-12
+status: RUNNING
+created: 2026-10-12 · updated: 2026-10-15
 goal: Per gas or electricity meter, Sonar shows the cost so far, the advances paid, the projected settlement and a suggested advance, from hand-entered readings, meter exchanges and billing periods, on an Energy page, a dashboard card and in the forecast.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
 commit: per-node
@@ -12,7 +12,7 @@ tier: M
 
 Goal: The owner tracks gas and electricity advances (Abschläge) in a spreadsheet to guess whether the yearly settlement will bring a back-payment or a refund. Sonar takes this over: from meter readings, physical meter exchanges and the tariff of each billing period it works out what the energy used so far cost, compares it with the advances actually booked in the period's category, and projects the settlement and the advance that would bring it to about zero.
 
-In scope: a new SPEC §13 Energy bullet; a feature package `src/sonar/energy/` (model, pure usage and settlement math, store, service); migration `0012_energy.sql` for meters, exchanges, readings and billing periods; a JSON API under `/api/energy` so Claude can load the sheet's history after the build; an Energy page with per-meter status, readings, exchange and period forms and one combined usage and cost chart per meter with value-label and trend toggles; a dashboard Energy card; the projected settlement as a due item or inflow in the payday forecast.
+In scope: a new SPEC §13 Energy bullet; a feature package `src/sonar/energy/` (model, pure usage and settlement math, store, service); migration `0014_energy.sql` for meters, exchanges, readings and billing periods; a JSON API under `/api/energy` so Claude can load the sheet's history after the build; an Energy page with per-meter status, readings, exchange and period forms and one combined usage and cost chart per meter with value-label and trend toggles; a dashboard Energy card; the projected settlement as a due item or inflow in the payday forecast.
 
 Out of scope: importing from Google Sheets, smart-meter feeds, changes to categorization rules or the categorization package, loading the owner's real sheet history (done later through the API), seasonal forecasting models beyond D7, any change to how the advances themselves are forecast (they stay recurring payments).
 
@@ -22,7 +22,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 
 ## Decisions
 
-- D1 Scope from the request: package `src/sonar/energy/` (`model.py`, `usage.py`, `settlement.py`, `store.py`, `service.py`), migration `src/sonar/migrations/0012_energy.sql`, page `src/sonar/web/pages/energy.py` + `templates/energy.html`, API `src/sonar/web/api/energy.py`, one SPEC §13 "Energy" bullet; meters are a list of kind `gas` or `electricity` | confirmed
+- D1 Scope from the request: package `src/sonar/energy/` (`model.py`, `usage.py`, `settlement.py`, `store.py`, `service.py`), migration `src/sonar/migrations/0014_energy.sql`, page `src/sonar/web/pages/energy.py` + `templates/energy.html`, API `src/sonar/web/api/energy.py`, one SPEC §13 "Energy" bullet; meters are a list of kind `gas` or `electricity` | confirmed
 - D2 Units: readings integer thousandths of the meter unit (`value_milli`, m³ for gas, kWh for electricity); unit price integer millionths of a euro per kWh (`unit_price_micro`, 31,83 ct = 318300; forms take ct/kWh with up to 4 decimals); Zustandszahl `state_factor_e4` and Brennwert (kWh/m³) `calorific_value_e4` integer ten-thousandths (0,9653 = 9653; 11,5 = 115000); base fee per month and advance per month integer cents; expected yearly usage whole kWh; intermediate math in `fractions.Fraction`, each shown figure rounded half up once to whole cents or whole kWh | confirmed
 - D3 Exchanges: an exchange is (meter, date, old_final_milli, new_start_milli); a reading's continuous value = its value + Σ(old_final − new_start) of the meter's exchanges dated before it, and the exchange itself is the point (date, old_final + earlier offsets); at most one reading and one exchange per meter per date; a reading on an exchange date is a 400; every write re-checks the meter's whole continuous series and rejects a drop with a 400 naming the date, writing nothing | confirmed
 - D4 Days and months: an interval between consecutive series points [d0, d1) spreads its usage evenly over its d1−d0 days; month figures sum their days; the chart and month figures include only calendar months fully inside [first point, last point) and fully covered by billing periods; gas kWh per day = m³ × state factor × calorific value of the period in force that day | confirmed
@@ -41,7 +41,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
-| N01 | preflight | check | - | -/- | 0 | 0 | TODO | |
+| N01 | preflight | check | - | -/- | 1 | 1 | DONE | |
 | N02 | energy model, usage and SPEC | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
 | N03 | migration and energy store | exec | N02 | sonnet/sonnet | 0 | 0 | TODO | |
 | N04 | settlement math | exec | N02 | sonnet/opus | 0 | 0 | TODO | |
@@ -54,12 +54,13 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 
 ## N01 preflight
 Do: Confirm the starting point before any work: verify passes on the untouched tree, the Tailwind CLI builds
-  (the only download), migration 0012 is free, and the repo is writable. Tests need no network.
+  (the only download), 0013 is the latest migration so 0014 is free for the energy tables, and the repo is
+  writable. Tests need no network. A dirty working tree (`.gitignore`, `.claude/launch.json`, this plan) is fine.
 Done when:
 - C1 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 - C2 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/plz-preflight.css" --minify`
   exits 0 and writes outside the repo
-- C3 [cmd] `ls src/sonar/migrations/0011_*.sql && test -z "$(ls src/sonar/migrations/0012_* 2>/dev/null)"`
+- C3 [cmd] `ls src/sonar/migrations/0013_*.sql && test -z "$(ls src/sonar/migrations/0014_* src/sonar/migrations/0015_* 2>/dev/null)"`
 - C4 [cmd] `test -w .git/index && git status --porcelain >/dev/null` exits 0
 
 ## N02 energy model, usage and SPEC
@@ -75,8 +76,8 @@ Context: D2 units: `value_milli`, `old_final_milli`, `new_start_milli`; period f
   returns `dict[date, Fraction]` of meter units per day over [first point, last point), each interval
   spread evenly. D6 `check_period(period, kind)`: settlement_date ≥ start_date, positive price, non-negative
   fee/advance/expected, gas needs both factors > 0, electricity has both null; `check_periods` rejects
-  overlap (field "start_date"). SPEC: one bullet after SPEC.md:258 stating D2-D11 in SPEC style.
-Read: `.plan/2026-10-12-energy-monitor.md` (Decisions only), `src/sonar/debts/model.py:1-60`, `SPEC.md:225-258`, `tests/test_architecture.py`
+  overlap (field "start_date"). SPEC: one bullet at the end of §13, after SPEC.md:260 (Public pages), stating D2-D11 in SPEC style.
+Read: `.plan/2026-10-12-energy-monitor.md` (Decisions only), `src/sonar/debts/model.py:1-60`, `SPEC.md:225-260`, `tests/test_architecture.py`
 Write: `src/sonar/energy/__init__.py`, `src/sonar/energy/model.py`, `src/sonar/energy/usage.py`, `tests/energy/__init__.py`, `tests/energy/test_usage.py`, `tests/energy/test_model.py`, `SPEC.md`
 Test first: readings 1 Jan 1000.000 m³ and 1 Mar 30.000, exchange 1 Feb old 1050.000 new 0.000 give the
   series 1000000, 1050000, 1080000 and daily usage 50/31 m³ on each January day, 30/28 on each February
@@ -92,7 +93,7 @@ Done when:
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 migration and energy store
-Do: Add `0012_energy.sql` with tables `energy_meters` (name unique, kind gas|electricity), `energy_readings`,
+Do: Add `0014_energy.sql` with tables `energy_meters` (name unique, kind gas|electricity), `energy_readings`,
   `energy_exchanges` (each unique per meter and date) and `energy_periods` (category_id nullable), and
   `energy/store.py`: list/add/rename/delete meters, and list/add/update/delete readings, exchanges and
   periods, returning `sonar.energy.model` dataclasses. Every write validates the meter's resulting rows with
@@ -102,13 +103,13 @@ Context: D3 one reading and one exchange per meter per date (duplicate → Field
   the name with a LEFT JOIN, so a deleted category reads None. D9/D10 deleting a meter with readings,
   exchanges or periods raises `MeterNotEmpty`; unknown ids raise `EnergyNotFound(LookupError)`. New tables
   only: existing data is untouched. Style: `src/sonar/debts/store.py`, migration tests like
-  `tests/migrations/test_0011.py`.
-Read: `src/sonar/energy/model.py`, `src/sonar/energy/usage.py`, `src/sonar/debts/store.py`, `src/sonar/migrations/0011_debts_purpose_match.sql`, `tests/migrations/test_0011.py`, `src/sonar/migrations/0006_categories.sql`
-Write: `src/sonar/migrations/0012_energy.sql`, `src/sonar/energy/store.py`, `tests/migrations/test_0012.py`, `tests/energy/test_store.py`
+  `tests/migrations/test_0011.py` (0012 and 0013 are the bank-sync migrations; energy is 0014).
+Read: `src/sonar/energy/model.py`, `src/sonar/energy/usage.py`, `src/sonar/debts/store.py`, `src/sonar/migrations/0013_bank_merge.sql`, `tests/migrations/test_0011.py`, `src/sonar/migrations/0006_categories.sql`
+Write: `src/sonar/migrations/0014_energy.sql`, `src/sonar/energy/store.py`, `tests/migrations/test_0014.py`, `tests/energy/test_store.py`
 Test first: adding meter "Gas" (gas) and a reading 1 Jan 1000.000 then listing returns that Reading; the
   store does not exist yet, so it fails.
 Done when:
-- C1 [cmd] `uv run pytest -q tests/migrations/test_0012.py` passes: the migration applies on a DB at 0011
+- C1 [cmd] `uv run pytest -q tests/migrations/test_0014.py` passes: the migration applies on a DB at 0013
   with existing transactions, categories and debts unchanged, and creates the four tables
 - C2 [cmd] `uv run pytest -q tests/energy/test_store.py` passes round trips for every add/update/delete; a
   dropping reading, a reading on an exchange date, a duplicate date, an overlapping period and an unknown
@@ -294,3 +295,17 @@ Done when:
   /api/energy
 
 ## Log
+
+### N01 try 1 · 2026-10-15
+check: FAIL C3
+- C3 exit 1: src/sonar/migrations/0011_debts_purpose_match.sql
+
+### N01 replan 1 · 2026-10-15
+plan: REPLANNED
+- cause: enable-banking-daily-sync added migrations 0012_bank_connection and 0013_bank_merge, so C3 (0012 free) failed
+- N01 C3 now checks 0013 is latest and 0014 is free
+- energy migration renumbered to 0014 in Intent, D1 and N03 (file, test_0014, applies on a DB at 0013, reads 0013_bank_merge.sql)
+- N02 SPEC citation moved to end of section 13, SPEC.md:260
+
+### N01 try 1 · 2026-10-15
+check: PASS 4/4

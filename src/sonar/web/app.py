@@ -26,7 +26,7 @@ from sonar.debts.store import DebtNotFound, DraftNotFound
 from sonar.recurring.store import PaymentNotFound
 from sonar.web import access, charts, forms
 from sonar.web.api import build_api_router
-from sonar.web.display import cadence, days_until, display_date, eur
+from sonar.web.display import berlin_time, cadence, days_until, display_date, eur
 from sonar.web.pages import auth as auth_pages
 from sonar.web.pages import bank as bank_pages
 from sonar.web.pages import (
@@ -77,6 +77,7 @@ templates.env.filters["percent"] = _format_percent
 templates.env.filters["eur"] = eur
 templates.env.filters["scaled"] = forms.format_scaled
 templates.env.filters["date"] = display_date
+templates.env.filters["berlin_time"] = berlin_time
 templates.env.filters["cadence"] = cadence
 templates.env.filters["days_until"] = days_until
 templates.env.filters["group_label"] = _group_label

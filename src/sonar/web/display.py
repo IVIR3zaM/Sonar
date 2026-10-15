@@ -7,7 +7,8 @@ These filters are for read-only display and are not meant to be parsed back.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 # Non-breaking space before the currency sign and a true minus sign (U+2212,
 # not a hyphen) match the SPEC's exact display format, not locale formatting.
@@ -45,6 +46,19 @@ def eur(cents: int) -> str:
 def display_date(d: date) -> str:
     """Format a date as "24 Sep 2026" using the fixed English month table."""
     return f"{d.day} {_MONTHS[d.month - 1]} {d.year}"
+
+
+_BERLIN = ZoneInfo("Europe/Berlin")
+
+
+def berlin_time(moment: datetime) -> str:
+    """Format an aware moment as "14 Oct 2026 14:00 CEST" in Berlin time.
+
+    The owner reads the bank sync time on the wall clock of the bank's
+    country, and the zone abbreviation keeps summer/winter time explicit.
+    """
+    local = moment.astimezone(_BERLIN)
+    return f"{display_date(local.date())} {local:%H:%M} {local.tzname()}"
 
 
 def cadence(interval_months: int, day: int) -> str:

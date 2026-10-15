@@ -120,7 +120,7 @@ def build_router(
         return RedirectResponse("/settings", status_code=303)
 
     @router.post("/bank/sync")
-    def sync_now() -> Response:
+    def sync_now(request: Request) -> Response:
         # The outcome, ok or error, is recorded on the connection and shown on Settings.
         conn = connect(db_path)
         try:
@@ -129,6 +129,9 @@ def build_router(
             pass
         finally:
             conn.close()
+        if request.headers.get("HX-Request") == "true":
+            # htmx would swap a redirect's body into the form; HX-Redirect reloads /settings.
+            return Response(status_code=204, headers={"HX-Redirect": "/settings"})
         return RedirectResponse("/settings", status_code=303)
 
     @router.get("/bank/banner", response_class=HTMLResponse)

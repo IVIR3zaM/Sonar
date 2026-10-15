@@ -1,9 +1,9 @@
 """Tests for the eur/date/cadence display filters (SPEC §12 Display formats)."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sonar.web.app import _format_cents
-from sonar.web.display import cadence, days_until, display_date, eur
+from sonar.web.display import berlin_time, cadence, days_until, display_date, eur
 
 
 def test_eur_negative_uses_nbsp_and_minus_sign():
@@ -71,3 +71,15 @@ def test_days_until_past_days():
 
 def test_days_until_multiple_days():
     assert days_until(15) == "in 15 days"
+
+
+def test_berlin_time_in_summer_time():
+    assert berlin_time(datetime(2026, 10, 14, 12, 0, tzinfo=UTC)) == "14 Oct 2026 14:00 CEST"
+
+
+def test_berlin_time_in_winter_time():
+    assert berlin_time(datetime(2026, 12, 1, 12, 0, tzinfo=UTC)) == "1 Dec 2026 13:00 CET"
+
+
+def test_berlin_time_uses_the_berlin_date_across_midnight():
+    assert berlin_time(datetime(2026, 12, 31, 23, 30, tzinfo=UTC)) == "1 Jan 2027 00:30 CET"

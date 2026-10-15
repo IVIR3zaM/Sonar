@@ -314,7 +314,65 @@ def test_connected_card_offers_sync_now(tmp_path):
     form = page.select_one("#bank-card #bank-sync")
     assert form["method"] == "post"
     assert form["action"] == "/bank/sync"
-    assert text(form.select_one("button[type=submit]")) == "Sync now"
+    assert text(form.select_one("button[type=submit] [data-label=idle]")) == "Sync now"
+
+
+def test_sync_now_form_has_an_htmx_loading_state(tmp_path):
+    with _connected_client(tmp_path, FakeBank()) as client:
+        page = soup(client.get("/settings"))
+
+    form = page.select_one("#bank-sync")
+    button = form.select_one("button[type=submit]")
+    assert form["method"] == "post"
+    assert form["action"] == "/bank/sync"
+    assert form["hx-post"] == "/bank/sync"
+    assert form.has_attr("hx-disabled-elt")
+    assert button.select_one("#bank-sync-spinner") is not None
+    assert text(button.select_one("[data-label=idle]")) == "Sync now"
+    assert text(button.select_one("[data-label=busy]")) == "Syncing…"
+
+
+def test_connected_card_subtitle_says_synced_three_times_a_day(tmp_path):
+    with _connected_client(tmp_path, FakeBank()) as client:
+        page = soup(client.get("/settings"))
+
+    assert "synced three times a day" in text(page.select_one("#bank-card"))
+
+
+def test_htmx_sync_now_answers_204_with_hx_redirect(tmp_path):
+    bank = FakeBank()
+    bank.booked = [booked_debit("ref-1")]
+    with _connected_client(tmp_path, bank) as client:
+        response = client.post("/bank/sync", headers={"HX-Request": "true"})
+
+    assert response.status_code == 204
+    assert response.headers["HX-Redirect"] == "/settings"
+    assert _synced_rows(tmp_path) == ["ref-1"]
+
+
+@pytest.mark.parametrize(
+    ("moment", "shown"),
+    [
+        (datetime(2026, 10, 14, 12, 0, tzinfo=UTC), "14 Oct 2026 14:00 CEST"),
+        (datetime(2026, 12, 1, 12, 0, tzinfo=UTC), "1 Dec 2026 13:00 CET"),
+    ],
+)
+def test_last_sync_is_shown_in_berlin_time(tmp_path, moment, shown):
+    bank = FakeBank()
+    clock = Clock()
+    with _client(tmp_path, bank, clock) as client:
+        state = _connect(client, bank)
+        client.get("/bank/callback", params={"code": "the-code", "state": state})
+        clock.moment = moment
+        client.post("/bank/sync")
+        page = soup(client.get("/settings"))
+        api = client.get("/api/bank").json()
+
+    time = page.select_one("#bank-last-sync time")
+    assert text(time) == shown
+    assert "UTC" not in text(time)
+    assert time["datetime"] == moment.isoformat()
+    assert api["last_sync"]["at"] == moment.isoformat()
 
 
 def test_not_connected_card_has_no_sync_now(tmp_path):

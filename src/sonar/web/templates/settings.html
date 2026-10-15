@@ -79,7 +79,7 @@
   {% endcall %}
 
   {% if bank_enabled %}
-  {% call card(title="Bank connection", subtitle="Deutsche Bank, read-only, synced once a day", id="bank-card", attrs={"data-bank-status": card_status | lower | replace(" ", "-")}) %}
+  {% call card(title="Bank connection", subtitle="Deutsche Bank, read-only, synced three times a day", id="bank-card", attrs={"data-bank-status": card_status | lower | replace(" ", "-")}) %}
   {% set bank_error = error if error and error.form == "bank" else None %}
   <p id="bank-status" class="text-sm font-medium text-ink">{{ card_status }}</p>
   {% if connection %}
@@ -89,7 +89,7 @@
     <div class="flex gap-2"><dt class="text-ink-muted">Last sync</dt>
       <dd id="bank-last-sync">
         {% if connection.last_sync_at %}
-        <time datetime="{{ connection.last_sync_at.isoformat() }}">{{ connection.last_sync_at | date }} {{ connection.last_sync_at.strftime("%H:%M") }} UTC</time>
+        <time datetime="{{ connection.last_sync_at.isoformat() }}">{{ connection.last_sync_at | berlin_time }}</time>
         &middot; <span data-field="status">{{ connection.last_sync_status }}</span>
         {% if connection.last_sync_status == "ok" %}&middot; <span data-field="added">{{ connection.last_sync_added }}</span> added{% endif %}
         {% if connection.last_sync_error %}<span class="block text-negative" data-field="error">{{ connection.last_sync_error }}</span>{% endif %}
@@ -103,8 +103,17 @@
   {% endif %}
   <div class="mt-4 flex flex-wrap gap-2">
     {% if connection %}
-    <form id="bank-sync" method="post" action="/bank/sync">
-      {{ button("Sync now", type="submit") }}
+    <form id="bank-sync" method="post" action="/bank/sync" hx-post="/bank/sync" hx-disabled-elt="find button">
+      {% call button(type="submit") %}
+      <span id="bank-sync-spinner" class="htmx-indicator inline-flex" aria-hidden="true">
+        <svg class="size-4 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      </span>
+      <span data-label="idle" class="in-[.htmx-request]:hidden">Sync now</span>
+      <span data-label="busy" class="hidden in-[.htmx-request]:inline">Syncing…</span>
+      {% endcall %}
     </form>
     {% endif %}
     <form id="bank-connect" method="post" action="/bank/connect">

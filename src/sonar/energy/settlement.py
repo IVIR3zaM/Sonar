@@ -50,6 +50,7 @@ class MeterStatus:
     paid_cents: int
     paid_since: date
     advance_count: int
+    remaining_advance_count: int
     left_cents: int | None
     projected_cost_cents: int | None
     remaining_advances_cents: int
@@ -229,6 +230,7 @@ def meter_status(
             paid,
             paid_since,
             advance_count,
+            due_count,
             None,
             None,
             remaining_advances,
@@ -249,12 +251,13 @@ def meter_status(
         paid_cents=paid,
         paid_since=paid_since,
         advance_count=advance_count,
+        remaining_advance_count=due_count,
         left_cents=paid - cost_so_far_cents,
         projected_cost_cents=projected_cents,
         remaining_advances_cents=remaining_advances,
         settlement_cents=paid + remaining_advances - projected_cents,
         worst_settlement_cents=paid + remaining_advances - round_half_up(worst),
-        suggested_advance_cents=_suggested_advance(projected, advance_count),
+        suggested_advance_cents=suggested_advance(projected, paid, due_count),
     )
 
 
@@ -436,6 +439,11 @@ def _advances_due(
     return min(count, max(0, advances_left))
 
 
-def _suggested_advance(projected_cost: Fraction, advance_count: int) -> int:
-    """What each advance of the period should be to cover its projected cost, in whole euros."""
-    return math.ceil(projected_cost / advance_count / WHOLE_EURO_CENTS) * WHOLE_EURO_CENTS
+def suggested_advance(projected_cost: Fraction, paid_cents: int, remaining_advances: int) -> int:
+    """What to pay per advance from now on to cover the projected cost, in whole euros.
+
+    The unpaid rest is spread over the remaining advances and the settlement, which is
+    why the divisor is one more.
+    """
+    unpaid = max(Fraction(0), projected_cost - paid_cents)
+    return math.ceil(unpaid / (remaining_advances + 1) / WHOLE_EURO_CENTS) * WHOLE_EURO_CENTS

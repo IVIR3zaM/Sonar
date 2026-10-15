@@ -59,7 +59,7 @@
     {{ stat("Projected refund" if status.settlement_cents >= 0 else "Projected back-payment", value=outcome(status.settlement_cents, pre ~ "-settlement"), hint=("on " ~ date(m.current.settlement_date, id=pre ~ "-settlement-date"))) }}
     {{ stat("Worst case refund" if status.worst_settlement_cents >= 0 else "Worst case back-payment", value=outcome(status.worst_settlement_cents, pre ~ "-worst-case"), hint="at the highest of seasonal, expected and last year's usage") }}
     {% if status.suggested_advance_cents is not none %}
-    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint="per month, over " ~ status.advance_count ~ (" advance" if status.advance_count == 1 else " advances")) }}
+    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint=("per advance for the next " ~ status.remaining_advance_count ~ (" advance" if status.remaining_advance_count == 1 else " advances") ~ ", about the same at settlement on " ~ date(m.current.settlement_date)) if status.remaining_advance_count else ("no advance left, about this at settlement on " ~ date(m.current.settlement_date))) }}
     {% else %}
     {{ stat("Suggested advance", value="–", hint="no advance left in this period") }}
     {% endif %}

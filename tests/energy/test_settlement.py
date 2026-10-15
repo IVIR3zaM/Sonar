@@ -16,6 +16,7 @@ from sonar.energy.settlement import (
     round_half_up,
     same_day_last_year,
     seasonal_daily_kwh,
+    suggested_advance,
     worst_daily_kwh,
 )
 from sonar.energy.usage import continuous_series, daily_usage
@@ -152,10 +153,11 @@ def test_status_back_payment_and_worst_equals_projection_without_a_trend():
         advance_count=1,
         left_cents=-3000,
         projected_cost_cents=5100,
+        remaining_advance_count=1,
         remaining_advances_cents=5000,  # none paid: the start's day, so 1 Jan counts
         settlement_cents=-100,
         worst_settlement_cents=-100,
-        suggested_advance_cents=5100,
+        suggested_advance_cents=2600,  # 5100 over this and 1 more advance, rounded up
     )
 
 
@@ -175,7 +177,7 @@ def test_status_refund_and_worst_case_from_expected_kwh():
     assert status.remaining_advances_cents == 0
     assert status.settlement_cents == -300
     assert status.worst_settlement_cents == -300
-    assert status.suggested_advance_cents == 5300
+    assert status.suggested_advance_cents == 300  # 5300 - 5000 paid, no advance left
 
 
 def test_status_worst_case_from_last_year_on_the_same_days():
@@ -224,7 +226,8 @@ def test_status_suggested_advance_rounds_up_to_whole_euros():
     assert status.projected_cost_cents == 9002
     assert status.remaining_advances_cents == 10_000
     assert status.settlement_cents == 3100 + 10_000 - 9002
-    assert status.suggested_advance_cents == 3100  # 9001.6 over 3 advances is 3000.53
+    assert status.remaining_advance_count == 2
+    assert status.suggested_advance_cents == 2000  # (9001.6 - 3100) over 3 is 1967.2
 
 
 def test_status_suggested_advance_is_still_given_on_the_settlement_day():
@@ -232,7 +235,7 @@ def test_status_suggested_advance_is_still_given_on_the_settlement_day():
     status = meter_status(
         "electricity", [JANUARY], usage, [(date(2026, 1, 15), -5000)], date(2026, 1, 31)
     )
-    assert status.suggested_advance_cents == 6100  # 6000 so far and the last day's fee
+    assert status.suggested_advance_cents == 1100  # 6100 projected - 5000 paid, divisor 1
     assert status.remaining_advances_cents == 0
 
 
@@ -261,6 +264,7 @@ def test_status_without_a_reading_after_the_start_has_no_cost_or_projection():
         advance_count=1,
         left_cents=None,
         projected_cost_cents=None,
+        remaining_advance_count=0,
         remaining_advances_cents=0,
         settlement_cents=None,
         worst_settlement_cents=None,
@@ -500,12 +504,28 @@ def suggested_for(price: int, fee: int, kwh_a_year: int) -> int | None:
     return status.suggested_advance_cents
 
 
-def test_suggested_advance_is_the_whole_periods_cost_over_the_advances_in_whole_euros():
-    assert suggested_for(price=93_800, fee=1595, kwh_a_year=15701) == 15200
+def test_suggested_advance_is_what_is_left_to_pay_over_this_and_the_remaining_advances():
+    # prod, 2026-10-15: 2457.38 EUR projected, 1505.00 paid, 3 advances left
+    assert suggested_advance(Fraction(245_738), 150_500, 3) == 23_900
 
 
-def test_suggested_advance_second_pin():
-    assert suggested_for(price=318_325, fee=1041, kwh_a_year=8558) == 26000
+def test_suggested_advance_rounds_the_exact_figure_up_once():
+    assert suggested_advance(Fraction(40_001, 2), 0, 1) == 10_100  # 10000.25 a time
+    assert suggested_advance(Fraction(20_000), 0, 1) == 10_000
+
+
+def test_suggested_advance_is_zero_when_paid_covers_the_projection():
+    assert suggested_advance(Fraction(10_000), 10_000, 3) == 0
+    assert suggested_advance(Fraction(10_000), 12_000, 3) == 0
+
+
+def test_suggested_advance_with_no_advance_left_is_what_is_left_at_settlement():
+    assert suggested_advance(Fraction(6_100), 5_000, 0) == 1_100
+
+
+def test_suggested_advance_pins_over_eleven_remaining_advances_and_the_settlement():
+    assert suggested_for(price=93_800, fee=1595, kwh_a_year=15701) == 13_900  # 166415.38 over 12
+    assert suggested_for(price=318_325, fee=1041, kwh_a_year=8558) == 23_800  # 284914.5 over 12
 
 
 def test_suggested_advance_is_none_without_a_projection():

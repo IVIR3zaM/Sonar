@@ -210,8 +210,8 @@ def test_status_stats_carry_cents(client, db_path):
     assert cents(settlement) == 29_650
     assert settlement["data-kind"] == "refund"
     assert stat("worst-case") == 29_650
-    # 25350 / 11 advances = 2304.5, rounded up to whole euros.
-    assert stat("suggested-advance") == 2_400
+    # (25350 - 5000 paid) over 10 advances left and the settlement = 1850, rounded up.
+    assert stat("suggested-advance") == 1_900
     assert page.select_one(f"#meter-{meter}-settlement-date")["datetime"] == "2026-12-31"
 
 
@@ -287,12 +287,36 @@ def test_no_last_settlement_without_a_previous_period(client, db_path):
     assert _page(client).select_one(f"#meter-{meter}-last-settlement") is None
 
 
-def test_the_suggested_advance_hint_names_the_advance_count(client, db_path):
-    meter = _with_readings(db_path, expected_kwh=3_650)
-
+def _suggested_hint(client, meter: int) -> str:
     stat = _page(client).select_one(f"#meter-{meter}-suggested-advance").parent.parent
+    return text(stat)
 
-    assert "11 advances" in text(stat)
+
+def test_the_suggested_advance_hint_names_the_remaining_advances_and_the_settlement(
+    client, db_path
+):
+    meter = _with_readings(db_path, expected_kwh=3_650)  # nothing paid: 11 advances left
+
+    hint = _suggested_hint(client, meter)
+
+    assert "per advance for the next 11 advances, about the same at settlement on" in hint
+    assert "31 Dec 2026" in hint
+
+
+def test_the_suggested_advance_hint_says_advance_for_one_left(client, db_path):
+    meter = _with_readings(db_path, settlement_date=date(2026, 1, 31))  # advance count 1
+
+    assert "next 1 advance," in _suggested_hint(client, meter)
+
+
+def test_the_suggested_advance_hint_without_an_advance_left_names_the_settlement(client, db_path):
+    meter = _with_readings(db_path, settlement_date=date(2026, 1, 31))
+    _insert_debit(db_path, "2026-01-03", -5_000, "Utilities")
+
+    hint = _suggested_hint(client, meter)
+
+    assert "no advance left, about this at settlement on 31 Jan 2026" in hint
+    assert "next" not in hint
 
 
 def test_the_worst_case_hint_names_what_it_takes_the_highest_of(client, db_path):

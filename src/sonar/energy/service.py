@@ -85,7 +85,7 @@ class SettlementSummary:
     settlement_date: date
     settlement_cents: int  # positive is a refund
     worst_settlement_cents: int
-    suggested_advance_cents: int | None  # None without an advance left in the period
+    suggested_advance_cents: int | None  # None without a projection
 
 
 def settlement_summaries(conn: sqlite3.Connection, today: date) -> list[SettlementSummary]:

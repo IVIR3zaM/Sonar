@@ -15,7 +15,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from sonar.db import MIGRATIONS_DIR, apply_migrations
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
+from sonar.energy.model import BillingPeriod, Meter, Reading
+from sonar.energy.store import add_meter, add_period, add_reading
 from sonar.web.app import create_app
 from tests.html import cents, fields, records, soup, text
 from tests.seed import seed
@@ -37,6 +39,16 @@ type = "occasional"
 [[rule]]
 category = "Groceries"
 counterparty = "Fake Market"
+"""
+
+UTILITIES_TOML = """
+[[category]]
+name = "Utilities"
+type = "fixed"
+
+[[rule]]
+category = "Utilities"
+counterparty = "Power Co"
 """
 
 INCOME_TOML = """
@@ -725,3 +737,80 @@ def test_income_legend_splits_salary_and_recurring_income(tmp_path):
     assert recurring > 0
     assert total == salary + recurring
     assert "recurring" in text(legend)
+
+
+def _add_energy_meter(db_path: Path, name: str, *, category: str | None = None) -> None:
+    """A meter at 0.10 EUR/kWh reading 60 kWh a day since 2026-09-01, billed to year end."""
+    conn = connect(db_path)
+    try:
+        meter_id = add_meter(conn, Meter(name, "electricity"))
+        add_period(
+            conn,
+            meter_id,
+            BillingPeriod(
+                start_date=date(2026, 9, 1),
+                settlement_date=date(2026, 12, 31),
+                base_fee_cents=0,
+                unit_price_micro=100_000,
+                state_factor_e4=None,
+                calorific_value_e4=None,
+                advance_cents=0,
+                expected_kwh=0,
+                category=category,
+            ),
+        )
+        add_reading(conn, meter_id, Reading(date(2026, 9, 1), 0))
+        add_reading(conn, meter_id, Reading(date(2026, 9, 11), 600_000))
+    finally:
+        conn.close()
+
+
+def test_energy_card_lists_the_projected_settlement_per_meter(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    _add_energy_meter(db_path, "Power")
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    [row] = page.select("#energy-card [data-meter]")
+    assert row["data-meter"] == "Power"
+    # 122 days at 60 kWh and 0.10 EUR/kWh, nothing paid: a back-payment of 732.00.
+    assert cents(row.select_one('[data-field="settlement"]')) == 73_200
+    assert row.select_one('[data-field="settlement"] [data-kind="back-payment"]') is not None
+    assert text(row.select_one('[data-field="settlement"]')).startswith("Back-payment")
+    assert fields(row)["date"] == "2026-12-31"
+    assert text(row.select_one('[data-field="worst-case"]')).startswith("Back-payment")
+    assert cents(row.select_one('[data-field="worst-case"]')) == 73_200
+    assert cents(row.select_one('[data-field="suggested-advance"]')) > 0
+
+
+def test_energy_card_words_a_positive_settlement_as_a_refund(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, UTILITIES_TOML)
+    _add_energy_meter(db_path, "Power", category="Utilities")
+    _insert_debit(
+        db_path,
+        fingerprint="advance",
+        booking_date="2026-09-02",
+        amount_cents=-100_000,
+        counterparty="Power Co",
+    )
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    [row] = page.select("#energy-card [data-meter]")
+    assert text(row.select_one('[data-field="settlement"]')).startswith("Refund")
+    assert cents(row.select_one('[data-field="settlement"]')) == 26_800
+    assert row.select_one('[data-field="settlement"] [data-kind="refund"]') is not None
+
+
+def test_no_energy_card_without_a_current_period(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    assert page.select_one("#energy-card") is None

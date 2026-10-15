@@ -11,6 +11,8 @@ from sonar.categorization.store import load_stored_taxonomy
 from sonar.db import connect
 from sonar.debts.model import Loan, MatchRule
 from sonar.debts.store import add_debt
+from sonar.energy.model import BillingPeriod, Meter, Reading
+from sonar.energy.store import add_meter, add_period, add_reading
 from sonar.web.app import create_app
 from tests.seed import seed
 
@@ -159,3 +161,49 @@ def test_without_a_salary_day_expected_income_is_null_and_cycles_are_empty(tmp_p
     assert body["expected_income"] is None
     assert body["fixed_costs"]["cycles"] == []
     assert "months" not in body["fixed_costs"]
+
+
+def test_energy_lists_the_projected_settlement_per_meter(tmp_path):
+    with _client(tmp_path) as client:
+        conn = connect(client.db_path)
+        try:
+            meter_id = add_meter(conn, Meter("Power", "electricity"))
+            add_period(
+                conn,
+                meter_id,
+                BillingPeriod(
+                    start_date=date(2026, 9, 1),
+                    settlement_date=date(2026, 12, 31),
+                    base_fee_cents=0,
+                    unit_price_micro=100_000,
+                    state_factor_e4=None,
+                    calorific_value_e4=None,
+                    advance_cents=0,
+                    expected_kwh=0,
+                    category=None,
+                ),
+            )
+            add_reading(conn, meter_id, Reading(date(2026, 9, 1), 0))
+            add_reading(conn, meter_id, Reading(date(2026, 9, 11), 600_000))
+        finally:
+            conn.close()
+        body = client.get("/api/dashboard").json()
+        board = _expected_board(client.db_path)
+
+    [expected] = board.energy
+    assert body["energy"] == [
+        {
+            "meter_name": "Power",
+            "settlement_date": "2026-12-31",
+            "settlement_cents": -73_200,
+            "worst_settlement_cents": -73_200,
+            "suggested_advance_cents": expected.suggested_advance_cents,
+        }
+    ]
+
+
+def test_energy_is_empty_without_a_current_period(tmp_path):
+    with _client(tmp_path) as client:
+        body = client.get("/api/dashboard").json()
+
+    assert body["energy"] == []

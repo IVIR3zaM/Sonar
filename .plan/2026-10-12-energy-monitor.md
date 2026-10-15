@@ -1,5 +1,5 @@
 # Energy monitor
-status: RUNNING
+status: WAITING
 created: 2026-10-12 · updated: 2026-10-15
 goal: Per gas or electricity meter, Sonar shows the cost so far, the advances paid, the projected settlement and a suggested advance, from hand-entered readings, meter exchanges and billing periods, on an Energy page, a dashboard card and in the forecast.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -48,7 +48,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N05 | energy service and JSON API | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | Energy page | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
-| N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
+| N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 
@@ -354,3 +354,9 @@ exec: DONE · 1689 passed
 - Toggles use group/energy + group-has variants with visibility; trend lines sit in a nested clipping svg so they stay straight
 check: PASS 3/3
 verify: PASS
+
+### N08 try 1 · 2026-10-15
+exec: DONE · 1701 passed
+- energy.service.settlement_summaries, Dashboard.energy, in-window settlements added to due/inflows in cashflow.service, #energy-card in index.html
+- Summaries use the estimate date; suggested advance may be None (shown as a dash); sonar.css rebuilt, no class changes
+check: PASS 3/3

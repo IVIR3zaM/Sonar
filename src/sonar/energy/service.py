@@ -75,3 +75,35 @@ def _advances(transactions: list, period: BillingPeriod | None) -> list[Advance]
         for transaction, category in transactions
         if category == period.category and transaction.amount_cents < 0
     ]
+
+
+@dataclass(frozen=True)
+class SettlementSummary:
+    """One meter's projected settlement, as the dashboard shows and forecasts it."""
+
+    meter_name: str
+    settlement_date: date
+    settlement_cents: int  # positive is a refund
+    worst_settlement_cents: int
+    suggested_advance_cents: int | None  # None without an advance left in the period
+
+
+def settlement_summaries(conn: sqlite3.Connection, today: date) -> list[SettlementSummary]:
+    """The meters with a period in force on `today` and usage to project from."""
+    summaries = []
+    for view in load_energy(conn, today):
+        status = view.status
+        if status is None or status.settlement_cents is None:
+            continue
+        period = current_period([p.item for p in view.periods], today)
+        assert period is not None  # a status exists only for a period in force
+        summaries.append(
+            SettlementSummary(
+                meter_name=view.meter.name,
+                settlement_date=period.settlement_date,
+                settlement_cents=status.settlement_cents,
+                worst_settlement_cents=status.worst_settlement_cents,
+                suggested_advance_cents=status.suggested_advance_cents,
+            )
+        )
+    return summaries

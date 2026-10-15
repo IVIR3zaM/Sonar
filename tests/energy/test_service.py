@@ -8,7 +8,7 @@ import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.energy.model import BillingPeriod, Meter, Reading
-from sonar.energy.service import load_energy
+from sonar.energy.service import load_energy, settlement_summaries
 from sonar.energy.store import add_meter, add_period, add_reading
 
 TODAY = date(2026, 1, 20)
@@ -117,3 +117,23 @@ def test_a_meter_without_readings_still_loads(conn):
 
     assert view.status is None
     assert view.month_figures == []
+
+
+def test_settlement_summaries_list_meters_with_a_projection(conn):
+    _meter_with_readings(conn)
+    add_meter(conn, Meter("Gas", "gas"))  # no period, no summary
+
+    [summary] = settlement_summaries(conn, TODAY)
+
+    assert summary.meter_name == "Power"
+    assert summary.settlement_date == date(2026, 12, 31)
+    assert summary.settlement_cents is not None
+    assert summary.worst_settlement_cents <= summary.settlement_cents
+    assert summary.suggested_advance_cents >= 0
+
+
+def test_settlement_summaries_skip_a_meter_without_usage(conn):
+    meter_id = add_meter(conn, Meter("Power", "electricity"))
+    add_period(conn, meter_id, _period())
+
+    assert settlement_summaries(conn, TODAY) == []

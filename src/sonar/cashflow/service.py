@@ -32,6 +32,7 @@ from sonar.debts import model
 from sonar.debts.model import Installment
 from sonar.debts.payoff import LadderDebt, PayoffStep, payoff_ladder
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
+from sonar.energy.service import SettlementSummary, settlement_summaries
 from sonar.recurring.detect import Row, detect_income
 from sonar.recurring.store import list_payments
 from sonar.transactions import ParsedTransaction
@@ -68,6 +69,9 @@ class Dashboard:
     fixed_costs: FixedCosts
     debts: list[tuple[str, int]]
     debts_total_cents: int
+    # Projected energy settlements as of the estimate date; those inside the window
+    # are also in `due` or `inflows`.
+    energy: list[SettlementSummary]
     uncategorized_count: int
 
 
@@ -130,6 +134,7 @@ def load_dashboard(
     views = debt_overview(conn, estimate_date)
     sources = _fixed_sources(conn, views, [tx for tx, _ in rows])
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
+    energy = settlement_summaries(conn, estimate_date)
     board = Dashboard(
         salary_day=settings.salary_day,
         payday=None,
@@ -153,6 +158,7 @@ def load_dashboard(
         fixed_costs=_fixed_costs(sources, rows, category_types, settings.salary_day, estimate_date),
         debts=remaining,
         debts_total_cents=sum(cents for _, cents in remaining),
+        energy=energy,
         uncategorized_count=uncategorized_count(conn),
     )
     if settings.salary_day is None or balance is None:
@@ -167,9 +173,16 @@ def load_dashboard(
     start = estimate_date + timedelta(days=1)
     end = next_payday - timedelta(days=1)
     window_days = (end - start).days + 1
-    due = forecast.fixed_due(sources, start, end)
+    settlements = _settlements(energy, start, end)
+    due = forecast.fixed_due(sources, start, end) + [
+        replace(item, amount_cents=-item.amount_cents)
+        for item in settlements
+        if item.amount_cents < 0
+    ]
     due_total = sum(item.amount_cents for item in due)
-    inflows = _inflows(rows, category_types, settings.salary_day, estimate_date, start, end)
+    inflows = _inflows(rows, category_types, settings.salary_day, estimate_date, start, end) + [
+        item for item in settlements if item.amount_cents > 0
+    ]
     inflow_total = sum(item.amount_cents for item in inflows)
     until = lights_on.last_known_day(rows, balance.as_of)
     months = (
@@ -275,6 +288,17 @@ def load_monthly(
 
 def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[str, ...]:
     return tuple(sorted(name for name, type_ in category_types.items() if type_ == category_type))
+
+
+def _settlements(summaries: list[SettlementSummary], start: date, end: date) -> list[DueItem]:
+    """Settlements falling in [start, end]; a refund is positive, a back-payment negative."""
+    return [
+        DueItem(
+            f"{summary.meter_name} settlement", summary.settlement_date, summary.settlement_cents
+        )
+        for summary in summaries
+        if start <= summary.settlement_date <= end
+    ]
 
 
 def _inflows(

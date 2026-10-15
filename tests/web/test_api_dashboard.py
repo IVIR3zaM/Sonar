@@ -179,7 +179,7 @@ def test_energy_lists_the_projected_settlement_per_meter(tmp_path):
                     state_factor_e4=None,
                     calorific_value_e4=None,
                     advance_cents=0,
-                    expected_kwh=0,
+                    expected_kwh=21_900,  # 60 kWh a day
                     category=None,
                 ),
             )

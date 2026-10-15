@@ -755,7 +755,7 @@ def _add_energy_meter(db_path: Path, name: str, *, category: str | None = None) 
                 state_factor_e4=None,
                 calorific_value_e4=None,
                 advance_cents=0,
-                expected_kwh=0,
+                expected_kwh=21_900,  # 60 kWh a day
                 category=category,
             ),
         )

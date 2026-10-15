@@ -108,10 +108,10 @@ def _electricity_meter(db_path) -> int:
     return _store(db_path, lambda conn: add_meter(conn, Meter("Power", "electricity")))
 
 
-def _with_readings(db_path) -> int:
+def _with_readings(db_path, **period_changes) -> int:
     """An electricity meter with a 2026 period and 100 kWh over the first ten days."""
     meter = _electricity_meter(db_path)
-    _store(db_path, lambda conn: add_period(conn, meter, _period()))
+    _store(db_path, lambda conn: add_period(conn, meter, _period(**period_changes)))
     _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000_000)))
     _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 11), 1_100_000)))
     return meter
@@ -202,7 +202,7 @@ def test_gas_usage_is_converted_to_kwh_per_day_by_the_period(client, db_path):
 
 
 def test_status_stats_carry_cents(client, db_path):
-    meter = _with_readings(db_path)
+    meter = _with_readings(db_path, expected_kwh=3_650)  # 10 kWh a day for the rest of the year
     _insert_debit(db_path, "2026-01-03", -5_000, "Utilities")
     page = _page(client)
 
@@ -219,14 +219,17 @@ def test_status_stats_carry_cents(client, db_path):
     assert cents(settlement) == 29_650
     assert settlement["data-kind"] == "refund"
     assert stat("worst-case") == 29_650
-    # (25350 - 5000) / 10 advances = 2035, rounded up to whole euros.
-    assert stat("suggested-advance") == 2_100
+    # 25350 / 11 advances = 2304.5, rounded up to whole euros.
+    assert stat("suggested-advance") == 2_400
     assert page.select_one(f"#meter-{meter}-settlement-date")["datetime"] == "2026-12-31"
 
 
 def test_a_back_payment_is_worded_as_such(client, db_path):
     meter = _electricity_meter(db_path)
-    _store(db_path, lambda conn: add_period(conn, meter, _period(advance_cents=1_000)))
+    _store(
+        db_path,
+        lambda conn: add_period(conn, meter, _period(advance_cents=1_000, expected_kwh=3_650)),
+    )
     _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000_000)))
     _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 11), 1_100_000)))
 

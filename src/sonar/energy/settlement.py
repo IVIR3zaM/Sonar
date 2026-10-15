@@ -157,21 +157,9 @@ def meter_status(
             None,
         )
 
-    days_so_far = (end - first_day).days
-    last_so_far = end - timedelta(days=1)
-    cost_so_far = _exact_cost(periods, kwh_by_day, first_day, last_so_far)
-    rate = sum(kwh_by_day[day] for day in _days(first_day, last_so_far)) / days_so_far
-    remaining_days = list(_days(end, period.settlement_date))
-
-    def projected_at(daily_rate: Fraction) -> Fraction:
-        return cost_so_far + _exact_cost_at_rate(period, remaining_days, daily_rate)
-
-    projected = projected_at(rate)
-    worst_rate = max(
-        rate,
-        Fraction(period.expected_kwh, 365),
-        _last_year_rate(kwh_by_day, remaining_days),
-    )
+    cost_so_far = _exact_cost(periods, kwh_by_day, first_day, end - timedelta(days=1))
+    projected = cost_so_far + _rest_cost(period, seasonal_daily_kwh(kind, period, usage, end))
+    worst = cost_so_far + _rest_cost(period, worst_daily_kwh(kind, period, usage, end))
     projected_cents = round_half_up(projected)
     cost_so_far_cents = round_half_up(cost_so_far)
     return MeterStatus(
@@ -184,9 +172,79 @@ def meter_status(
         projected_cost_cents=projected_cents,
         remaining_advances_cents=remaining_advances,
         settlement_cents=paid + remaining_advances - projected_cents,
-        worst_settlement_cents=paid + remaining_advances - round_half_up(projected_at(worst_rate)),
-        suggested_advance_cents=_suggested_advance(projected - paid, due_count),
+        worst_settlement_cents=paid + remaining_advances - round_half_up(worst),
+        suggested_advance_cents=_suggested_advance(projected, advance_count),
     )
+
+
+def seasonal_daily_kwh(
+    kind: str, period: BillingPeriod, usage: DailyUsage, as_of: date
+) -> DailyUsage:
+    """Projected kWh for each day of [as_of, settlement date].
+
+    A day follows last year's usage on the same day, moved halfway towards this year's
+    trend (this year's units over last year's in the latest full month). Without a trend
+    or a last-year day it falls back to the period's expected kWh per day.
+    """
+    ratio = _seasonal_ratio(period, usage, as_of)
+    per_unit = _kwh_per_unit(kind, period)
+    projection: DailyUsage = {}
+    for day in _days(as_of, period.settlement_date):
+        previous = usage.get(same_day_last_year(day))
+        if ratio is None or previous is None:
+            projection[day] = _expected_kwh_per_day(period)
+        else:
+            projection[day] = previous * (1 + ratio) / 2 * per_unit
+    return projection
+
+
+def worst_daily_kwh(kind: str, period: BillingPeriod, usage: DailyUsage, as_of: date) -> DailyUsage:
+    """Per day of [as_of, settlement date] the highest of the seasonal kWh, the expected kWh
+    per day and last year's kWh on that day."""
+    per_unit = _kwh_per_unit(kind, period)
+    worst: DailyUsage = {}
+    for day, seasonal in seasonal_daily_kwh(kind, period, usage, as_of).items():
+        candidates = [seasonal, _expected_kwh_per_day(period)]
+        previous = usage.get(same_day_last_year(day))
+        if previous is not None:
+            candidates.append(previous * per_unit)
+        worst[day] = max(candidates)
+    return worst
+
+
+def _expected_kwh_per_day(period: BillingPeriod) -> Fraction:
+    return Fraction(period.expected_kwh, 365)
+
+
+def _seasonal_ratio(period: BillingPeriod, usage: DailyUsage, as_of: date) -> Fraction | None:
+    """Units of the latest full month over the same month a year earlier; None if unknown."""
+    month = _latest_full_month(period, usage, as_of)
+    if month is None:
+        return None
+    this_year = _month_units(usage, month)
+    last_year = _month_units(usage, month.replace(year=month.year - 1))
+    if this_year is None or not last_year:
+        return None
+    return this_year / last_year
+
+
+def _latest_full_month(period: BillingPeriod, usage: DailyUsage, as_of: date) -> date | None:
+    """First day of the latest month inside the period with usage on all its days before `as_of`."""
+    latest_day = min(as_of - timedelta(days=1), period.settlement_date)
+    month = latest_day.replace(day=1)
+    while month >= period.start_date:
+        last = month.replace(day=days_in_month(month))
+        if last <= latest_day and _month_units(usage, month) is not None:
+            return month
+        month = (month - timedelta(days=1)).replace(day=1)
+    return None
+
+
+def _month_units(usage: DailyUsage, month: date) -> Fraction | None:
+    days = list(_days(month, month.replace(day=days_in_month(month))))
+    if any(day not in usage for day in days):
+        return None
+    return sum((usage[day] for day in days), start=Fraction(0))
 
 
 def _kwh_per_unit(kind: str, period: BillingPeriod) -> Fraction:
@@ -225,23 +283,12 @@ def _energy_cents(period: BillingPeriod, kwh: Fraction) -> Fraction:
     return kwh * period.unit_price_micro * CENTS_PER_MICRO_EURO_KWH
 
 
-def _exact_cost_at_rate(
-    period: BillingPeriod, days: Sequence[date], daily_rate: Fraction
-) -> Fraction:
+def _rest_cost(period: BillingPeriod, kwh_by_day: DailyUsage) -> Fraction:
+    """The current period's price and per-day fee for the projected days."""
     return sum(
-        (_energy_cents(period, daily_rate) + _fee_per_day(period, day) for day in days),
+        (_energy_cents(period, kwh) + _fee_per_day(period, day) for day, kwh in kwh_by_day.items()),
         start=Fraction(0),
     )
-
-
-def _last_year_rate(kwh_by_day: DailyUsage, days: Sequence[date]) -> Fraction:
-    """Mean daily kWh of the same calendar days last year; 0 unless every one is known."""
-    if not days:
-        return Fraction(0)
-    last_year = [kwh_by_day.get(same_day_last_year(day)) for day in days]
-    if any(kwh is None for kwh in last_year):
-        return Fraction(0)
-    return sum(last_year, start=Fraction(0)) / len(days)
 
 
 def _previous_period(
@@ -308,7 +355,6 @@ def _advances_due(
     return min(count, max(0, advances_left))
 
 
-def _suggested_advance(still_to_pay: Fraction, due_count: int) -> int | None:
-    if due_count == 0:
-        return None
-    return math.ceil(still_to_pay / due_count / WHOLE_EURO_CENTS) * WHOLE_EURO_CENTS
+def _suggested_advance(projected_cost: Fraction, advance_count: int) -> int:
+    """What each advance of the period should be to cover its projected cost, in whole euros."""
+    return math.ceil(projected_cost / advance_count / WHOLE_EURO_CENTS) * WHOLE_EURO_CENTS

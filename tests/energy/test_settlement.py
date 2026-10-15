@@ -1,3 +1,4 @@
+import calendar
 from dataclasses import replace
 from datetime import date
 from fractions import Fraction
@@ -12,6 +13,8 @@ from sonar.energy.settlement import (
     meter_status,
     month_figures,
     same_day_last_year,
+    seasonal_daily_kwh,
+    worst_daily_kwh,
 )
 from sonar.energy.usage import continuous_series, daily_usage
 
@@ -134,8 +137,9 @@ def test_current_period_contains_today_inclusive_else_none():
 JANUARY = electricity_period(date(2026, 1, 1), date(2026, 1, 31), fee=3100, advance=5000)
 
 
-def test_status_back_payment_and_worst_equals_projection_when_rate_is_highest():
-    # 20 kWh a day for 10 days: 2000 ct + 1000 ct fee so far; 21 more days: 4200 + 2100
+def test_status_back_payment_and_worst_equals_projection_without_a_trend():
+    # 20 kWh a day for 10 days: 2000 ct + 1000 ct fee so far; no trend or last year and no
+    # expected kWh, so the 21 more days cost only their fee: 2100
     usage = usage_of((date(2026, 1, 1), 0), (date(2026, 1, 11), kwh(200)))
     status = meter_status("electricity", [JANUARY], usage, [], date(2026, 1, 11))
     assert status == MeterStatus(
@@ -145,11 +149,11 @@ def test_status_back_payment_and_worst_equals_projection_when_rate_is_highest():
         paid_since=date(2026, 1, 1),
         advance_count=1,
         left_cents=-3000,
-        projected_cost_cents=9300,
+        projected_cost_cents=5100,
         remaining_advances_cents=5000,  # none paid: the start's day, so 1 Jan counts
-        settlement_cents=-4300,
-        worst_settlement_cents=-4300,
-        suggested_advance_cents=9300,
+        settlement_cents=-100,
+        worst_settlement_cents=-100,
+        suggested_advance_cents=5100,
     )
 
 
@@ -161,15 +165,15 @@ def test_status_refund_and_worst_case_from_expected_kwh():
     status = meter_status(
         "electricity", [period], usage, [(date(2026, 1, 1), -5000)], date(2026, 1, 11)
     )
-    # so far 100 + 1000; projected adds 210 + 2100; worst adds 21 days at 10 kWh: 2100 + 2100
+    # so far 100 + 1000; 21 more days at the expected 10 kWh (2100) and the fee (2100)
     assert status.cost_so_far_cents == 1100
     assert status.paid_cents == 5000
     assert status.left_cents == 3900
-    assert status.projected_cost_cents == 3410
+    assert status.projected_cost_cents == 5300
     assert status.remaining_advances_cents == 0
-    assert status.settlement_cents == 1590
+    assert status.settlement_cents == -300
     assert status.worst_settlement_cents == -300
-    assert status.suggested_advance_cents is None
+    assert status.suggested_advance_cents == 5300
 
 
 def test_status_worst_case_from_last_year_on_the_same_days():
@@ -183,12 +187,12 @@ def test_status_worst_case_from_last_year_on_the_same_days():
     status = meter_status(
         "electricity", [last_year, JANUARY], usage, [(date(2026, 1, 1), -5000)], date(2026, 1, 11)
     )
-    # worst: 1100 so far + 21 days at 20 kWh (4200) + 2100 fee
-    assert status.projected_cost_cents == 3410
+    # projected: 1100 so far + 2100 fee (no expected kWh); worst: 21 days at 20 kWh (4200) more
+    assert status.projected_cost_cents == 3200
     assert status.worst_settlement_cents == 5000 - 7400
 
 
-def test_status_ignores_last_year_without_a_period_in_force():
+def test_status_worst_case_counts_last_year_even_without_a_period_in_force():
     usage = usage_of(
         (date(2025, 1, 1), 0),
         (date(2025, 2, 1), kwh(620)),  # used, but no billing period covers it
@@ -198,7 +202,7 @@ def test_status_ignores_last_year_without_a_period_in_force():
     status = meter_status(
         "electricity", [JANUARY], usage, [(date(2026, 1, 1), -5000)], date(2026, 1, 11)
     )
-    assert status.worst_settlement_cents == status.settlement_cents
+    assert status.worst_settlement_cents == 5000 - 7400
 
 
 def test_same_day_last_year_maps_29_february_to_28_february():
@@ -207,24 +211,26 @@ def test_same_day_last_year_maps_29_february_to_28_february():
 
 
 def test_status_suggested_advance_rounds_up_to_whole_euros():
-    period = electricity_period(date(2026, 1, 1), date(2026, 3, 31), advance=5000)
+    period = electricity_period(
+        date(2026, 1, 1), date(2026, 3, 31), advance=5000, expected_kwh=3651
+    )
     usage = usage_of((date(2026, 1, 1), 0), (date(2026, 2, 1), kwh(310)))
     status = meter_status(
         "electricity", [period], usage, [(date(2026, 1, 3), -3100)], date(2026, 2, 1)
     )
-    # 3100 ct so far, 59 days at 10 kWh: 5900 ct; advances due on 3 Feb and 3 Mar
-    assert status.projected_cost_cents == 9000
+    # 3100 ct so far, 59 days at 3651 / 365 kWh: 5901.6 ct; advances due on 3 Feb and 3 Mar
+    assert status.projected_cost_cents == 9002
     assert status.remaining_advances_cents == 10_000
-    assert status.settlement_cents == 3100 + 10_000 - 9000
-    assert status.suggested_advance_cents == 3000  # 2950 rounded up
+    assert status.settlement_cents == 3100 + 10_000 - 9002
+    assert status.suggested_advance_cents == 3100  # 9001.6 over 3 advances is 3000.53
 
 
-def test_status_suggested_advance_is_none_on_the_settlement_day():
+def test_status_suggested_advance_is_still_given_on_the_settlement_day():
     usage = usage_of((date(2026, 1, 1), 0), (date(2026, 1, 31), kwh(300)))
     status = meter_status(
         "electricity", [JANUARY], usage, [(date(2026, 1, 15), -5000)], date(2026, 1, 31)
     )
-    assert status.suggested_advance_cents is None
+    assert status.suggested_advance_cents == 6100  # 6000 so far and the last day's fee
     assert status.remaining_advances_cents == 0
 
 
@@ -366,3 +372,141 @@ def test_remaining_advances_of_electricity_paid_february_to_october_are_two():
     status = meter_status("electricity", periods, {}, bookings, date(2026, 10, 15))
     assert status.paid_cents == 9 * 4000
     assert status.remaining_advances_cents == 2 * 4000
+
+
+# --- seasonal projection, worst case and suggested advance -------------------
+
+AS_OF = date(2026, 11, 1)
+YEAR_2026 = electricity_period(date(2026, 1, 1), date(2026, 12, 31), expected_kwh=3650)
+
+
+def spread(usage: dict, year: int, month: int, total_kwh: int) -> None:
+    """Add `total_kwh` evenly over every day of a month."""
+    days = calendar.monthrange(year, month)[1]
+    for day in range(1, days + 1):
+        usage[date(year, month, day)] = Fraction(total_kwh, days)
+
+
+def seasonal_usage(*, last_october=50, last_november=100, this_october=40) -> dict:
+    usage: dict = {}
+    spread(usage, 2025, 10, last_october)
+    spread(usage, 2025, 11, last_november)
+    spread(usage, 2026, 10, this_october)
+    return usage
+
+
+def month_total(result: dict, month: int) -> Fraction:
+    return sum((v for day, v in result.items() if day.month == month), start=Fraction(0))
+
+
+def test_seasonal_november_is_last_year_scaled_by_the_october_ratio():
+    result = seasonal_daily_kwh("electricity", YEAR_2026, seasonal_usage(), AS_OF)
+    assert month_total(result, 11) == 90  # 100 kWh x (1 + 40/50) / 2
+
+
+def test_seasonal_covers_every_day_from_as_of_to_the_settlement():
+    result = seasonal_daily_kwh("electricity", YEAR_2026, seasonal_usage(), AS_OF)
+    assert (min(result), max(result)) == (AS_OF, date(2026, 12, 31))
+    assert seasonal_daily_kwh("electricity", YEAR_2026, seasonal_usage(), date(2027, 1, 1)) == {}
+
+
+def test_seasonal_day_without_last_years_usage_uses_expected_kwh_per_day():
+    result = seasonal_daily_kwh("electricity", YEAR_2026, seasonal_usage(), AS_OF)
+    assert result[date(2026, 12, 15)] == 10  # 3650 / 365
+
+
+def test_seasonal_without_a_full_month_in_the_period_uses_expected_kwh_per_day():
+    period = replace(YEAR_2026, start_date=date(2026, 10, 15))
+    result = seasonal_daily_kwh("electricity", period, seasonal_usage(), AS_OF)
+    assert set(result.values()) == {Fraction(10)}
+
+
+def test_seasonal_with_a_gap_in_the_months_days_uses_expected_kwh_per_day():
+    usage = seasonal_usage()
+    del usage[date(2026, 10, 20)]
+    assert set(seasonal_daily_kwh("electricity", YEAR_2026, usage, AS_OF).values()) == {10}
+
+
+def test_seasonal_without_last_years_month_uses_expected_kwh_per_day():
+    usage = seasonal_usage()
+    for day in range(1, 32):
+        del usage[date(2025, 10, day)]
+    assert set(seasonal_daily_kwh("electricity", YEAR_2026, usage, AS_OF).values()) == {10}
+
+
+def test_seasonal_with_last_years_month_at_zero_uses_expected_kwh_per_day():
+    usage = seasonal_usage(last_october=0)
+    assert set(seasonal_daily_kwh("electricity", YEAR_2026, usage, AS_OF).values()) == {10}
+
+
+def test_seasonal_gas_units_convert_with_the_current_periods_factors():
+    period = replace(gas_period(date(2026, 1, 1), date(2026, 12, 31)), expected_kwh=0)
+    result = seasonal_daily_kwh("gas", period, seasonal_usage(), AS_OF)
+    assert month_total(result, 11) == 90 * Fraction(9653 * 115_000, 10**8)
+
+
+def test_seasonal_gas_fallback_is_already_kwh():
+    period = replace(gas_period(date(2026, 1, 1), date(2026, 12, 31)), expected_kwh=3650)
+    result = seasonal_daily_kwh("gas", period, {}, AS_OF)
+    assert set(result.values()) == {Fraction(10)}
+
+
+def test_status_projects_the_remaining_days_seasonally():
+    period = replace(YEAR_2026, expected_kwh=0)
+    status = meter_status("electricity", [period], seasonal_usage(), [], AS_OF)
+    # 10 ct a kWh: October's 40 kWh so far, 90 kWh in November, nothing known for December
+    assert status.cost_so_far_cents == 400
+    assert status.projected_cost_cents == 400 + 900
+
+
+def worst_of(*, this_october, last_year_day, expected_kwh):
+    """Worst kWh of 2 November when last year's usage on that day was `last_year_day`."""
+    usage = seasonal_usage(last_october=40, this_october=this_october)
+    usage[date(2025, 11, 2)] = Fraction(last_year_day)
+    period = replace(YEAR_2026, expected_kwh=expected_kwh)
+    return worst_daily_kwh("electricity", period, usage, AS_OF)[date(2026, 11, 2)]
+
+
+def test_worst_day_takes_the_seasonal_projection_when_it_is_highest():
+    # ratio 3: seasonal 20 x (1 + 3) / 2 = 40 beats last year's 20 and expected 10
+    assert worst_of(this_october=120, last_year_day=20, expected_kwh=3650) == 40
+
+
+def test_worst_day_takes_expected_kwh_per_day_when_it_is_highest():
+    # ratio 1: seasonal 2 equals last year's 2, expected 10 wins
+    assert worst_of(this_october=40, last_year_day=2, expected_kwh=3650) == 10
+
+
+def test_worst_day_takes_last_years_usage_when_it_is_highest():
+    # ratio 0: seasonal 10, last year's 20 wins over expected 5
+    assert worst_of(this_october=0, last_year_day=20, expected_kwh=1825) == 20
+
+
+def test_worst_day_ignores_the_current_daily_rate():
+    usage = seasonal_usage(last_october=3100, this_october=3100)  # 100 kWh a day so far
+    period = replace(YEAR_2026, expected_kwh=3650)
+    assert max(worst_daily_kwh("electricity", period, usage, AS_OF).values()) < 100
+
+
+def suggested_for(price: int, fee: int, kwh_a_year: int) -> int | None:
+    period = electricity_period(
+        date(2026, 1, 1), date(2026, 12, 31), fee=fee, price=price, expected_kwh=kwh_a_year
+    )
+    usage = usage_of((date(2026, 1, 1), 0), (date(2027, 1, 1), kwh(kwh_a_year)))
+    status = meter_status("electricity", [period], usage, [], date(2026, 12, 31))
+    assert status.advance_count == 11
+    return status.suggested_advance_cents
+
+
+def test_suggested_advance_is_the_whole_periods_cost_over_the_advances_in_whole_euros():
+    assert suggested_for(price=93_800, fee=1595, kwh_a_year=15701) == 15200
+
+
+def test_suggested_advance_second_pin():
+    assert suggested_for(price=318_325, fee=1041, kwh_a_year=8558) == 26000
+
+
+def test_suggested_advance_is_none_without_a_projection():
+    usage = usage_of((date(2025, 12, 1), 0), (date(2026, 1, 1), kwh(100)))
+    status = meter_status("electricity", [JANUARY], usage, [], date(2026, 1, 5))
+    assert status.suggested_advance_cents is None

@@ -848,7 +848,8 @@ def _energy_meter(
 ) -> None:
     """A meter at 0.10 EUR/kWh, no base fee and no advances, read on 09-01 and 09-11.
 
-    By default it costs 12000 cents: 60 kWh a day over the 20 days to 09-20.
+    By default it costs 12000 cents: 60 kWh a day over the 20 days to 09-20; the days after
+    the readings are projected at the expected kWh per day.
     """
     meter_id = add_meter(conn, Meter("Gas", "electricity"))
     add_period(
@@ -862,7 +863,7 @@ def _energy_meter(
             state_factor_e4=None,
             calorific_value_e4=None,
             advance_cents=0,
-            expected_kwh=0,
+            expected_kwh=kwh_per_day * 365,
             category=category,
         ),
     )

@@ -563,3 +563,90 @@ def test_the_new_period_form_is_empty_without_a_period(client, db_path):
     form = _page(client).select_one(f"#meter-{meter}-new-period")
 
     assert form.select_one("input[name=start_date]")["value"] == ""
+
+
+# Usage and cost chart
+
+
+def _with_months(db_path, readings: list[tuple[date, int]]) -> int:
+    meter = _electricity_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _period()))
+    for day, value_milli in readings:
+        reading = Reading(day, value_milli)
+        _store(db_path, lambda conn, reading=reading: add_reading(conn, meter, reading))
+    return meter
+
+
+def test_a_chart_per_meter_has_both_series_and_a_trend_for_each(client, db_path):
+    meter = _with_months(
+        db_path,
+        [
+            (date(2026, 1, 1), 1_000_000),
+            (date(2026, 2, 1), 1_100_000),
+            (date(2026, 3, 1), 1_250_000),
+            (date(2026, 4, 1), 1_300_000),
+        ],
+    )
+    other = _gas_meter(db_path)
+    page = _page(client)
+
+    charts = page.select("[data-energy-chart]")
+    chart = page.select_one(f"#meter-{meter} [data-energy-chart]")
+    months = len(chart.select('[data-series="usage"] rect'))
+
+    assert len(charts) == 1
+    assert page.select_one(f"#meter-{other} [data-energy-chart]") is None
+    assert months >= 2
+    assert chart.select_one('[data-series="cost"]') is not None
+    assert len(chart.select("[data-trend]")) == 2
+    assert {el["data-trend"] for el in chart.select("[data-trend]")} == {"usage", "cost"}
+    for series in ("usage", "cost"):
+        assert len(chart.select(f'[data-value-label="{series}"]')) == months
+
+
+def test_the_chart_toggles_are_unchecked_checkboxes_and_need_no_script(client, db_path):
+    _with_months(
+        db_path,
+        [
+            (date(2026, 1, 1), 1_000_000),
+            (date(2026, 2, 1), 1_100_000),
+            (date(2026, 3, 1), 1_250_000),
+        ],
+    )
+
+    chart = _page(client).select_one("[data-energy-chart]")
+
+    for toggle in ("values", "trend"):
+        box = chart.select_one(f'input[data-toggle="{toggle}"]')
+        assert box["type"] == "checkbox"
+        assert not box.has_attr("checked")
+    assert chart.select_one("script") is None
+
+
+def test_the_chart_is_a_labelled_image_naming_both_series_and_units(client, db_path):
+    _with_months(
+        db_path,
+        [
+            (date(2026, 1, 1), 1_000_000),
+            (date(2026, 2, 1), 1_100_000),
+            (date(2026, 3, 1), 1_250_000),
+        ],
+    )
+
+    svg = _page(client).select_one("[data-energy-chart] svg")
+
+    assert svg["role"] == "img"
+    assert svg["aria-label"]
+    assert svg.select_one("title") is not None
+    legend = text(_page(client).select_one("[data-energy-chart] ul"))
+    assert "kWh" in legend
+    assert "€" in legend
+
+
+def test_fewer_than_two_months_shows_an_empty_state_instead_of_a_chart(client, db_path):
+    meter = _with_months(db_path, [(date(2026, 1, 1), 1_000_000), (date(2026, 2, 1), 1_100_000)])
+
+    card = _page(client).select_one(f"#meter-{meter}")
+
+    assert card.select_one("[data-energy-chart]") is None
+    assert card.select_one("[data-energy-chart-empty]") is not None

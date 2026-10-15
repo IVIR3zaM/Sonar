@@ -1,6 +1,7 @@
 """Chart geometry and SVG chart macros (SPEC §12 Dashboard)."""
 
 from datetime import date
+from fractions import Fraction
 from types import SimpleNamespace
 
 import pytest
@@ -16,10 +17,13 @@ from sonar.web.charts import (
     day_month,
     line_points,
     month_label,
+    own_scale_points,
     payoff_ticks,
     runway,
     runway_scale,
     stacked_columns,
+    trend,
+    trend_line,
 )
 
 
@@ -573,3 +577,56 @@ def test_payoff_ticks_keep_a_wide_gap_between_labels_on_one_row():
     ticks = payoff_ticks([100000, 200000, 4700000])
     assert [t.percent for t in ticks] == [0.0, 18.0, 100.0]
     assert [t.row for t in ticks] == [0, 1, 0]
+
+
+def test_trend_of_a_straight_series_is_that_series():
+    assert trend([1, 2, 3]) == [1, 2, 3]
+    assert trend([10, 7, 4, 1]) == [10, 7, 4, 1]
+
+
+def test_trend_of_a_flat_series_is_flat():
+    assert trend([5, 5, 5]) == [5, 5, 5]
+
+
+def test_trend_passes_through_the_mean_of_the_points():
+    fitted = trend([1, 5, 2, 8])
+    assert sum(fitted) == 16
+    assert fitted[1] - fitted[0] == fitted[2] - fitted[1] > 0
+
+
+def test_trend_is_exact_and_handles_short_series():
+    assert trend([0, 1, 1]) == [Fraction(1, 6), Fraction(2, 3), Fraction(7, 6)]
+    assert trend([4]) == [4]
+    assert trend([]) == []
+
+
+def test_own_scale_fills_the_height_with_each_series_own_peak():
+    usage = own_scale_points([10, 20], slot=10, height=50)
+    cost = own_scale_points([1000, 4000], slot=10, height=50)
+    assert usage == [(5, 25), (15, 0)]
+    assert cost == [(5, 38), (15, 0)]
+
+
+def test_own_scale_of_an_all_zero_series_sits_on_the_baseline():
+    assert own_scale_points([0, 0], slot=10, height=50) == [(5, 50), (15, 50)]
+
+
+def test_trend_line_runs_from_the_first_to_the_last_slot_on_the_series_scale():
+    # A straight series: the trend is the series, so its ends are the series' ends.
+    assert trend_line([10, 20], slot=10, height=50) == ((5, 25), (15, 0))
+    assert trend_line([5, 5, 5], slot=10, height=50) == ((5, 0), (25, 0))
+    assert trend_line([0, 0], slot=10, height=50) == ((5, 50), (15, 50))
+
+
+def test_energy_chart_macro_draws_the_last_24_months_with_axis_labels(render):
+    figures = [
+        SimpleNamespace(month=date(2024 + i // 12, i % 12 + 1, 1), kwh=100 + i, cost_cents=5000 + i)
+        for i in range(30)
+    ]
+
+    soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
+
+    assert len(soup.select('[data-series="usage"] rect')) == 24
+    assert [t.get_text() for t in soup.select("[data-part=axis]")][0] == month_label(
+        figures[6].month
+    )

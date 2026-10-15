@@ -47,7 +47,7 @@ Definition of done: verify passes; on a temp DB the Energy page, the API, the da
 | N04 | settlement math | exec | N02 | sonnet/opus | 1 | 0 | DONE | |
 | N05 | energy service and JSON API | exec | N03,N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | Energy page | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
+| N07 | usage and cost chart | exec | N06 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | dashboard card and forecast | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
@@ -345,5 +345,12 @@ exec: DONE · 1677 passed
 - Added /energy page (web/pages/energy.py, energy.html), Energy nav item after Payoff, router in app.py, parse_scaled/format_scaled in forms.py (scaled filter), sonar.css rebuilt
 - Settlement and worst case show the absolute amount in data-cents with data-kind refund or back-payment; ids meter-<id>-cost-so-far/paid/left/settlement/worst-case/suggested-advance/settlement-date
 - New-period form prefill: start = latest settlement + 1 day, settlement = latest settlement + 1 year; kWh per day rounded to whole kWh
+check: PASS 3/3
+verify: PASS
+
+### N07 try 1 · 2026-10-15
+exec: DONE · 1689 passed
+- charts.py: own_scale_points, trend (Fraction least squares), trend_line; energy_chart macro in charts.html, rendered per meter on the Energy page; sonar.css rebuilt
+- Toggles use group/energy + group-has variants with visibility; trend lines sit in a nested clipping svg so they stay straight
 check: PASS 3/3
 verify: PASS

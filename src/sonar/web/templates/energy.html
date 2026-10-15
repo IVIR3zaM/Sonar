@@ -6,6 +6,7 @@
 {% from "components/field.html" import field %}
 {% from "components/amount.html" import amount, date %}
 {% from "components/empty.html" import empty %}
+{% from "components/charts.html" import energy_chart %}
 
 {% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
 {% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
@@ -131,6 +132,11 @@
   {% else %}
   <p id="{{ pre }}-no-period" class="text-sm text-ink-muted">Add a billing period to see costs and a projection.</p>
   {% endif %}
+
+  <section class="mt-6">
+    <h3 class="{{ section_title }}">Usage and cost per month</h3>
+    <div class="mt-2">{{ energy_chart(pre ~ "-chart", m.view.month_figures) }}</div>
+  </section>
 
   <section class="mt-6">
     <h3 class="{{ section_title }}">Readings</h3>

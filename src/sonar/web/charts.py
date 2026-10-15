@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from fractions import Fraction
 from math import log10
 
 from sonar.categorization.groups import INCOME
@@ -210,6 +211,46 @@ def line_points(
         step = width / (len(s) - 1) if len(s) > 1 else 0
         points.append([(round(i * step), height - h) for i, h in enumerate(heights)])
     return points
+
+
+def own_scale_points(values: Sequence[int], slot: int, height: int) -> list[tuple[int, int]]:
+    """X,Y points at the center of each slot, the series' own peak reaching the top.
+
+    Unlike `line_points`, this series does not share a scale: usage in kWh and
+    cost in euros have no common unit, so each one is read against its own peak.
+    """
+    heights = _scale(values, height)
+    return [(i * slot + slot // 2, height - h) for i, h in enumerate(heights)]
+
+
+def trend(values: Sequence[int]) -> list[Fraction]:
+    """Least-squares straight line fitted to the values, one point per value.
+
+    Exact Fraction math keeps a straight series equal to its own trend. The
+    line always passes through the mean of the points.
+    """
+    count = len(values)
+    if count < 2:
+        return [Fraction(v) for v in values]
+    mean_x = Fraction(count - 1, 2)
+    mean_y = Fraction(sum(values), count)
+    spread = sum((i - mean_x) ** 2 for i in range(count))
+    slope = sum((i - mean_x) * (v - mean_y) for i, v in enumerate(values)) / spread
+    return [mean_y + slope * (i - mean_x) for i in range(count)]
+
+
+def trend_line(
+    values: Sequence[int], slot: int, height: int
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """End points of the trend, first slot's center to the last, on the series' own scale."""
+    peak = max((abs(v) for v in values), default=0)
+    fitted = trend(values)
+
+    def y(value: Fraction) -> int:
+        return height - round(value * height / peak) if peak else height
+
+    last = len(values) - 1
+    return (slot // 2, y(fitted[0])), (last * slot + slot // 2, y(fitted[-1]))
 
 
 def compact_eur(cents: int) -> str:

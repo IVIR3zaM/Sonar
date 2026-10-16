@@ -75,7 +75,7 @@ and dark; the final check passes SPEC §11 and §12.
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | garden link, fee and conflict storage | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
-| N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | RUNNING | fail C4 (full verify broken by N02 in-flight changes) |
+| N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | DONE | |
 | N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 0 | 0 | TODO | |
 | N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -497,5 +497,12 @@ check: FAIL C4
 exec: DONE · 1954 passed
 - migration 0017, Meter.main_meter_id, BillingPeriod.garden_fee_cents, store link/fee/zeroed/reading_to_exchange rules with tests
 - API test expectations gain garden_fee_cents: None only
+check: PASS 3/3
+verify: PASS
+
+### N03 try 2 · 2026-10-16
+exec: DONE · 1954 passed
+- No code change in try 2: the try-1 C4 failure no longer reproduces; full suite passes twice and ruff is clean
+- garden.py and test_garden.py (13 tests) from try 1 kept as is
 check: PASS 3/3
 verify: PASS

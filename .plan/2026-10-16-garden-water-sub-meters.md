@@ -83,7 +83,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N06,N08,N13,N14,N16,N17 | -/- | 0 | 1 | DONE | |
-| N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
+| N10 | plan acceptance | check | N18 | -/sonnet | 0 | 1 | TODO | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 2 | 0 | DONE | |
@@ -91,6 +91,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N15 | conflict cases per main run | exec | N13 | opus/sonnet | 1 | 0 | DONE | |
 | N16 | garden reading form | exec | N15 | sonnet/sonnet | 1 | 0 | DONE | |
 | N17 | SPEC conflict part | exec | N15,N16 | sonnet/sonnet | 1 | 0 | DONE | |
+| N18 | garden chart without the fee | exec | N09 | haiku/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -586,6 +587,27 @@ Done when:
   form, matches the code, and no longer says a zeroed case counts as no garden usage
 - C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
+## N18 garden chart without the fee
+Do: A garden meter's chart must price garden m³ with only the wastewater net price per m³ and its VAT, no
+  fees. `_wastewater_price_only` (src/sonar/utilities/garden.py:140) zeroes the drinking price and both base
+  fees but keeps the main period's `garden_fee_cents`, so a main period with a garden fee adds the fee to the
+  garden chart's cost. Also drop the garden fee there (`garden_fee_cents=None`). Nothing else changes.
+Context: D11 garden chart cost = garden m³ × wastewater net price × (100 + VAT) ÷ 100, no fees (what it
+  saves); SPEC.md:263 "A garden meter's own chart shows the main's cycles priced with only the wastewater
+  price per m³ and its VAT". D7 the garden fee is a charge of the main period only. Pin: the existing test
+  tests/utilities/test_garden.py:173-176 (PERIODS, GARDEN_A, TODAY) → Sep 2026 `(3, 1107, False)`; with a
+  12000-cent fee the cost is 2107 today.
+Read: `src/sonar/utilities/garden.py:130-150`, `tests/utilities/test_garden.py:1-52`, `tests/utilities/test_garden.py:170-180`
+Write: `src/sonar/utilities/garden.py`, `tests/utilities/test_garden.py`
+Test first: the same PERIODS with `garden_fee_cents=12_000` on each period (dataclasses.replace) give the
+  Sep 2026 garden month `(3, 1107, False)`, identical to the no-fee case.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/utilities/test_garden.py tests/utilities/test_service.py`
+- C2 [review] the new test fails on the old code (cost 2107) and passes now; the change is one field in
+  `_wastewater_price_only` and its docstring still states what the garden saves; no other src file changes
+- C3 [cmd] `test -z "$(git diff --name-only HEAD -- src | grep -v src/sonar/utilities/garden.py)"`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## Log
 
 ### N01 try 1 · 2026-10-16
@@ -754,4 +776,23 @@ exec: DONE · 2064 passed
 - SPEC.md:263 garden part rewritten: D22 case rules, zero or reject or record-as-exchange, zeroed only clears, page lists and garden add-reading form, garden_conflicts shape, zero POST on the main meter
 - Said figures use the never-below-0 rule instead of naming D4
 check: PASS 2/2
+verify: PASS
+
+### N10 try 1 · 2026-10-16
+check: PASS 5/5
+verify: FAIL C7
+- C7 src/sonar/utilities/garden.py:140 - _wastewater_price_only keeps garden_fee_cents, so a garden meter's chart on a main period with a garden fee adds the fee to its cost (checked: Sep 2026 cost 1107 without a fee, 2107 with a 12000-cent fee) - SPEC §13 says the garden chart is priced with only the wastewater price per m³ and its VAT, so the garden fee must not be in it
+
+### N10 replan 1 · 2026-10-16
+plan: REPLANNED +N18
+- cause: C7 failed, garden.py:140 _wastewater_price_only keeps garden_fee_cents so the garden chart adds the main's garden fee, against D11 and SPEC.md:263
+- N18 drops the garden fee from the garden chart pricing, test-first with a 12000-cent fee pinned to the no-fee Sep 2026 cost 1107
+- N10 now depends on N18; its brief is unchanged
+
+### N18 try 1 · 2026-10-16
+exec: DONE · tests: 2065 passed
+- garden.py: _wastewater_price_only sets garden_fee_cents=None; docstring updated to say no garden fee
+- test_garden.py: new test with 12000-cent garden fee expects Sep 2026 (3, 1107, False); failed on old code with 2107
+- Choice: fee dropped in the garden chart helper only, main period's fee left unchanged
+check: PASS 3/3
 verify: PASS

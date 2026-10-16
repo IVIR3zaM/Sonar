@@ -138,10 +138,11 @@ def garden_cycle_months(
 
 
 def _wastewater_price_only(period: BillingPeriod) -> BillingPeriod:
-    """Garden m³ save the wastewater per m³ only: drinking water and base fees still apply."""
+    """Garden m³ save the wastewater per m³ only: no drinking price, base fees or garden fee."""
     assert period.drinking is not None and period.wastewater is not None
     return replace(
         period,
         drinking=replace(period.drinking, unit_price_micro=0, base_fee_cents=0),
         wastewater=replace(period.wastewater, base_fee_cents=0),
+        garden_fee_cents=None,
     )

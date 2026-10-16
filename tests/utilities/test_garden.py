@@ -1,4 +1,5 @@
 import ast
+from dataclasses import replace
 from datetime import date, timedelta
 from fractions import Fraction
 from pathlib import Path
@@ -172,6 +173,13 @@ def test_a_garden_with_no_readings_has_no_case():
 
 def test_garden_chart_prices_only_the_wastewater_net_and_vat():
     months = {m.month: m for m in garden_cycle_months(PERIODS, GARDEN_A, TODAY)}
+    september = months[date(2026, 9, 1)]
+    assert (september.kwh, september.cost_cents, september.projected) == (3, 1107, False)
+
+
+def test_garden_chart_ignores_the_main_garden_fee():
+    with_fee = [replace(period, garden_fee_cents=12_000) for period in PERIODS]
+    months = {m.month: m for m in garden_cycle_months(with_fee, GARDEN_A, TODAY)}
     september = months[date(2026, 9, 1)]
     assert (september.kwh, september.cost_cents, september.projected) == (3, 1107, False)
 

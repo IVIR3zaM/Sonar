@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from sonar.categorization.store import transactions_with_category
 from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.utilities.settlement import (
     Booking,
     ChartMonth,
+    DailyUsage,
     MeterStatus,
     current_period,
     cycle_months,
@@ -53,7 +54,7 @@ def _meter_view(
     readings = list_readings(conn, stored.id)
     kind = stored.item.kind
     billing = [period.item for period in periods]
-    usage = daily_usage(continuous_series([r.item for r in readings], [e.item for e in exchanges]))
+    usage = _usage(readings, exchanges)
     in_force = current_period(billing, today)
     return MeterView(
         id=stored.id,
@@ -64,6 +65,10 @@ def _meter_view(
         status=meter_status(kind, billing, usage, _bookings(transactions, in_force), today),
         chart_months=cycle_months(kind, billing, usage, today),
     )
+
+
+def _usage(readings: list[Stored[Reading]], exchanges: list[Stored[Exchange]]) -> DailyUsage:
+    return daily_usage(continuous_series([r.item for r in readings], [e.item for e in exchanges]))
 
 
 def _bookings(transactions: list, period: BillingPeriod | None) -> list[Booking]:
@@ -83,9 +88,13 @@ class SettlementSummary:
 
     meter_name: str
     settlement_date: date
+    debit_date: date  # when the bank debits the settlement
     settlement_cents: int  # positive is a refund
     worst_settlement_cents: int
-    suggested_advance_cents: int | None  # None without a projection
+    suggested_advance_cents: int | None  # None for a schedule
+    advance_mode: str
+    remaining_advance_dates: tuple[date, ...]  # a schedule's unpaid dates after the estimate date
+    remaining_advances_cents: int
 
 
 def settlement_summaries(conn: sqlite3.Connection, today: date) -> list[SettlementSummary]:
@@ -101,9 +110,76 @@ def settlement_summaries(conn: sqlite3.Connection, today: date) -> list[Settleme
             SettlementSummary(
                 meter_name=view.meter.name,
                 settlement_date=period.settlement_date,
+                debit_date=status.debit_date,
                 settlement_cents=status.settlement_cents,
                 worst_settlement_cents=status.worst_settlement_cents,
                 suggested_advance_cents=status.suggested_advance_cents,
+                advance_mode=status.advance_mode,
+                remaining_advance_dates=status.remaining_advance_dates,
+                remaining_advances_cents=status.remaining_advances_cents,
             )
         )
     return summaries
+
+
+@dataclass(frozen=True)
+class MeterCashflow:
+    """What a meter still moves at the bank beyond the current settlement (SPEC §13 Utilities)."""
+
+    meter_name: str
+    category: str | None  # of the period in force; recurring payments in it cover the advances
+    advance_cents: int
+    advance_dates: tuple[date, ...]  # a schedule's unpaid dates after `today`; flexible has none
+    ended_debit_date: date | None
+    ended_settlement_cents: int | None  # positive is a refund
+
+
+def meter_cashflows(conn: sqlite3.Connection, today: date) -> list[MeterCashflow]:
+    """Per meter: the scheduled advances still due and the latest ended period's settlement."""
+    transactions = transactions_with_category(conn)
+    flows = []
+    for view in load_utilities(conn, today):
+        periods = [p.item for p in view.periods]
+        current = current_period(periods, today)
+        ended = _ended_settlement(view, periods, transactions, today)
+        if current is None and ended is None:
+            continue
+        schedule = view.status.remaining_advance_dates if view.status else ()
+        flows.append(
+            MeterCashflow(
+                meter_name=view.meter.name,
+                category=current.category if current else None,
+                advance_cents=current.advance_cents if current else 0,
+                advance_dates=schedule,
+                ended_debit_date=ended[0] if ended else None,
+                ended_settlement_cents=ended[1] if ended else None,
+            )
+        )
+    return flows
+
+
+def _ended_settlement(
+    view: MeterView, periods: list[BillingPeriod], transactions: list, today: date
+) -> tuple[date, int] | None:
+    """Debit date and signed amount of the latest period ended before `today`.
+
+    The amount is the settled one when entered, else the projection as of its settlement date.
+    """
+    ended = [period for period in periods if period.settlement_date < today]
+    if not ended:
+        return None
+    period = max(ended, key=lambda other: other.settlement_date)
+    cents = period.settled_cents
+    if cents is None:
+        usage = _usage(view.readings, view.exchanges)
+        status = meter_status(
+            view.meter.kind,
+            periods,
+            usage,
+            _bookings(transactions, period),
+            period.settlement_date,
+        )
+        cents = None if status is None else status.settlement_cents
+    if cents is None:
+        return None
+    return period.settlement_date + timedelta(days=period.settlement_debit_days), cents

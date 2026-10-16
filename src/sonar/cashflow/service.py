@@ -33,9 +33,14 @@ from sonar.debts.model import Installment
 from sonar.debts.payoff import LadderDebt, PayoffStep, payoff_ladder
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
 from sonar.recurring.detect import Row, detect_income
-from sonar.recurring.store import list_payments
+from sonar.recurring.store import RecurringPayment, list_payments
 from sonar.transactions import ParsedTransaction
-from sonar.utilities.service import SettlementSummary, settlement_summaries
+from sonar.utilities.service import (
+    MeterCashflow,
+    SettlementSummary,
+    meter_cashflows,
+    settlement_summaries,
+)
 
 
 @dataclass(frozen=True)
@@ -173,12 +178,18 @@ def load_dashboard(
     start = estimate_date + timedelta(days=1)
     end = next_payday - timedelta(days=1)
     window_days = (end - start).days + 1
-    settlements = _settlements(utilities, start, end)
-    due = forecast.fixed_due(sources, start, end) + [
-        replace(item, amount_cents=-item.amount_cents)
-        for item in settlements
-        if item.amount_cents < 0
-    ]
+    cashflows = meter_cashflows(conn, estimate_date)
+    settlements = _settlements(utilities, cashflows, start, end)
+    covered = _recurring_categories_due(conn, views, start, end)
+    due = (
+        forecast.fixed_due(sources, start, end)
+        + [
+            replace(item, amount_cents=-item.amount_cents)
+            for item in settlements
+            if item.amount_cents < 0
+        ]
+        + _advances(cashflows, covered, start, end)
+    )
     due_total = sum(item.amount_cents for item in due)
     inflows = _inflows(rows, category_types, settings.salary_day, estimate_date, start, end) + [
         item for item in settlements if item.amount_cents > 0
@@ -290,15 +301,50 @@ def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[
     return tuple(sorted(name for name, type_ in category_types.items() if type_ == category_type))
 
 
-def _settlements(summaries: list[SettlementSummary], start: date, end: date) -> list[DueItem]:
-    """Settlements falling in [start, end]; a refund is positive, a back-payment negative."""
-    return [
-        DueItem(
-            f"{summary.meter_name} settlement", summary.settlement_date, summary.settlement_cents
-        )
+def _settlements(
+    summaries: list[SettlementSummary], cashflows: list[MeterCashflow], start: date, end: date
+) -> list[DueItem]:
+    """Settlements debited in [start, end]; a refund is positive, a back-payment negative.
+
+    Per meter: the current period's projection and the latest ended period's amount.
+    """
+    items = [
+        DueItem(f"{summary.meter_name} settlement", summary.debit_date, summary.settlement_cents)
         for summary in summaries
-        if start <= summary.settlement_date <= end
     ]
+    items += [
+        DueItem(f"{flow.meter_name} settlement", flow.ended_debit_date, flow.ended_settlement_cents)
+        for flow in cashflows
+        if flow.ended_debit_date is not None and flow.ended_settlement_cents is not None
+    ]
+    return [item for item in items if start <= item.due_date <= end]
+
+
+def _advances(
+    cashflows: list[MeterCashflow], covered: set[str], start: date, end: date
+) -> list[DueItem]:
+    """A schedule's advances in [start, end], unless a recurring payment covers the category."""
+    return [
+        DueItem(f"{flow.meter_name} advance", day, flow.advance_cents)
+        for flow in cashflows
+        if flow.advance_cents > 0 and flow.category not in covered
+        for day in flow.advance_dates
+        if start <= day <= end
+    ]
+
+
+def _recurring_categories_due(
+    conn: sqlite3.Connection, views: list[DebtView], start: date, end: date
+) -> set[str]:
+    """Categories with a recurring payment, not linked to a debt, due in [start, end]."""
+    linked_ids = _linked_payment_ids(views)
+    return {
+        payment.category
+        for payment in list_payments(conn)
+        if payment.category is not None
+        and payment.id not in linked_ids
+        and forecast.fixed_due((_recurring_source(payment),), start, end)
+    }
 
 
 def _inflows(
@@ -329,15 +375,23 @@ def _fixed_sources(
     A recurring payment linked to a debt is the same money (SPEC §7), and the
     debt's own schedule knows its end and final rate, so the debt wins.
     """
-    linked_ids = {payment.id for view in views for payment in view.linked_payments}
+    linked_ids = _linked_payment_ids(views)
     recurring = [
-        FixedSource(payment.name, payment.periods, payment.last_paid_date)
+        _recurring_source(payment)
         for payment in list_payments(conn)
         if payment.id not in linked_ids
     ]
     # A paid-off debt's schedule is empty, which is how it drops out (SPEC §7).
     owed = [_debt_source(view, txs) for view in views]
     return tuple(recurring + owed)
+
+
+def _linked_payment_ids(views: list[DebtView]) -> set[int]:
+    return {payment.id for view in views for payment in view.linked_payments}
+
+
+def _recurring_source(payment: RecurringPayment) -> FixedSource:
+    return FixedSource(payment.name, payment.periods, payment.last_paid_date)
 
 
 def _debt_source(view: DebtView, txs: list[ParsedTransaction]) -> FixedSource:

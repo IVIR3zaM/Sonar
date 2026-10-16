@@ -45,8 +45,8 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 2 | 1 | DONE | |
 | N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 1 | 1 | DONE | |
 | N05 | water cost and advance modes | exec | N04 | opus/sonnet | 1 | 1 | DONE | |
-| N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
-| N07 | utilities API | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
+| N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
+| N07 | utilities API | exec | N05 | sonnet/sonnet | 2 | 0 | RUNNING | fail C4 |
 | N08 | utilities pages | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N07,N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N02,N09 | -/sonnet | 0 | 0 | TODO | |
@@ -395,4 +395,19 @@ exec: DONE · 1859 passed
 - Charge docstring/comment now per year, net; constant renamed CENTS_PER_MICRO_EURO; service.py unchanged (no change needed)
 - service test reuses the pin inputs from tests/utilities/test_settlement.py; API test asserts the new status keys for a gas meter
 check: PASS 2/2
+verify: PASS
+
+### N07 try 1 · 2026-10-16
+exec: DONE · 1872 passed
+- PeriodIn takes charges, advance mode/dates, debit days; optional price/fee; ChargeIn strict
+- advance_dates parsed per item with _day (400 field advance_dates)
+check: FAIL C4
+- C4 exit 1: 1 failed, 1113 passed, 3 warnings in 10.31s
+
+### N06 try 1 · 2026-10-16
+exec: DONE · 1896 passed
+- SettlementSummary gains debit_date, advance_mode, remaining_advance_dates, remaining_advances_cents; new meter_cashflows (schedule advances, latest ended period settlement); load_dashboard places settlements on debit dates and adds '<meter> advance' items unless a non-debt recurring payment of the category is due in the window; card shows debit date and 'Set by the supplier' for schedules
+- D10 key names chosen to match MeterStatus (debit_date, advance_mode, remaining_advance_dates, remaining_advances_cents); settlement_date kept; zero-amount advances add no item
+- sonar.css unchanged (rebuild is byte-identical)
+check: PASS 3/3
 verify: PASS

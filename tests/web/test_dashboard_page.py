@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.utilities.model import BillingPeriod, Meter, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Meter, Reading
 from sonar.utilities.store import add_meter, add_period, add_reading
 from sonar.web.app import create_app
 from tests.html import cents, fields, records, soup, text
@@ -739,7 +739,9 @@ def test_income_legend_splits_salary_and_recurring_income(tmp_path):
     assert "recurring" in text(legend)
 
 
-def _add_utility_meter(db_path: Path, name: str, *, category: str | None = None) -> None:
+def _add_utility_meter(
+    db_path: Path, name: str, *, category: str | None = None, debit_days: int = 0
+) -> None:
     """A meter at 0.10 EUR/kWh reading 60 kWh a day since 2026-09-01, billed to year end."""
     conn = connect(db_path)
     try:
@@ -757,6 +759,7 @@ def _add_utility_meter(db_path: Path, name: str, *, category: str | None = None)
                 advance_cents=0,
                 expected_usage=21_900,  # 60 kWh a day
                 category=category,
+                settlement_debit_days=debit_days,
             ),
         )
         add_reading(conn, meter_id, Reading(date(2026, 9, 1), 0))
@@ -783,6 +786,66 @@ def test_utilities_card_lists_the_projected_settlement_per_meter(tmp_path):
     assert text(row.select_one('[data-field="worst-case"]')).startswith("Back-payment")
     assert cents(row.select_one('[data-field="worst-case"]')) == 73_200
     assert cents(row.select_one('[data-field="suggested-advance"]')) > 0
+
+
+def _add_water_meter(db_path: Path, name: str) -> None:
+    """A water meter on the supplier's schedule, debited 55 days after its settlement date."""
+    conn = connect(db_path)
+    try:
+        meter_id = add_meter(conn, Meter(name, "water"))
+        add_period(
+            conn,
+            meter_id,
+            BillingPeriod(
+                start_date=date(2026, 1, 1),
+                settlement_date=date(2026, 12, 31),
+                base_fee_cents=None,
+                unit_price_micro=None,
+                state_factor_e4=None,
+                calorific_value_e4=None,
+                advance_cents=24_000,
+                expected_usage=150,
+                category=None,
+                drinking=Charge(1_140_000, 3600, 7),
+                wastewater=Charge(3_690_000, 9600, 0),
+                advance_mode="schedule",
+                advance_dates=(date(2026, 6, 15), date(2026, 12, 15)),
+                settlement_debit_days=55,
+            ),
+        )
+        add_reading(conn, meter_id, Reading(date(2026, 9, 1), 0))
+        add_reading(conn, meter_id, Reading(date(2026, 9, 11), 10_000))
+    finally:
+        conn.close()
+
+
+def test_utilities_card_shows_the_debit_date_of_the_settlement(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    _add_utility_meter(db_path, "Power", debit_days=10)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    [row] = page.select("#utilities-card [data-meter]")
+    assert fields(row)["date"] == "2027-01-10"  # 2026-12-31 + 10 days
+
+
+def test_utilities_card_lists_a_water_meter_with_its_schedule(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    _add_water_meter(db_path, "Water")
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        page = soup(client.get("/"))
+
+    [row] = page.select("#utilities-card [data-meter]")
+    assert row["data-meter"] == "Water"
+    assert fields(row)["date"] == "2027-02-24"  # 2026-12-31 + 55 days
+    assert fields(row)["advances"].startswith("Set by the supplier")
+    assert "1 left" in fields(row)["advances"]  # only 12-15 is after the estimate date
+    assert row.select_one('[data-field="suggested-advance"]') is None
+    assert row.select_one('[data-field="settlement"]') is not None
 
 
 def test_utilities_card_stacks_each_meter_instead_of_a_table(tmp_path):

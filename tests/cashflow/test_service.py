@@ -6,6 +6,7 @@ today forecasts the window [2026-09-11, 2026-09-24].
 """
 
 import sqlite3
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
@@ -19,7 +20,7 @@ from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import add_debt
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.recurring.store import add_manual
-from sonar.utilities.model import BillingPeriod, Meter, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Meter, Reading
 from sonar.utilities.store import add_meter, add_period, add_reading
 
 TODAY = date(2026, 9, 10)
@@ -845,6 +846,7 @@ def _utility_meter(
     *,
     kwh_per_day: int = 60,
     category: str | None = None,
+    debit_days: int = 0,
 ) -> None:
     """A meter at 0.10 EUR/kWh, no base fee and no advances, read on 09-01 and 09-11.
 
@@ -865,6 +867,7 @@ def _utility_meter(
             advance_cents=0,
             expected_usage=kwh_per_day * 365,
             category=category,
+            settlement_debit_days=debit_days,
         ),
     )
     add_reading(conn, meter_id, Reading(date(2026, 9, 1), 0))
@@ -924,3 +927,247 @@ def test_utilities_is_summarized_as_of_the_balance_date(conn: sqlite3.Connection
 
     assert (summary.meter_name, summary.settlement_date) == ("Gas", date(2026, 9, 7))
     assert summary.settlement_cents == -4_200
+
+
+def test_utilities_settlement_is_placed_on_its_debit_date(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _utility_meter(conn, date(2026, 9, 12), debit_days=10)  # settles in the window, debited 09-22
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    # 12 days (09-01 to 09-12) at 60 kWh and 0.10 EUR/kWh.
+    assert board.due == [DueItem("Gas settlement", date(2026, 9, 22), 7_200)]
+
+
+def test_utilities_settlement_debited_after_the_window_changes_nothing(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _utility_meter(conn, date(2026, 9, 12), debit_days=20)  # the date is in, the debit is not
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.due, board.inflows, board.expected_cents) == ([], [], 100_000)
+
+
+# --- water: ended periods and scheduled advances ------------------------------
+
+
+def _water_period(start: date, end: date, **changes) -> BillingPeriod:
+    period = BillingPeriod(
+        start,
+        end,
+        None,
+        None,
+        None,
+        None,
+        24_000,
+        150,
+        "Water",
+        drinking=Charge(1_140_000, 3600, 7),
+        wastewater=Charge(3_690_000, 9600, 0),
+    )
+    return replace(period, **changes)
+
+
+def _water_meter(conn: sqlite3.Connection, *periods: BillingPeriod) -> int:
+    conn.execute("INSERT INTO categories (name, type) VALUES ('Water', 'fixed')")
+    meter_id = add_meter(conn, Meter("Water", "water"))
+    for period in periods:
+        add_period(conn, meter_id, period)
+    return meter_id
+
+
+def _schedule_period(*dates: date, mode: str = "schedule") -> BillingPeriod:
+    return _water_period(
+        date(2026, 1, 1),
+        date(2026, 12, 31),
+        advance_mode=mode,
+        advance_dates=dates if mode == "schedule" else (),
+    )
+
+
+def test_a_scheduled_advance_in_the_window_is_a_due_item(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 6, 15), date(2026, 9, 15), date(2026, 12, 15)))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == [DueItem("Water advance", date(2026, 9, 15), 24_000)]
+    assert board.expected_cents == 76_000
+
+
+def test_scheduled_advances_outside_the_window_add_nothing(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    # Not after the estimate date, on payday, and far later: none is inside [09-11, 09-24].
+    _water_meter(conn, _schedule_period(TODAY, PAYDAY, date(2026, 12, 15)))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.due, board.expected_cents) == ([], 100_000)
+
+
+def test_a_paid_scheduled_advance_is_not_due_again(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    _insert_tx(conn, "2026-09-09", -24_000, category="Water")  # within a week of the date
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == []
+
+
+def test_a_recurring_payment_of_the_category_covers_the_scheduled_advances(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    add_manual(conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 24_000, 1, 18))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == [DueItem("Water bill", date(2026, 9, 18), 24_000)]
+
+
+def test_a_recurring_payment_of_another_category_does_not_cover_the_advances(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    add_manual(conn, "Rent", "Rent", SchedulePeriod(date(2026, 1, 1), None, 50_000, 1, 18))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert sorted(item.name for item in board.due) == ["Rent", "Water advance"]
+
+
+def test_a_recurring_payment_outside_the_window_does_not_cover_the_advances(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    add_manual(conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 24_000, 1, 28))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == [DueItem("Water advance", date(2026, 9, 15), 24_000)]
+
+
+def test_a_flexible_meter_adds_no_advance_item(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(mode="flexible"))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.due, board.expected_cents) == ([], 100_000)
+
+
+def _ended_water(
+    conn: sqlite3.Connection, *, debit_days: int, settled_cents: int | None = -35_330
+) -> None:
+    _water_meter(
+        conn,
+        _water_period(
+            date(2026, 1, 1),
+            date(2026, 7, 20),
+            settled_cents=settled_cents,
+            settlement_debit_days=debit_days,
+        ),
+    )
+
+
+def test_an_ended_period_with_a_settled_amount_is_due_on_its_debit_date(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _ended_water(conn, debit_days=55)  # 07-20 + 55 days = 09-13
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == [DueItem("Water settlement", date(2026, 9, 13), 35_330)]
+    assert board.expected_cents == 100_000 - 35_330
+
+
+def test_an_ended_period_with_a_settled_refund_is_an_inflow(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _ended_water(conn, debit_days=55, settled_cents=4_000)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.inflows == [DueItem("Water settlement", date(2026, 9, 13), 4_000)]
+    assert board.due == []
+
+
+def test_an_ended_period_debited_on_or_before_the_estimate_date_adds_nothing(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _ended_water(conn, debit_days=52)  # 07-20 + 52 days = 09-10, the estimate date
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.due, board.inflows, board.expected_cents) == ([], [], 100_000)
+
+
+def test_an_ended_period_debited_after_the_window_adds_nothing(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _ended_water(conn, debit_days=70)  # 09-28
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.due, board.inflows) == ([], [])
+
+
+def test_only_the_latest_ended_period_settles(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    older = _water_period(
+        date(2025, 1, 1), date(2025, 12, 31), settled_cents=-9_900, settlement_debit_days=255
+    )
+    latest = _water_period(
+        date(2026, 1, 1), date(2026, 7, 20), settled_cents=-35_330, settlement_debit_days=55
+    )
+    _water_meter(conn, older, latest)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == [DueItem("Water settlement", date(2026, 9, 13), 35_330)]
+
+
+def test_an_ended_period_without_a_settled_amount_is_projected_as_of_its_settlement_date(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    meter_id = add_meter(conn, Meter("Gas", "electricity"))
+    add_period(
+        conn,
+        meter_id,
+        BillingPeriod(
+            start_date=date(2026, 8, 1),
+            settlement_date=date(2026, 8, 31),
+            base_fee_cents=0,
+            unit_price_micro=100_000,
+            state_factor_e4=None,
+            calorific_value_e4=None,
+            advance_cents=0,
+            expected_usage=60 * 365,
+            category=None,
+            settlement_debit_days=20,  # 09-20
+        ),
+    )
+    add_reading(conn, meter_id, Reading(date(2026, 8, 1), 0))
+    add_reading(conn, meter_id, Reading(date(2026, 9, 1), 31 * 60 * 1000))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == [DueItem("Gas settlement", date(2026, 9, 20), 18_600)]
+
+
+def test_an_ended_period_without_a_settled_amount_or_usage_adds_nothing(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _ended_water(conn, debit_days=55, settled_cents=None)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert (board.due, board.inflows, board.expected_cents) == ([], [], 100_000)

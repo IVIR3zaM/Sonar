@@ -9,7 +9,7 @@ import pytest
 from sonar.categorization.store import add_category
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.utilities.model import BillingPeriod, Meter, Reading
-from sonar.utilities.service import load_utilities, settlement_summaries
+from sonar.utilities.service import load_utilities, meter_cashflows, settlement_summaries
 from sonar.utilities.store import add_meter, add_period, add_reading
 from tests.utilities.test_settlement import (
     WATER_BOOKINGS,
@@ -149,10 +149,10 @@ def test_settlement_summaries_skip_a_meter_without_usage(conn):
     assert settlement_summaries(conn, TODAY) == []
 
 
-def test_the_water_pin_meter_in_a_db_gets_the_pure_status(conn):
+def _water_pin_meter(conn, periods=None) -> None:
     add_category(conn, "Water", "fixed")
     meter_id = add_meter(conn, Meter("Water", "water"))
-    for period in water_periods():
+    for period in water_periods() if periods is None else periods:
         add_period(conn, meter_id, period)
     readings = (
         (date(2025, 5, 31), 238_000),
@@ -165,8 +165,74 @@ def test_the_water_pin_meter_in_a_db_gets_the_pure_status(conn):
         _debit(conn, f"water-{index}", booked.isoformat(), cents, "Water")
     _debit(conn, "other-category", "2026-08-16", -24_000, "Groceries")
 
+
+def test_the_water_pin_meter_in_a_db_gets_the_pure_status(conn):
+    _water_pin_meter(conn)
+
     [view] = load_utilities(conn, WATER_TODAY)
 
     assert view.status == water_status()
     assert (view.status.paid_cents, view.status.settlement_cents) == (96_000, 6903)
     assert view.status.debit_date == date(2027, 2, 24)
+
+
+def test_settlement_summary_carries_the_debit_date_and_the_schedule(conn):
+    _water_pin_meter(conn)
+
+    [summary] = settlement_summaries(conn, WATER_TODAY)
+
+    assert summary.settlement_date == date(2026, 12, 31)
+    assert summary.debit_date == date(2027, 2, 24)
+    assert summary.advance_mode == "schedule"
+    assert summary.remaining_advance_dates == (date(2026, 12, 15),)
+    assert summary.remaining_advances_cents == 24_000
+    assert summary.suggested_advance_cents is None
+
+
+def test_settlement_summary_of_a_flexible_meter_has_no_dates(conn):
+    _meter_with_readings(conn)
+
+    [summary] = settlement_summaries(conn, TODAY)
+
+    assert summary.advance_mode == "flexible"
+    assert summary.remaining_advance_dates == ()
+    assert summary.debit_date == summary.settlement_date
+
+
+def test_meter_cashflows_give_the_schedule_and_the_ended_settled_amount(conn):
+    _water_pin_meter(conn)
+
+    [flow] = meter_cashflows(conn, WATER_TODAY)
+
+    assert flow.meter_name == "Water"
+    assert flow.category == "Water"
+    assert flow.advance_cents == 24_000
+    assert flow.advance_dates == (date(2026, 12, 15),)
+    assert (flow.ended_debit_date, flow.ended_settlement_cents) == (date(2025, 12, 31), -35_330)
+
+
+def test_meter_cashflows_project_an_ended_period_without_a_settled_amount(conn):
+    previous, current = water_periods()
+    _water_pin_meter(conn, [replace(previous, settled_cents=None), current])
+
+    [flow] = meter_cashflows(conn, WATER_TODAY)
+
+    assert flow.ended_debit_date == date(2025, 12, 31)
+    # Projected as of its settlement date from the booked advances: none were booked in 2025,
+    # so every advance of the flexible plan still counts as due.
+    assert flow.ended_settlement_cents == 78_399
+
+
+def test_meter_cashflows_of_a_flexible_meter_have_no_dates(conn):
+    _meter_with_readings(conn)
+
+    [flow] = meter_cashflows(conn, TODAY)
+
+    assert (flow.advance_dates, flow.advance_cents) == ((), 5_000)
+    assert (flow.ended_debit_date, flow.ended_settlement_cents) == (None, None)
+
+
+def test_meter_cashflows_skip_a_meter_without_current_or_ended_period(conn):
+    add_meter(conn, Meter("Gas", "gas"))
+
+    assert meter_cashflows(conn, TODAY) == []

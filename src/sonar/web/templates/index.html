@@ -299,7 +299,7 @@
       <div data-row data-meter="{{ item.meter_name }}" class="py-3 first:pt-0 last:pb-0">
         <div class="flex items-baseline justify-between gap-3">
           <span class="min-w-0 break-words font-medium text-ink" data-field="name">{{ item.meter_name }}</span>
-          <span class="whitespace-nowrap text-xs text-ink-muted" data-field="date">{{ date(item.settlement_date) }}</span>
+          <span class="whitespace-nowrap text-xs text-ink-muted" data-field="date">{{ date(item.debit_date) }}</span>
         </div>
         <dl class="mt-2 space-y-1 text-sm">
           <div class="flex items-baseline justify-between gap-3">
@@ -310,10 +310,17 @@
             <dt class="text-ink-muted">Worst case</dt>
             <dd class="whitespace-nowrap text-right text-ink" data-field="worst-case">{{ outcome(item.worst_settlement_cents) }}</dd>
           </div>
+          {% if item.advance_mode == "schedule" %}
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-ink-muted">Advances</dt>
+            <dd class="text-right text-ink" data-field="advances">Set by the supplier <span class="whitespace-nowrap text-xs text-ink-muted">{{ item.remaining_advance_dates | length }} left</span></dd>
+          </div>
+          {% else %}
           <div class="flex items-baseline justify-between gap-3">
             <dt class="text-ink-muted">Suggested advance</dt>
             <dd class="whitespace-nowrap text-right text-ink" data-field="suggested-advance">{% if item.suggested_advance_cents is not none %}{{ amount(item.suggested_advance_cents, colored=false) }} <span class="text-xs text-ink-muted">per month</span>{% else %}–{% endif %}</dd>
           </div>
+          {% endif %}
         </dl>
       </div>
     {% endfor %}

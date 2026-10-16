@@ -195,9 +195,13 @@ def test_utilities_lists_the_projected_settlement_per_meter(tmp_path):
         {
             "meter_name": "Power",
             "settlement_date": "2026-12-31",
+            "debit_date": "2026-12-31",
             "settlement_cents": -73_200,
             "worst_settlement_cents": -73_200,
             "suggested_advance_cents": expected.suggested_advance_cents,
+            "advance_mode": "flexible",
+            "remaining_advance_dates": [],
+            "remaining_advances_cents": expected.remaining_advances_cents,
         }
     ]
 

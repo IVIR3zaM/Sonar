@@ -3,8 +3,9 @@ from dataclasses import replace
 from datetime import date
 from fractions import Fraction
 
-from sonar.utilities.model import BillingPeriod, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Reading
 from sonar.utilities.settlement import (
+    ChargeFigure,
     MeterStatus,
     MonthFigure,
     cost,
@@ -158,6 +159,10 @@ def test_status_back_payment_and_worst_equals_projection_without_a_trend():
         settlement_cents=-100,
         worst_settlement_cents=-100,
         suggested_advance_cents=2600,  # 5100 over this and 1 more advance, rounded up
+        charges=(),
+        advance_mode="flexible",
+        remaining_advance_dates=(),
+        debit_date=date(2026, 1, 31),
     )
 
 
@@ -269,6 +274,10 @@ def test_status_without_a_reading_after_the_start_has_no_cost_or_projection():
         settlement_cents=None,
         worst_settlement_cents=None,
         suggested_advance_cents=None,
+        charges=(),
+        advance_mode="flexible",
+        remaining_advance_dates=(),
+        debit_date=date(2026, 1, 31),
     )
 
 
@@ -632,3 +641,139 @@ def test_cycle_months_keep_the_latest_24():
     usage = usage_of((date(2024, 1, 1), 0), (date(2026, 7, 1), kwh(9000)))
     months = cycle_months("electricity", [first, latest], usage, date(2026, 8, 1))
     assert [m.month for m in months] == months_from(date(2024, 7, 1), 24)
+
+
+def test_debit_date_is_the_settlement_date_plus_the_debit_days():
+    period = replace(JANUARY, settlement_debit_days=10)
+    status = meter_status("electricity", [period], {}, [], date(2026, 1, 5))
+    assert status.debit_date == date(2026, 2, 10)
+
+
+# --- water charges and scheduled advances ------------------------------------
+
+DRINKING = Charge(1_140_000, 3600, 7)
+WASTEWATER = Charge(3_690_000, 9600, 0)
+WATER_TODAY = date(2026, 10, 16)
+WATER_SCHEDULE = tuple(date(2026, month, 15) for month in (4, 6, 8, 10, 12))
+
+
+def water_period(start: date, end: date, **changes) -> BillingPeriod:
+    period = BillingPeriod(
+        start,
+        end,
+        None,
+        None,
+        None,
+        None,
+        24_000,
+        150,
+        "Water",
+        drinking=DRINKING,
+        wastewater=WASTEWATER,
+    )
+    return replace(period, **changes)
+
+
+def water_periods(**current_changes) -> list[BillingPeriod]:
+    previous = water_period(date(2025, 5, 31), date(2025, 12, 31), settled_cents=-35_330)
+    current = water_period(
+        date(2026, 1, 1),
+        date(2026, 12, 31),
+        advance_mode="schedule",
+        advance_dates=WATER_SCHEDULE,
+        settlement_debit_days=55,
+    )
+    return [previous, replace(current, **current_changes)]
+
+
+def water_usage():
+    return usage_of(
+        (date(2025, 5, 31), 238_000),
+        (date(2025, 12, 31), 355_000),
+        (date(2026, 10, 16), 516_000),
+    )
+
+
+WATER_BOOKINGS = [
+    (date(2026, 2, 24), -35_330),  # the previous settlement
+    *((date(2026, month, 15), -24_000) for month in (4, 6, 8, 10)),
+]
+
+
+def water_status(bookings=WATER_BOOKINGS, today=WATER_TODAY, usage=None, **current_changes):
+    usage = water_usage() if usage is None else usage
+    return meter_status("water", water_periods(**current_changes), usage, bookings, today)
+
+
+def test_water_status_pin():
+    assert water_status() == MeterStatus(
+        as_of=date(2026, 10, 16),
+        cost_so_far_cents=89_406,
+        paid_cents=96_000,
+        paid_since=date(2026, 1, 15),
+        advance_count=5,
+        remaining_advance_count=1,
+        left_cents=96_000 - 89_406,
+        projected_cost_cents=113_097,
+        remaining_advances_cents=24_000,
+        settlement_cents=6903,
+        worst_settlement_cents=6903,  # the worst cost is the projection: 113097
+        suggested_advance_cents=None,
+        charges=(
+            ChargeFigure("drinking", cost_so_far_cents=22_615, projected_cost_cents=28_608),
+            ChargeFigure("wastewater", cost_so_far_cents=66_791, projected_cost_cents=84_489),
+        ),
+        advance_mode="schedule",
+        remaining_advance_dates=(date(2026, 12, 15),),
+        debit_date=date(2027, 2, 24),
+    )
+
+
+def test_water_day_costs_each_charge_net_plus_a_twelfth_of_the_yearly_fee_then_vat():
+    period = water_period(date(2026, 1, 1), date(2026, 12, 31))
+    usage = usage_of((date(2026, 1, 1), 0), (date(2026, 2, 1), 10_000))  # 10 m³ in January
+    # drinking (10 x 114 + 300) x 1.07 = 1540.8; wastewater 10 x 369 + 800 = 4490
+    assert cost("water", [period], usage, date(2026, 1, 1), date(2026, 1, 31)) == 6031
+    [january] = month_figures("water", [period], usage)
+    assert (january.kwh, january.cost_cents) == (10, 6031)
+
+
+def test_water_chart_months_cost_the_gross_total_of_both_charges():
+    months = cycle_months("water", water_periods(), water_usage(), WATER_TODAY)
+    figures = {
+        f.month: f.cost_cents for f in month_figures("water", water_periods(), water_usage())
+    }
+    for month in months:
+        if not month.projected:
+            assert month.cost_cents == figures[month.month]
+    assert any(month.projected for month in months)
+
+
+def test_water_without_a_projection_has_no_charges_but_still_remaining_dates():
+    usage = usage_of((date(2025, 5, 31), 238_000), (date(2025, 12, 31), 355_000))
+    status = water_status(usage=usage)
+    assert status.charges == ()
+    assert status.remaining_advance_dates == (date(2026, 12, 15),)
+    assert status.remaining_advances_cents == 24_000
+    assert status.suggested_advance_cents is None
+
+
+def test_schedule_debit_three_days_before_a_date_covers_it():
+    bookings = [*WATER_BOOKINGS, (date(2026, 12, 12), -24_000)]
+    status = water_status(bookings, today=date(2026, 12, 13))
+    assert status.remaining_advance_dates == ()
+    assert status.remaining_advances_cents == 0
+
+
+def test_schedule_debit_eight_days_away_does_not_cover_a_date():
+    bookings = [*WATER_BOOKINGS, (date(2026, 12, 7), -24_000)]
+    status = water_status(bookings, today=date(2026, 12, 13))
+    assert status.remaining_advance_dates == (date(2026, 12, 15),)
+    assert status.remaining_advances_cents == 24_000
+
+
+def test_schedule_date_on_or_before_today_is_never_remaining():
+    bookings = [(date(2026, 4, 15), -24_000), (date(2026, 6, 15), -24_000)]
+    status = water_status(bookings, today=date(2026, 10, 15))
+    assert status.remaining_advance_dates == (date(2026, 12, 15),)
+    assert status.remaining_advance_count == 1

@@ -6,10 +6,17 @@ from datetime import date
 
 import pytest
 
+from sonar.categorization.store import add_category
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.utilities.model import BillingPeriod, Meter, Reading
 from sonar.utilities.service import load_utilities, settlement_summaries
 from sonar.utilities.store import add_meter, add_period, add_reading
+from tests.utilities.test_settlement import (
+    WATER_BOOKINGS,
+    WATER_TODAY,
+    water_periods,
+    water_status,
+)
 
 TODAY = date(2026, 1, 20)
 
@@ -140,3 +147,26 @@ def test_settlement_summaries_skip_a_meter_without_usage(conn):
     add_period(conn, meter_id, _period())
 
     assert settlement_summaries(conn, TODAY) == []
+
+
+def test_the_water_pin_meter_in_a_db_gets_the_pure_status(conn):
+    add_category(conn, "Water", "fixed")
+    meter_id = add_meter(conn, Meter("Water", "water"))
+    for period in water_periods():
+        add_period(conn, meter_id, period)
+    readings = (
+        (date(2025, 5, 31), 238_000),
+        (date(2025, 12, 31), 355_000),
+        (date(2026, 10, 16), 516_000),
+    )
+    for day, value in readings:
+        add_reading(conn, meter_id, Reading(day, value))
+    for index, (booked, cents) in enumerate(WATER_BOOKINGS):
+        _debit(conn, f"water-{index}", booked.isoformat(), cents, "Water")
+    _debit(conn, "other-category", "2026-08-16", -24_000, "Groceries")
+
+    [view] = load_utilities(conn, WATER_TODAY)
+
+    assert view.status == water_status()
+    assert (view.status.paid_cents, view.status.settlement_cents) == (96_000, 6903)
+    assert view.status.debit_date == date(2027, 2, 24)

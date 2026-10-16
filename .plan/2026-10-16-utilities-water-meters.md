@@ -44,7 +44,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N02 | SPEC Utilities bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 2 | 1 | DONE | |
 | N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 1 | 1 | DONE | |
-| N05 | water cost and advance modes | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
+| N05 | water cost and advance modes | exec | N04 | opus/sonnet | 1 | 1 | DONE | |
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | utilities API | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | utilities pages | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -179,29 +179,39 @@ Done when:
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N05 water cost and advance modes
-Do: In `utilities/settlement.py`, price each day by its period: water by the two charges with the base-fee months
-  rule on yearly ÷ 12 and VAT (D6), gas and electricity as today. `MeterStatus` gains `charges` (per charge: name, cost so
-  far, projected cost; empty for gas and electricity and without a projection), `advance_mode`,
-  `remaining_advance_dates` (schedule only) and `debit_date` (D8). Schedule mode (D7): advance count = number of
-  dates, remaining = dates after `today` with no counted debit booked within 7 days of them, suggested advance
-  None; flexible keeps today's rules. Chart month costs for water use the gross total.
-Context: D6 formula and pins; D7 schedule rules and pin (paid 96000, remaining 24000 on 2026-12-15, settlement
-  +6903); D8 debit date (2026-12-31 + 55 days = 2027-02-24). Code: `MeterStatus` `settlement.py:46-59`,
-  `meter_status` `:202-261`, `_kwh_per_unit` `:334-338`, `_fee_per_day` `:351-352`, `_exact_cost` `:355-363`,
-  `_energy_cents` `:366-367`, `_rest_cost` `:370-375`, `_paid_advances` `:396-410`, `_advance_count`
-  `:413-422`, `_advances_due` `:425-439`; service `utilities/service.py:45-66`.
-Read: `src/sonar/utilities/settlement.py`, `src/sonar/utilities/model.py`, `tests/utilities/test_settlement.py`
-Write: `src/sonar/utilities/settlement.py`, `src/sonar/utilities/service.py`, `tests/utilities/test_settlement.py`, `tests/utilities/test_service.py`, `tests/web/test_api_utilities.py`
-Test first: the D6 water example as of 2026-10-16 gives so far 22615 / 66791 / 89406 and projected 28608 /
-  84489 / 113097 and worst total 113097; with the D7 schedule and debits, paid 96000, remaining dates
-  (2026-12-15,), remaining 24000, settlement 6903, suggested None, advance count 5; debit date 2027-02-24 with
-  55 days.
+Do: In `utilities/settlement.py`, price each day by its period: water per charge as (m³ × net µ€ price ÷ 10⁴ +
+  yearly base fee ÷ 12 ÷ days in that calendar month) × (100 + VAT) ÷ 100, total = both charges; gas and
+  electricity as today. `MeterStatus` gains `charges` (per charge: name `drinking`/`wastewater`, cost so far,
+  projected, each rounded once from its own exact value; empty for gas, electricity and without a projection),
+  `advance_mode`, `remaining_advance_dates` (schedule only) and `debit_date` = settlement date +
+  `settlement_debit_days`. Schedule mode: advance count = number of `advance_dates`; remaining = dates after
+  `today` with no counted (paid-window, non-settlement) debit booked within 7 days before or after; remaining
+  cents = remaining × `advance_cents`; suggested advance None. Flexible keeps today's rules. Water chart month
+  costs use the gross total. Fix the `Charge` docstring and `base_fee_cents` comment `model.py:56,59` to "per year, net".
+Context: Charge fields `model.py:55-60` (price µ€/m³ net, base fee ct/year net, VAT %); period fields
+  `model.py:64-79`. Code: `MeterStatus` `settlement.py:46-59`, `meter_status` `:202-261`, `_fee_per_day`
+  `:351-352`, `_exact_cost` `:355-363`, `_energy_cents` `:366-367`, `_rest_cost` `:370-375`, `_paid_advances`
+  `:396-410`, `_advance_count` `:413-422`, `_advances_due` `:425-439`; service `utilities/service.py:45-66`.
+  Usage from readings: `utilities/usage.py:16-64`. Water pin inputs (invented, verified against this code):
+  kind `water`; charges drinking `Charge(1140000, 3600, 7)`, wastewater `Charge(3690000, 9600, 0)`; current
+  period 2026-01-01..2026-12-31, `expected_usage` 150, `advance_cents` 24000, category "Water", schedule
+  dates 2026-04-15, 06-15, 08-15, 10-15, 12-15, `settlement_debit_days` 55; previous period
+  2025-05-31..2025-12-31, same charges, flexible, `settled_cents` −35330; readings (milli m³) 238000 on
+  2025-05-31, 355000 on 2025-12-31, 516000 on 2026-10-16; bookings −24000 on 2026-04-15, 06-15, 08-15, 10-15
+  and −35330 on 2026-02-24 (the previous settlement, excluded); today 2026-10-16.
+Read: `src/sonar/utilities/settlement.py`, `src/sonar/utilities/model.py`, `src/sonar/utilities/usage.py`, `tests/utilities/test_settlement.py`
+Write: `src/sonar/utilities/settlement.py`, `src/sonar/utilities/model.py`, `src/sonar/utilities/service.py`, `tests/utilities/test_settlement.py`, `tests/utilities/test_service.py`, `tests/web/test_api_utilities.py`
+Test first: with the pin inputs, so far drinking 22615, wastewater 66791, total 89406; projected 28608, 84489,
+  113097; worst settlement 6903 (worst cost 113097); paid 96000, advance count 5, remaining dates
+  (2026-12-15,), remaining 24000, settlement +6903, suggested None, mode `schedule`, debit date 2027-02-24.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/utilities/test_settlement.py tests/utilities/test_service.py`
-- C2 [review] tests pin every D6 and D7 figure above, plus: a debit 3 days before a scheduled date covers it;
-  a debit 8 days away does not; a date on or before today is never remaining
-- C3 [review] every pre-existing gas and electricity settlement test keeps its figures; a flexible period has
-  empty `charges` and `remaining_advance_dates`, and debit date = settlement date with 0 days
+- C2 [review] tests pin every Test first figure, plus: a debit 3 days before a scheduled date covers it; a
+  debit 8 days away does not; a date on or before today is never remaining; a service test builds the pin
+  meter in a DB and gets the same status
+- C3 [review] every pre-existing gas and electricity figure in `test_settlement.py` is unchanged (whole-object
+  asserts may add the new fields only); a flexible period has empty `charges` and `remaining_advance_dates`
+  and debit date = settlement date with 0 days
 - C4 [review] pure and exact: no `date.today`, no float; each shown figure is rounded once from its exact value
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
@@ -368,4 +378,21 @@ exec: DONE · 1850 passed
 - store runs check_period before writing so duplicate advance dates give a FieldError, not a UNIQUE error; charge errors named drinking_price_micro etc.
 - test_0014 cut-off <0015, API test expects new default keys, water kind test uses oil
 check: PASS 3/3
+verify: PASS
+
+### N05 try 1 · 2026-10-16
+exec: BLOCKED · brief cites D6/D7/D8 example inputs (water prices, readings, period dates, schedule dates, debits, advance) but does not include them; only the expected figures are given and SPEC has no example
+
+### N05 replan 1 · 2026-10-16
+plan: REPLANNED
+- cause: brief pinned D6/D7/D8 figures without their inputs
+- brief now restates the water formula and every pin input (charges, periods, readings, schedule dates, bookings, today), checked against the current settlement code
+- adds model.py to Write to fix the Charge base fee comment (per year, net, per D5) and usage.py to Read
+
+### N05 try 1 · 2026-10-16
+exec: DONE · 1859 passed
+- settlement.py prices days by part (_day_costs: drinking/wastewater gross of VAT, or energy+fee); MeterStatus gains charges (ChargeFigure), advance_mode, remaining_advance_dates, debit_date; schedule mode via _advance_plan/_remaining_advance_dates (7-day match), suggested None
+- Charge docstring/comment now per year, net; constant renamed CENTS_PER_MICRO_EURO; service.py unchanged (no change needed)
+- service test reuses the pin inputs from tests/utilities/test_settlement.py; API test asserts the new status keys for a gas meter
+check: PASS 2/2
 verify: PASS

@@ -13,17 +13,18 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from fractions import Fraction
 
-from sonar.utilities.model import BillingPeriod
+from sonar.utilities.model import BillingPeriod, Charge
 
 DailyUsage = dict[date, Fraction]
 Booking = tuple[date, int]  # booking date, signed cents
 Advance = tuple[date, int]  # booking date, cents > 0
 
 CALORIFIC_SCALE = 10**8  # state factor and calorific value are both in ten-thousandths
-CENTS_PER_MICRO_EURO_KWH = Fraction(1, 10**4)  # µ€ per kWh to cents per kWh
+CENTS_PER_MICRO_EURO = Fraction(1, 10**4)  # µ€ per kWh or m³ to cents per kWh or m³
 WHOLE_EURO_CENTS = 100
 GRACE_DAYS = 14  # a bill settles late: its last advance and the settlement itself fall this far out
 ADVANCES_PER_YEAR = 11
+SCHEDULE_MATCH_DAYS = 7  # a debit this close to a scheduled date pays it
 CHART_MONTHS = 24
 
 
@@ -44,6 +45,13 @@ class ChartMonth:
 
 
 @dataclass(frozen=True)
+class ChargeFigure:
+    name: str  # "drinking" or "wastewater"
+    cost_so_far_cents: int
+    projected_cost_cents: int
+
+
+@dataclass(frozen=True)
 class MeterStatus:
     as_of: date | None
     cost_so_far_cents: int | None
@@ -56,7 +64,11 @@ class MeterStatus:
     remaining_advances_cents: int
     settlement_cents: int | None  # positive is a refund
     worst_settlement_cents: int | None
-    suggested_advance_cents: int | None
+    suggested_advance_cents: int | None  # None for a schedule
+    charges: tuple[ChargeFigure, ...]  # water with a projection only
+    advance_mode: str
+    remaining_advance_dates: tuple[date, ...]  # a schedule's unpaid dates after today
+    debit_date: date  # when the bank debits the settlement
 
 
 def round_half_up(value: Fraction) -> int:
@@ -210,41 +222,47 @@ def meter_status(
     period = current_period(periods, today)
     if period is None:
         return None
-    kwh_by_day = daily_kwh(kind, periods, usage)
     previous = _previous_period(periods, period)
     paid_since = _paid_since(period, previous)
     paid_advances = _paid_advances(bookings, previous, paid_since, _paid_until(period, today))
     paid = sum(cents for _, cents in paid_advances)
-    latest_advance = paid_advances[-1][0] if paid_advances else None
-    advance_count = _advance_count(period)
-    due_count = _advances_due(
-        period, paid_since, latest_advance, advance_count - len(paid_advances)
+    advance_count, remaining_dates, due_count = _advance_plan(
+        period, paid_since, paid_advances, today
     )
     remaining_advances = period.advance_cents * due_count
+    debit_date = period.settlement_date + timedelta(days=period.settlement_debit_days)
 
     end = _usage_end(period, usage)
     if end is None:
         return MeterStatus(
-            None,
-            None,
-            paid,
-            paid_since,
-            advance_count,
-            due_count,
-            None,
-            None,
-            remaining_advances,
-            None,
-            None,
-            None,
+            as_of=None,
+            cost_so_far_cents=None,
+            paid_cents=paid,
+            paid_since=paid_since,
+            advance_count=advance_count,
+            remaining_advance_count=due_count,
+            left_cents=None,
+            projected_cost_cents=None,
+            remaining_advances_cents=remaining_advances,
+            settlement_cents=None,
+            worst_settlement_cents=None,
+            suggested_advance_cents=None,
+            charges=(),
+            advance_mode=period.advance_mode,
+            remaining_advance_dates=remaining_dates,
+            debit_date=debit_date,
         )
 
     first_day = max(period.start_date, min(usage))
-    cost_so_far = _exact_cost(periods, kwh_by_day, first_day, end - timedelta(days=1))
-    projected = cost_so_far + _rest_cost(period, seasonal_daily_kwh(kind, period, usage, end))
+    kwh_by_day = daily_kwh(kind, periods, usage)
+    so_far = _exact_costs(periods, kwh_by_day, first_day, end - timedelta(days=1))
+    rest = _rest_costs(period, seasonal_daily_kwh(kind, period, usage, end))
+    cost_so_far = _total(so_far)
+    projected = cost_so_far + _total(rest)
     worst = cost_so_far + _rest_cost(period, worst_daily_kwh(kind, period, usage, end))
     projected_cents = round_half_up(projected)
     cost_so_far_cents = round_half_up(cost_so_far)
+    flexible = period.advance_mode == "flexible"
     return MeterStatus(
         as_of=end,
         cost_so_far_cents=cost_so_far_cents,
@@ -257,7 +275,28 @@ def meter_status(
         remaining_advances_cents=remaining_advances,
         settlement_cents=paid + remaining_advances - projected_cents,
         worst_settlement_cents=paid + remaining_advances - round_half_up(worst),
-        suggested_advance_cents=suggested_advance(projected, paid, due_count),
+        suggested_advance_cents=suggested_advance(projected, paid, due_count) if flexible else None,
+        charges=_charge_figures(kind, so_far, rest),
+        advance_mode=period.advance_mode,
+        remaining_advance_dates=remaining_dates,
+        debit_date=debit_date,
+    )
+
+
+def _charge_figures(
+    kind: str, so_far: dict[str, Fraction], rest: dict[str, Fraction]
+) -> tuple[ChargeFigure, ...]:
+    if kind != "water":
+        return ()
+    return tuple(
+        ChargeFigure(
+            name,
+            cost_so_far_cents=round_half_up(so_far.get(name, Fraction(0))),
+            projected_cost_cents=round_half_up(
+                so_far.get(name, Fraction(0)) + rest.get(name, Fraction(0))
+            ),
+        )
+        for name in ("drinking", "wastewater")
     )
 
 
@@ -352,27 +391,65 @@ def _fee_per_day(period: BillingPeriod, day: date) -> Fraction:
     return Fraction(period.base_fee_cents, days_in_month(day))
 
 
-def _exact_cost(
+def _day_costs(period: BillingPeriod, day: date, units: Fraction) -> dict[str, Fraction]:
+    """A day's cents by part: each water charge with its VAT, else the energy with its fee."""
+    if period.drinking is None or period.wastewater is None:
+        return {"energy": _energy_cents(period, units) + _fee_per_day(period, day)}
+    return {
+        "drinking": _charge_cents(period.drinking, day, units),
+        "wastewater": _charge_cents(period.wastewater, day, units),
+    }
+
+
+def _charge_cents(charge: Charge, day: date, units: Fraction) -> Fraction:
+    """The m³ at the net price plus the day's share of a twelfth of the yearly fee, then VAT."""
+    net = units * charge.unit_price_micro * CENTS_PER_MICRO_EURO + Fraction(
+        charge.base_fee_cents, 12 * days_in_month(day)
+    )
+    return net * (100 + charge.vat_percent) / 100
+
+
+def _add_costs(totals: dict[str, Fraction], costs: dict[str, Fraction]) -> None:
+    for part, cents in costs.items():
+        totals[part] = totals.get(part, Fraction(0)) + cents
+
+
+def _total(costs: dict[str, Fraction]) -> Fraction:
+    return sum(costs.values(), start=Fraction(0))
+
+
+def _exact_costs(
     periods: Sequence[BillingPeriod], kwh_by_day: DailyUsage, first: date, last: date
-) -> Fraction:
-    total = Fraction(0)
+) -> dict[str, Fraction]:
+    """Cents by part for the days of [first, last] that have usage and a period in force."""
+    totals: dict[str, Fraction] = {}
     for day in _days(first, last):
         period = period_on(periods, day)
         if period is not None and day in kwh_by_day:
-            total += _energy_cents(period, kwh_by_day[day]) + _fee_per_day(period, day)
-    return total
+            _add_costs(totals, _day_costs(period, day, kwh_by_day[day]))
+    return totals
+
+
+def _exact_cost(
+    periods: Sequence[BillingPeriod], kwh_by_day: DailyUsage, first: date, last: date
+) -> Fraction:
+    return _total(_exact_costs(periods, kwh_by_day, first, last))
 
 
 def _energy_cents(period: BillingPeriod, kwh: Fraction) -> Fraction:
-    return kwh * period.unit_price_micro * CENTS_PER_MICRO_EURO_KWH
+    return kwh * period.unit_price_micro * CENTS_PER_MICRO_EURO
+
+
+def _rest_costs(period: BillingPeriod, kwh_by_day: DailyUsage) -> dict[str, Fraction]:
+    """Cents by part for the projected days, all priced by the current period."""
+    totals: dict[str, Fraction] = {}
+    for day, kwh in kwh_by_day.items():
+        _add_costs(totals, _day_costs(period, day, kwh))
+    return totals
 
 
 def _rest_cost(period: BillingPeriod, kwh_by_day: DailyUsage) -> Fraction:
-    """The current period's price and per-day fee for the projected days."""
-    return sum(
-        (_energy_cents(period, kwh) + _fee_per_day(period, day) for day, kwh in kwh_by_day.items()),
-        start=Fraction(0),
-    )
+    return _total(_rest_costs(period, kwh_by_day))
 
 
 def _previous_period(
@@ -407,6 +484,31 @@ def _paid_advances(
         if cents < 0
         and since <= booked <= until
         and not (previous and cents == settled and booked > previous.settlement_date)
+    )
+
+
+def _advance_plan(
+    period: BillingPeriod, paid_since: date, paid_advances: list[Advance], today: date
+) -> tuple[int, tuple[date, ...], int]:
+    """Advance count, a schedule's remaining dates and the number of advances still due."""
+    if period.advance_mode == "schedule":
+        remaining = _remaining_advance_dates(period, paid_advances, today)
+        return len(period.advance_dates), remaining, len(remaining)
+    count = _advance_count(period)
+    latest_advance = paid_advances[-1][0] if paid_advances else None
+    due = _advances_due(period, paid_since, latest_advance, count - len(paid_advances))
+    return count, (), due
+
+
+def _remaining_advance_dates(
+    period: BillingPeriod, paid_advances: list[Advance], today: date
+) -> tuple[date, ...]:
+    """Scheduled dates after today with no counted debit within a week before or after."""
+    window = timedelta(days=SCHEDULE_MATCH_DAYS)
+    return tuple(
+        due
+        for due in sorted(period.advance_dates)
+        if due > today and not any(abs(booked - due) <= window for booked, _ in paid_advances)
     )
 
 

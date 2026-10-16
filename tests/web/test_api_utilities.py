@@ -106,6 +106,10 @@ def test_get_lists_a_meter_with_its_status_and_paid_advances(client, db_path):
     assert meter["name"] == "Gas"
     assert meter["status"]["paid_cents"] == 10_000
     assert meter["status"]["as_of"] == "2026-01-11"
+    assert meter["status"]["charges"] == []
+    assert meter["status"]["advance_mode"] == "flexible"
+    assert meter["status"]["remaining_advance_dates"] == []
+    assert meter["status"]["debit_date"] == "2026-12-31"
     assert meter["periods"][0]["category"] == "Utilities"
     assert [r["date"] for r in meter["readings"]] == ["2026-01-01", "2026-01-11"]
     assert meter["exchanges"] == []

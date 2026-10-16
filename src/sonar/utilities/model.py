@@ -53,10 +53,10 @@ class Exchange:
 
 @dataclass(frozen=True)
 class Charge:
-    """One water charge (drinking water or wastewater): price per m³, monthly base fee, VAT."""
+    """A water charge (drinking or wastewater): price per m³ and base fee per year, net; VAT."""
 
     unit_price_micro: int  # millionths of a euro per m³
-    base_fee_cents: int  # per month
+    base_fee_cents: int  # per year, net
     vat_percent: int
 
 

@@ -13,19 +13,45 @@ from datetime import date
 
 from sonar.utilities.model import (
     BillingPeriod,
+    Charge,
     Exchange,
     FieldError,
     Meter,
     Reading,
+    check_period,
     check_periods,
 )
 from sonar.utilities.usage import check_series
 
+_PERIOD_COLUMN_NAMES = (
+    "start_date",
+    "settlement_date",
+    "base_fee_cents",
+    "unit_price_micro",
+    "state_factor_e4",
+    "calorific_value_e4",
+    "advance_cents",
+    "expected_usage",
+    "settled_cents",
+    "advance_mode",
+    "settlement_debit_days",
+    "drinking_price_micro",
+    "drinking_base_fee_cents",
+    "drinking_vat_percent",
+    "wastewater_price_micro",
+    "wastewater_base_fee_cents",
+    "wastewater_vat_percent",
+)
+_PERIOD_COLUMNS = ", ".join(_PERIOD_COLUMN_NAMES)
+_PERIOD_PLACEHOLDERS = ", ".join("?" for _ in _PERIOD_COLUMN_NAMES)
+
 _PERIOD_SELECT = """
     SELECT p.id, p.start_date, p.settlement_date, p.base_fee_cents, p.unit_price_micro,
-           p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_kwh, c.name,
-           p.settled_cents
-    FROM energy_periods p LEFT JOIN categories c ON c.id = p.category_id
+           p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_usage, c.name,
+           p.settled_cents, p.advance_mode, p.settlement_debit_days,
+           p.drinking_price_micro, p.drinking_base_fee_cents, p.drinking_vat_percent,
+           p.wastewater_price_micro, p.wastewater_base_fee_cents, p.wastewater_vat_percent
+    FROM utility_periods p LEFT JOIN categories c ON c.id = p.category_id
 """
 
 
@@ -47,7 +73,7 @@ class Stored[T]:
 
 
 def list_meters(conn: sqlite3.Connection) -> list[Stored[Meter]]:
-    rows = conn.execute("SELECT id, name, kind FROM energy_meters ORDER BY name").fetchall()
+    rows = conn.execute("SELECT id, name, kind FROM utility_meters ORDER BY name").fetchall()
     return [Stored(id, Meter(name, kind)) for id, name, kind in rows]
 
 
@@ -55,7 +81,7 @@ def add_meter(conn: sqlite3.Connection, meter: Meter) -> int:
     with conn:
         try:
             cursor = conn.execute(
-                "INSERT INTO energy_meters (name, kind) VALUES (?, ?)", (meter.name, meter.kind)
+                "INSERT INTO utility_meters (name, kind) VALUES (?, ?)", (meter.name, meter.kind)
             )
         except sqlite3.IntegrityError:
             raise _duplicate_name(meter.name) from None
@@ -67,7 +93,7 @@ def rename_meter(conn: sqlite3.Connection, meter_id: int, name: str) -> None:
         kind = _meter_kind(conn, meter_id)
         Meter(name, kind)  # validates the name
         try:
-            conn.execute("UPDATE energy_meters SET name = ? WHERE id = ?", (name, meter_id))
+            conn.execute("UPDATE utility_meters SET name = ? WHERE id = ?", (name, meter_id))
         except sqlite3.IntegrityError:
             raise _duplicate_name(name) from None
 
@@ -75,10 +101,10 @@ def rename_meter(conn: sqlite3.Connection, meter_id: int, name: str) -> None:
 def delete_meter(conn: sqlite3.Connection, meter_id: int) -> None:
     with conn:
         _meter_kind(conn, meter_id)
-        for table in ("energy_readings", "energy_exchanges", "energy_periods"):
+        for table in ("utility_readings", "utility_exchanges", "utility_periods"):
             if conn.execute(f"SELECT 1 FROM {table} WHERE meter_id = ?", (meter_id,)).fetchone():
                 raise MeterNotEmpty(meter_id)
-        conn.execute("DELETE FROM energy_meters WHERE id = ?", (meter_id,))
+        conn.execute("DELETE FROM utility_meters WHERE id = ?", (meter_id,))
 
 
 # Readings
@@ -94,7 +120,7 @@ def add_reading(conn: sqlite3.Connection, meter_id: int, reading: Reading) -> in
         _meter_kind(conn, meter_id)
         cursor = _write_dated(
             conn,
-            "INSERT INTO energy_readings (meter_id, reading_date, value_milli) VALUES (?, ?, ?)",
+            "INSERT INTO utility_readings (meter_id, reading_date, value_milli) VALUES (?, ?, ?)",
             (meter_id, reading.reading_date.isoformat(), reading.value_milli),
             reading.reading_date,
         )
@@ -104,10 +130,10 @@ def add_reading(conn: sqlite3.Connection, meter_id: int, reading: Reading) -> in
 
 def update_reading(conn: sqlite3.Connection, reading_id: int, reading: Reading) -> None:
     with conn:
-        meter_id = _owner(conn, "energy_readings", reading_id)
+        meter_id = _owner(conn, "utility_readings", reading_id)
         _write_dated(
             conn,
-            "UPDATE energy_readings SET reading_date = ?, value_milli = ? WHERE id = ?",
+            "UPDATE utility_readings SET reading_date = ?, value_milli = ? WHERE id = ?",
             (reading.reading_date.isoformat(), reading.value_milli, reading_id),
             reading.reading_date,
         )
@@ -116,8 +142,8 @@ def update_reading(conn: sqlite3.Connection, reading_id: int, reading: Reading) 
 
 def delete_reading(conn: sqlite3.Connection, reading_id: int) -> None:
     with conn:
-        meter_id = _owner(conn, "energy_readings", reading_id)
-        conn.execute("DELETE FROM energy_readings WHERE id = ?", (reading_id,))
+        meter_id = _owner(conn, "utility_readings", reading_id)
+        conn.execute("DELETE FROM utility_readings WHERE id = ?", (reading_id,))
         _check_series(conn, meter_id)
 
 
@@ -134,7 +160,7 @@ def add_exchange(conn: sqlite3.Connection, meter_id: int, exchange: Exchange) ->
         _meter_kind(conn, meter_id)
         cursor = _write_dated(
             conn,
-            "INSERT INTO energy_exchanges "
+            "INSERT INTO utility_exchanges "
             "(meter_id, exchange_date, old_final_milli, new_start_milli) VALUES (?, ?, ?, ?)",
             (
                 meter_id,
@@ -150,10 +176,10 @@ def add_exchange(conn: sqlite3.Connection, meter_id: int, exchange: Exchange) ->
 
 def update_exchange(conn: sqlite3.Connection, exchange_id: int, exchange: Exchange) -> None:
     with conn:
-        meter_id = _owner(conn, "energy_exchanges", exchange_id)
+        meter_id = _owner(conn, "utility_exchanges", exchange_id)
         _write_dated(
             conn,
-            "UPDATE energy_exchanges SET exchange_date = ?, old_final_milli = ?, "
+            "UPDATE utility_exchanges SET exchange_date = ?, old_final_milli = ?, "
             "new_start_milli = ? WHERE id = ?",
             (
                 exchange.exchange_date.isoformat(),
@@ -168,8 +194,8 @@ def update_exchange(conn: sqlite3.Connection, exchange_id: int, exchange: Exchan
 
 def delete_exchange(conn: sqlite3.Connection, exchange_id: int) -> None:
     with conn:
-        meter_id = _owner(conn, "energy_exchanges", exchange_id)
-        conn.execute("DELETE FROM energy_exchanges WHERE id = ?", (exchange_id,))
+        meter_id = _owner(conn, "utility_exchanges", exchange_id)
+        conn.execute("DELETE FROM utility_exchanges WHERE id = ?", (exchange_id,))
         _check_series(conn, meter_id)
 
 
@@ -183,25 +209,25 @@ def list_periods(conn: sqlite3.Connection, meter_id: int) -> list[Stored[Billing
 
 def add_period(conn: sqlite3.Connection, meter_id: int, period: BillingPeriod) -> int:
     with conn:
-        _meter_kind(conn, meter_id)
+        kind = _meter_kind(conn, meter_id)
         category_id = _category_id(conn, period.category)
+        # Checked before writing: a repeated advance date would hit the table's UNIQUE first.
+        check_period(period, kind)
         cursor = conn.execute(
-            """
-            INSERT INTO energy_periods (
-                meter_id, start_date, settlement_date, base_fee_cents, unit_price_micro,
-                state_factor_e4, calorific_value_e4, advance_cents, expected_kwh, category_id,
-                settled_cents
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            f"""
+            INSERT INTO utility_periods ({_PERIOD_COLUMNS}, meter_id, category_id)
+            VALUES ({_PERIOD_PLACEHOLDERS}, ?, ?)
             """,
-            (meter_id, *_period_values(period), category_id, period.settled_cents),
+            (*_period_values(period), meter_id, category_id),
         )
+        _write_advance_dates(conn, cursor.lastrowid, period)
         _check_periods(conn, meter_id)
     return cursor.lastrowid
 
 
 def period_settled_cents(conn: sqlite3.Connection, period_id: int) -> int | None:
     row = conn.execute(
-        "SELECT settled_cents FROM energy_periods WHERE id = ?", (period_id,)
+        "SELECT settled_cents FROM utility_periods WHERE id = ?", (period_id,)
     ).fetchone()
     if row is None:
         raise UtilityNotFound(period_id)
@@ -210,40 +236,40 @@ def period_settled_cents(conn: sqlite3.Connection, period_id: int) -> int | None
 
 def update_period(conn: sqlite3.Connection, period_id: int, period: BillingPeriod) -> None:
     with conn:
-        meter_id = _owner(conn, "energy_periods", period_id)
+        meter_id = _owner(conn, "utility_periods", period_id)
+        kind = _meter_kind(conn, meter_id)
         category_id = _category_id(conn, period.category)
+        check_period(period, kind)
+        assignments = ", ".join(f"{column} = ?" for column in _PERIOD_COLUMN_NAMES)
         conn.execute(
-            """
-            UPDATE energy_periods SET
-                start_date = ?, settlement_date = ?, base_fee_cents = ?, unit_price_micro = ?,
-                state_factor_e4 = ?, calorific_value_e4 = ?, advance_cents = ?,
-                expected_kwh = ?, category_id = ?, settled_cents = ?
-            WHERE id = ?
-            """,
-            (*_period_values(period), category_id, period.settled_cents, period_id),
+            f"UPDATE utility_periods SET {assignments}, category_id = ? WHERE id = ?",
+            (*_period_values(period), category_id, period_id),
         )
+        conn.execute("DELETE FROM utility_advance_dates WHERE period_id = ?", (period_id,))
+        _write_advance_dates(conn, period_id, period)
         _check_periods(conn, meter_id)
 
 
 def delete_period(conn: sqlite3.Connection, period_id: int) -> None:
     with conn:
-        _owner(conn, "energy_periods", period_id)
-        conn.execute("DELETE FROM energy_periods WHERE id = ?", (period_id,))
+        _owner(conn, "utility_periods", period_id)
+        conn.execute("DELETE FROM utility_advance_dates WHERE period_id = ?", (period_id,))
+        conn.execute("DELETE FROM utility_periods WHERE id = ?", (period_id,))
 
 
 # Owners: the meter a record belongs to, for pages that return to it.
 
 
 def meter_of_reading(conn: sqlite3.Connection, reading_id: int) -> int:
-    return _owner(conn, "energy_readings", reading_id)
+    return _owner(conn, "utility_readings", reading_id)
 
 
 def meter_of_exchange(conn: sqlite3.Connection, exchange_id: int) -> int:
-    return _owner(conn, "energy_exchanges", exchange_id)
+    return _owner(conn, "utility_exchanges", exchange_id)
 
 
 def meter_of_period(conn: sqlite3.Connection, period_id: int) -> int:
-    return _owner(conn, "energy_periods", period_id)
+    return _owner(conn, "utility_periods", period_id)
 
 
 # Helpers
@@ -254,7 +280,7 @@ def _duplicate_name(name: str) -> FieldError:
 
 
 def _meter_kind(conn: sqlite3.Connection, meter_id: int) -> str:
-    row = conn.execute("SELECT kind FROM energy_meters WHERE id = ?", (meter_id,)).fetchone()
+    row = conn.execute("SELECT kind FROM utility_meters WHERE id = ?", (meter_id,)).fetchone()
     if row is None:
         raise UtilityNotFound(meter_id)
     return row[0]
@@ -286,6 +312,7 @@ def _category_id(conn: sqlite3.Connection, name: str | None) -> int | None:
 
 
 def _period_values(period: BillingPeriod) -> tuple:
+    """The values of `_PERIOD_COLUMN_NAMES`, in order."""
     return (
         period.start_date.isoformat(),
         period.settlement_date.isoformat(),
@@ -295,6 +322,30 @@ def _period_values(period: BillingPeriod) -> tuple:
         period.calorific_value_e4,
         period.advance_cents,
         period.expected_usage,
+        period.settled_cents,
+        period.advance_mode,
+        period.settlement_debit_days,
+        *_charge_values(period.drinking),
+        *_charge_values(period.wastewater),
+    )
+
+
+def _charge_values(charge: Charge | None) -> tuple:
+    if charge is None:
+        return (None, None, None)
+    return (charge.unit_price_micro, charge.base_fee_cents, charge.vat_percent)
+
+
+def _charge(price: int | None, base_fee: int | None, vat: int | None) -> Charge | None:
+    if price is None or base_fee is None or vat is None:
+        return None
+    return Charge(price, base_fee, vat)
+
+
+def _write_advance_dates(conn: sqlite3.Connection, period_id: int, period: BillingPeriod) -> None:
+    conn.executemany(
+        "INSERT INTO utility_advance_dates (period_id, due_date) VALUES (?, ?)",
+        [(period_id, day.isoformat()) for day in period.advance_dates],
     )
 
 
@@ -312,7 +363,7 @@ def _check_periods(conn: sqlite3.Connection, meter_id: int) -> None:
 
 def _readings(conn: sqlite3.Connection, meter_id: int) -> list[Stored[Reading]]:
     rows = conn.execute(
-        "SELECT id, reading_date, value_milli FROM energy_readings "
+        "SELECT id, reading_date, value_milli FROM utility_readings "
         "WHERE meter_id = ? ORDER BY reading_date",
         (meter_id,),
     ).fetchall()
@@ -321,7 +372,7 @@ def _readings(conn: sqlite3.Connection, meter_id: int) -> list[Stored[Reading]]:
 
 def _exchanges(conn: sqlite3.Connection, meter_id: int) -> list[Stored[Exchange]]:
     rows = conn.execute(
-        "SELECT id, exchange_date, old_final_milli, new_start_milli FROM energy_exchanges "
+        "SELECT id, exchange_date, old_final_milli, new_start_milli FROM utility_exchanges "
         "WHERE meter_id = ? ORDER BY exchange_date",
         (meter_id,),
     ).fetchall()
@@ -335,33 +386,43 @@ def _periods(conn: sqlite3.Connection, meter_id: int) -> list[Stored[BillingPeri
     rows = conn.execute(
         f"{_PERIOD_SELECT} WHERE p.meter_id = ? ORDER BY p.start_date", (meter_id,)
     ).fetchall()
+    dates = _advance_dates(conn, meter_id)
     return [
         Stored(
-            id,
+            row[0],
             BillingPeriod(
-                start_date=date.fromisoformat(start),
-                settlement_date=date.fromisoformat(settlement),
-                base_fee_cents=base_fee,
-                unit_price_micro=unit_price,
-                state_factor_e4=state_factor,
-                calorific_value_e4=calorific,
-                advance_cents=advance,
-                expected_usage=expected,
-                category=category,
-                settled_cents=settled,
+                start_date=date.fromisoformat(row[1]),
+                settlement_date=date.fromisoformat(row[2]),
+                base_fee_cents=row[3],
+                unit_price_micro=row[4],
+                state_factor_e4=row[5],
+                calorific_value_e4=row[6],
+                advance_cents=row[7],
+                expected_usage=row[8],
+                category=row[9],
+                settled_cents=row[10],
+                advance_mode=row[11],
+                settlement_debit_days=row[12],
+                drinking=_charge(*row[13:16]),
+                wastewater=_charge(*row[16:19]),
+                advance_dates=tuple(dates.get(row[0], ())),
             ),
         )
-        for (
-            id,
-            start,
-            settlement,
-            base_fee,
-            unit_price,
-            state_factor,
-            calorific,
-            advance,
-            expected,
-            category,
-            settled,
-        ) in rows
+        for row in rows
     ]
+
+
+def _advance_dates(conn: sqlite3.Connection, meter_id: int) -> dict[int, list[date]]:
+    """Each of the meter's periods' advance dates, sorted, by period id."""
+    rows = conn.execute(
+        """
+        SELECT a.period_id, a.due_date
+        FROM utility_advance_dates a JOIN utility_periods p ON p.id = a.period_id
+        WHERE p.meter_id = ? ORDER BY a.due_date
+        """,
+        (meter_id,),
+    ).fetchall()
+    by_period: dict[int, list[date]] = {}
+    for period_id, day in rows:
+        by_period.setdefault(period_id, []).append(date.fromisoformat(day))
+    return by_period

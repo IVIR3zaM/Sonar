@@ -12,15 +12,19 @@ ENERGY_TABLES = {"energy_meters", "energy_readings", "energy_exchanges", "energy
 EXISTING = ("transactions", "categories", "debts")
 
 
-def _migrated_before_0014(tmp_path: Path) -> tuple[sqlite3.Connection, Path]:
+def _migrated_before(tmp_path: Path, cutoff: str) -> tuple[sqlite3.Connection, Path]:
     migrations = tmp_path / "migrations"
     migrations.mkdir()
     for path in MIGRATIONS_DIR.glob("*.sql"):
-        if path.name < "0014":
+        if path.name < cutoff:
             shutil.copy(path, migrations)
     conn = sqlite3.connect(":memory:")
     apply_migrations(conn, migrations)
     return conn, migrations
+
+
+def _migrated_before_0014(tmp_path: Path) -> tuple[sqlite3.Connection, Path]:
+    return _migrated_before(tmp_path, "0014")
 
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
@@ -62,9 +66,9 @@ EXCHANGE = """
 """
 
 
-def test_constraints_reject_bad_rows():
-    conn = sqlite3.connect(":memory:")
-    apply_migrations(conn, MIGRATIONS_DIR)
+def test_constraints_reject_bad_rows(tmp_path):
+    # Later migrations rename these tables and allow water meters.
+    conn, _ = _migrated_before(tmp_path, "0015")
     conn.execute("INSERT INTO energy_meters (id, name, kind) VALUES (1, 'Gas', 'gas')")
     conn.execute(READING, ("2026-01-01", 5))
     conn.execute(EXCHANGE, ("2026-01-01", 5))

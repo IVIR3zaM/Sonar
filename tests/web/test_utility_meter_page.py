@@ -273,7 +273,7 @@ def test_rejected_delete_of_a_reading_answers_400_on_the_meter_page(client, db_p
     conn = sqlite3.connect(db_path)
     try:
         conn.executemany(
-            "INSERT INTO energy_readings (meter_id, reading_date, value_milli) VALUES (?, ?, ?)",
+            "INSERT INTO utility_readings (meter_id, reading_date, value_milli) VALUES (?, ?, ?)",
             [
                 (meter, "2026-01-01", 1_000_000),
                 (meter, "2026-01-11", 500_000),

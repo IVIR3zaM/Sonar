@@ -3,7 +3,14 @@ from datetime import date
 
 import pytest
 
-from sonar.utilities.model import BillingPeriod, FieldError, Meter, check_period, check_periods
+from sonar.utilities.model import (
+    BillingPeriod,
+    Charge,
+    FieldError,
+    Meter,
+    check_period,
+    check_periods,
+)
 
 GAS = BillingPeriod(
     start_date=date(2026, 1, 1),
@@ -17,6 +24,15 @@ GAS = BillingPeriod(
     category=None,
 )
 ELECTRICITY = replace(GAS, state_factor_e4=None, calorific_value_e4=None, category="Utilities")
+WATER = replace(
+    GAS,
+    base_fee_cents=None,
+    unit_price_micro=None,
+    state_factor_e4=None,
+    calorific_value_e4=None,
+    drinking=Charge(unit_price_micro=1_800_000, base_fee_cents=350, vat_percent=7),
+    wastewater=Charge(unit_price_micro=2_400_000, base_fee_cents=0, vat_percent=0),
+)
 
 
 def field_of(period: BillingPeriod, kind: str) -> str:
@@ -85,6 +101,109 @@ def test_meter_needs_a_name_and_a_known_kind():
     with pytest.raises(FieldError) as error:
         Meter("  ", "gas")
     assert error.value.field == "name"
+    Meter("Water", "water")
     with pytest.raises(FieldError) as error:
-        Meter("Water", "water")
+        Meter("Fuel", "oil")
     assert error.value.field == "kind"
+
+
+def test_new_period_fields_default_to_flexible_without_charges():
+    assert GAS.drinking is None
+    assert GAS.wastewater is None
+    assert GAS.advance_mode == "flexible"
+    assert GAS.advance_dates == ()
+    assert GAS.settlement_debit_days == 0
+
+
+@pytest.mark.parametrize("kind", ["gas", "electricity"])
+@pytest.mark.parametrize("value", [None, 0, -1])
+def test_gas_and_electricity_need_a_positive_unit_price(kind, value):
+    period = GAS if kind == "gas" else ELECTRICITY
+    assert field_of(replace(period, unit_price_micro=value), kind) == "unit_price_micro"
+
+
+@pytest.mark.parametrize("kind", ["gas", "electricity"])
+@pytest.mark.parametrize("value", [None, -1])
+def test_gas_and_electricity_need_a_base_fee(kind, value):
+    period = GAS if kind == "gas" else ELECTRICITY
+    assert field_of(replace(period, base_fee_cents=value), kind) == "base_fee_cents"
+
+
+@pytest.mark.parametrize("name", ["drinking", "wastewater"])
+@pytest.mark.parametrize("kind", ["gas", "electricity"])
+def test_gas_and_electricity_have_no_charges(kind, name):
+    period = GAS if kind == "gas" else ELECTRICITY
+    charge = Charge(unit_price_micro=1, base_fee_cents=0, vat_percent=0)
+    assert field_of(replace(period, **{name: charge}), kind) == name
+
+
+def test_a_water_period_is_valid():
+    check_period(WATER, "water")
+
+
+@pytest.mark.parametrize("name", ["drinking", "wastewater"])
+def test_water_needs_both_charges(name):
+    assert field_of(replace(WATER, **{name: None}), "water") == name
+
+
+@pytest.mark.parametrize("name", ["drinking", "wastewater"])
+@pytest.mark.parametrize(
+    ("changes", "field"),
+    [
+        ({"unit_price_micro": 0}, "price_micro"),
+        ({"unit_price_micro": -1}, "price_micro"),
+        ({"base_fee_cents": -1}, "base_fee_cents"),
+        ({"vat_percent": -1}, "vat_percent"),
+        ({"vat_percent": 101}, "vat_percent"),
+    ],
+)
+def test_water_charges_are_range_checked(name, changes, field):
+    charge = replace(getattr(WATER, name), **changes)
+    assert field_of(replace(WATER, **{name: charge}), "water") == f"{name}_{field}"
+
+
+@pytest.mark.parametrize("name", ["drinking", "wastewater"])
+def test_water_charge_bounds_are_valid(name):
+    charge = Charge(unit_price_micro=1, base_fee_cents=0, vat_percent=100)
+    check_period(replace(WATER, **{name: charge}), "water")
+
+
+@pytest.mark.parametrize(
+    "name", ["unit_price_micro", "base_fee_cents", "state_factor_e4", "calorific_value_e4"]
+)
+def test_water_has_no_gas_or_electricity_fields(name):
+    assert field_of(replace(WATER, **{name: 1}), "water") == name
+
+
+def test_advance_mode_is_flexible_or_schedule():
+    assert field_of(replace(GAS, advance_mode="weekly"), "gas") == "advance_mode"
+
+
+def test_a_schedule_period_needs_dates_inside_the_period_plus_14_days():
+    scheduled = replace(GAS, advance_mode="schedule")
+    assert field_of(scheduled, "gas") == "advance_dates"
+    check_period(replace(scheduled, advance_dates=(date(2026, 1, 1),)), "gas")
+    check_period(replace(scheduled, advance_dates=(date(2027, 1, 14),)), "gas")
+    for outside in (date(2025, 12, 31), date(2027, 1, 15)):
+        assert field_of(replace(scheduled, advance_dates=(outside,)), "gas") == "advance_dates"
+
+
+def test_schedule_dates_must_be_unique():
+    dates = (date(2026, 2, 1), date(2026, 2, 1))
+    scheduled = replace(GAS, advance_mode="schedule", advance_dates=dates)
+    assert field_of(scheduled, "gas") == "advance_dates"
+
+
+def test_a_flexible_period_has_no_dates():
+    flexible = replace(GAS, advance_dates=(date(2026, 2, 1),))
+    assert field_of(flexible, "gas") == "advance_dates"
+
+
+@pytest.mark.parametrize("days", [0, 365])
+def test_settlement_debit_days_bounds_are_valid(days):
+    check_period(replace(GAS, settlement_debit_days=days), "gas")
+
+
+@pytest.mark.parametrize("days", [-1, 366])
+def test_settlement_debit_days_outside_0_to_365_are_rejected(days):
+    assert field_of(replace(GAS, settlement_debit_days=days), "gas") == "settlement_debit_days"

@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.utilities.model import BillingPeriod, Exchange, FieldError, Meter, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Exchange, FieldError, Meter, Reading
 from sonar.utilities.store import (
     MeterNotEmpty,
     UtilityNotFound,
@@ -32,7 +32,13 @@ from sonar.utilities.store import (
     update_reading,
 )
 
-TABLES = ("energy_meters", "energy_readings", "energy_exchanges", "energy_periods")
+TABLES = (
+    "utility_meters",
+    "utility_readings",
+    "utility_exchanges",
+    "utility_periods",
+    "utility_advance_dates",
+)
 
 
 @pytest.fixture
@@ -300,3 +306,117 @@ def test_the_meter_of_a_missing_record_is_not_found(conn):
     for lookup in (meter_of_reading, meter_of_exchange, meter_of_period):
         with pytest.raises(UtilityNotFound):
             lookup(conn, 99)
+
+
+def _scheduled(*days: date, **changes) -> BillingPeriod:
+    return _period(advance_mode="schedule", advance_dates=tuple(days), **changes)
+
+
+def _dates_in_table(conn: sqlite3.Connection) -> list[str]:
+    return [row[0] for row in conn.execute("SELECT due_date FROM utility_advance_dates")]
+
+
+def test_a_schedule_period_round_trips_its_dates_sorted(conn):
+    meter = _gas(conn)
+    unsorted = (date(2026, 3, 5), date(2026, 1, 5), date(2026, 2, 5))
+
+    period = add_period(conn, meter, _scheduled(*unsorted, settlement_debit_days=10))
+
+    [stored] = list_periods(conn, meter)
+    assert stored.id == period
+    assert stored.item.advance_mode == "schedule"
+    assert stored.item.advance_dates == tuple(sorted(unsorted))
+    assert stored.item.settlement_debit_days == 10
+
+
+def test_update_replaces_a_periods_dates_and_leaves_other_periods_alone(conn):
+    meter = _gas(conn)
+    other = add_period(
+        conn,
+        meter,
+        _scheduled(
+            date(2025, 6, 5),
+            start_date=date(2025, 1, 1),
+            settlement_date=date(2025, 12, 31),
+        ),
+    )
+    period = add_period(conn, meter, _scheduled(date(2026, 1, 5), date(2026, 2, 5)))
+
+    update_period(conn, period, _scheduled(date(2026, 4, 5)))
+    assert [p.item.advance_dates for p in list_periods(conn, meter)] == [
+        (date(2025, 6, 5),),
+        (date(2026, 4, 5),),
+    ]
+    update_period(conn, period, _period())
+    assert [p.item.advance_dates for p in list_periods(conn, meter)] == [
+        (date(2025, 6, 5),),
+        (),
+    ]
+    assert other != period
+
+
+def test_delete_removes_a_periods_dates(conn):
+    meter = _gas(conn)
+    period = add_period(conn, meter, _scheduled(date(2026, 1, 5), date(2026, 2, 5)))
+    assert len(_dates_in_table(conn)) == 2
+
+    delete_period(conn, period)
+
+    assert _dates_in_table(conn) == []
+
+
+def test_a_rejected_schedule_writes_no_dates(conn):
+    meter = _gas(conn)
+    period = add_period(conn, meter, _scheduled(date(2026, 1, 5)))
+    before = _snapshot(conn)
+
+    with pytest.raises(FieldError) as added:
+        add_period(
+            conn,
+            meter,
+            _scheduled(
+                date(2024, 12, 1), start_date=date(2025, 1, 1), settlement_date=date(2025, 12, 31)
+            ),
+        )
+    with pytest.raises(FieldError) as updated:
+        update_period(conn, period, _scheduled(date(2026, 1, 5), date(2026, 1, 5)))
+
+    assert added.value.field == updated.value.field == "advance_dates"
+    assert _snapshot(conn) == before
+
+
+def test_a_water_period_round_trips_both_charges(conn):
+    meter = add_meter(conn, Meter("Water", "water"))
+    water = _period(
+        base_fee_cents=None,
+        unit_price_micro=None,
+        state_factor_e4=None,
+        calorific_value_e4=None,
+        drinking=Charge(unit_price_micro=1_800_000, base_fee_cents=350, vat_percent=7),
+        wastewater=Charge(unit_price_micro=2_400_000, base_fee_cents=0, vat_percent=0),
+    )
+
+    period = add_period(conn, meter, water)
+    assert [(p.id, p.item) for p in list_periods(conn, meter)] == [(period, water)]
+    changed = replace(water, drinking=Charge(1_900_000, 400, 19))
+    update_period(conn, period, changed)
+    assert list_periods(conn, meter)[0].item == changed
+
+
+def test_a_water_period_without_charges_is_rejected(conn):
+    meter = add_meter(conn, Meter("Water", "water"))
+
+    with pytest.raises(FieldError) as error:
+        add_period(
+            conn,
+            meter,
+            _period(
+                base_fee_cents=None,
+                unit_price_micro=None,
+                state_factor_e4=None,
+                calorific_value_e4=None,
+            ),
+        )
+
+    assert error.value.field == "drinking"
+    assert list_periods(conn, meter) == []

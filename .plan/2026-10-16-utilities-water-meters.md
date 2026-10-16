@@ -43,7 +43,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | SPEC Utilities bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
 | N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 2 | 1 | DONE | |
-| N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |
+| N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 1 | 1 | DONE | |
 | N05 | water cost and advance modes | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | utilities API | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -139,30 +139,43 @@ Done when:
 
 ## N04 utility tables and period model
 Do: Add migration `0016_utilities.sql` (D3) and point the store at the `utility_*` tables. Extend the model:
-  kind `water` (D4); `Charge` and the period fields `drinking`, `wastewater`, `advance_mode`, `advance_dates`,
-  `settlement_debit_days` with defaults so existing callers keep working; `unit_price_micro` and
-  `base_fee_cents` become optional. Validation in `check_period` (FieldError naming the field): gas and
-  electricity need `unit_price_micro` > 0 and `base_fee_cents` >= 0 and no charges; water needs both charges
-  (price > 0, base fee >= 0, VAT 0-100) and null unit price, base fee, state factor and calorific value; mode
-  is `flexible` or `schedule`; schedule needs >= 1 unique date within start .. settlement + 14 days; flexible
-  has none; debit days 0-365. The store writes a period's dates in `utility_advance_dates` inside the same
-  transaction (update replaces them, delete removes them) and reads them sorted.
-Context: D3 schema and copy-with-ids; D4 `water`; D5 charge fields and limits; D7 mode and date rules; D8 debit
-  days. Model `src/sonar/utilities/model.py:13,51-78`; store `store.py:24-29,179-235,252-270`; SQLite rebuild
-  pattern: create new tables, `INSERT ... SELECT` with ids, drop the old ones; foreign keys are off.
+  kind `water` (D4); `Charge(unit_price_micro, base_fee_cents, vat_percent)` and the period fields `drinking`,
+  `wastewater` (default None), `advance_mode` ("flexible"), `advance_dates` (empty tuple), `settlement_debit_days`
+  (0) so existing callers keep working; `unit_price_micro` and `base_fee_cents` become `int | None`. Validation
+  in `check_period` (FieldError naming the field): gas and electricity need `unit_price_micro` > 0,
+  `base_fee_cents` >= 0 and no charges; water needs both charges (price > 0, base fee >= 0, VAT 0-100) and null
+  unit price, base fee, state factor and calorific value; mode is `flexible` or `schedule`; schedule needs >= 1
+  unique date within start .. settlement + 14 days; flexible has none; debit days 0-365. The store writes a
+  period's dates in `utility_advance_dates` in the same transaction (update replaces, delete removes) and reads
+  them sorted. Repoint the two tests that write `energy_*` on a fully migrated DB (Write list).
+Context: D3 exact schema, every other column as in 0014/0015 with the same types, UNIQUEs and CHECKs:
+  `utility_meters (id, name, kind CHECK IN ('gas','electricity','water'))`; `utility_readings` and
+  `utility_exchanges` as `energy_*` with `REFERENCES utility_meters(id)`; `utility_periods (id, meter_id,
+  start_date, settlement_date, base_fee_cents NULL, unit_price_micro NULL, state_factor_e4, calorific_value_e4,
+  advance_cents, expected_usage NOT NULL, category_id, settled_cents, advance_mode TEXT NOT NULL DEFAULT
+  'flexible' CHECK IN ('flexible','schedule'), settlement_debit_days INTEGER NOT NULL DEFAULT 0,
+  drinking_price_micro, drinking_base_fee_cents, drinking_vat_percent, wastewater_price_micro,
+  wastewater_base_fee_cents, wastewater_vat_percent)` (charge columns nullable INTEGER); `utility_advance_dates
+  (id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES utility_periods(id), due_date TEXT NOT NULL,
+  UNIQUE (period_id, due_date))`. Copy rows with ids by `INSERT ... SELECT` (`expected_kwh` into `expected_usage`),
+  then `DROP TABLE` the four `energy_*`; foreign keys are off. Applied migrations stay untouched.
+  Model `src/sonar/utilities/model.py:13,51-78`; store `store.py:24-29,50-81,97-246,257,315-324`.
+  `tests/migrations/test_0014.py:65` must migrate only files `< "0015"` (as `_migrated_before_0014` `:16` does
+  for `< "0014"`), assertions unchanged; `tests/web/test_utility_meter_page.py:276` writes `utility_readings`.
 Read: `src/sonar/migrations/0014_energy.sql`, `src/sonar/migrations/0015_energy_settled.sql`, `tests/migrations/test_0015.py`, `src/sonar/db.py:26-69`
-Write: `src/sonar/migrations/0016_utilities.sql`, `src/sonar/utilities/model.py`, `src/sonar/utilities/store.py`, `tests/migrations/test_0016.py`, `tests/utilities/test_model.py`, `tests/utilities/test_store.py`, `tests/web/test_api_utilities.py`
+Write: `src/sonar/migrations/0016_utilities.sql`, `src/sonar/utilities/model.py`, `src/sonar/utilities/store.py`, `tests/migrations/test_0016.py`, `tests/migrations/test_0014.py`, `tests/utilities/test_model.py`, `tests/utilities/test_store.py`, `tests/web/test_api_utilities.py`, `tests/web/test_utility_meter_page.py`
 Test first: a DB migrated to 0015 holding a gas meter, a reading, an exchange and two periods (one settled)
-  keeps every id and value after 0016 (`expected_kwh` in `expected_usage`), with mode `flexible`, debit days 0,
-  null charges, and no `energy_*` table left; `kind = 'water'` inserts and `'oil'` fails; each validation rule
-  above raises FieldError with its field; a schedule period round-trips its dates through the store.
+  keeps every id and value after 0016, with mode `flexible`, debit days 0, null charges, and no `energy_*` table
+  left; `kind = 'water'` inserts and `'oil'` fails; each validation rule above raises FieldError with its field;
+  a schedule period round-trips its dates through the store; update replaces and delete removes them.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/migrations/test_0016.py tests/utilities/test_model.py tests/utilities/test_store.py`
 - C2 [cmd] `git diff --quiet HEAD -- src/sonar/migrations/0001_import.sql src/sonar/migrations/0014_energy.sql src/sonar/migrations/0015_energy_settled.sql`
-- C3 [review] 0016 copies all four tables with their ids, drops `energy_*`, and its test pins each copied
-  column; the store names only `utility_*` tables
+- C3 [review] 0016 has the Context schema, copies all four tables with their ids, drops `energy_*`, and its test
+  pins each copied column; the store names only `utility_*` tables
 - C4 [review] every validation rule of Do has a failing-then-passing test; gas and electricity periods valid
-  before stay valid; `tests/web/test_api_utilities.py` changes only to expect the new default keys
+  before stay valid; `test_0014.py`, `test_utility_meter_page.py` and `test_api_utilities.py` change only as Do
+  and Context say (migration cut-off, table name, new default keys)
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N05 water cost and advance modes
@@ -338,5 +351,21 @@ check: FAIL C1
 exec: DONE · 1798 passed, ruff clean
 - try 2: removed stale __pycache__ bytecode of old energy modules that tripped C1; no source change
 - C1, C5 (css cmp) and pytest/ruff verified
+check: PASS 3/3
+verify: PASS
+
+### N04 try 1 · 2026-10-16
+exec: BLOCKED · 0016 drops energy_*, breaking tests outside Write: tests/migrations/test_0014.py:test_constraints_reject_bad_rows (energy_* inserts on full migration) and tests/web/test_utility_meter_page.py:276 (INSERT INTO energy_readings); Verify needs full pytest green
+
+### N04 replan 1 · 2026-10-16
+plan: REPLANNED
+- cause: dropping energy_* broke tests/migrations/test_0014.py:65 and tests/web/test_utility_meter_page.py:276, both outside Write; D3 column list was implicit
+- brief: Write adds both tests; Context gives the exact 0016 schema and the two test fixes (0014 cut-off, utility_readings)
+
+### N04 try 1 · 2026-10-16
+exec: DONE · 1850 passed
+- 0016_utilities.sql copies energy_* to utility_* with ids, adds water, advance mode/dates, debit days, charges; store, model (Charge, new period fields, validation) and tests updated
+- store runs check_period before writing so duplicate advance dates give a FieldError, not a UNIQUE error; charge errors named drinking_price_micro etc.
+- test_0014 cut-off <0015, API test expects new default keys, water kind test uses oil
 check: PASS 3/3
 verify: PASS

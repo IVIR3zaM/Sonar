@@ -35,6 +35,14 @@ PERIOD = {
     "category": "Utilities",
     "settled_cents": None,
 }
+# Period fields the API reports but does not accept yet.
+PERIOD_DEFAULTS = {
+    "drinking": None,
+    "wastewater": None,
+    "advance_mode": "flexible",
+    "advance_dates": [],
+    "settlement_debit_days": 0,
+}
 
 
 def _today() -> date:
@@ -177,7 +185,7 @@ def test_period_create_update_and_delete(client):
     deleted = client.delete(f"/api/utilities/periods/{period_id}")
 
     assert created.status_code == 201
-    assert created.json() == {"id": period_id, **PERIOD}
+    assert created.json() == {"id": period_id, **PERIOD, **PERIOD_DEFAULTS}
     assert updated.json()["advance_cents"] == 9_500
     assert deleted.json() == updated.json()
     assert client.get("/api/utilities").json()["meters"][0]["periods"] == []
@@ -292,7 +300,7 @@ def test_a_bad_date_is_a_400_naming_the_field(client):
 
 
 def test_a_bad_meter_kind_is_a_400_naming_kind(client):
-    response = client.post("/api/utilities/meters", json={"name": "Water", "kind": "water"})
+    response = client.post("/api/utilities/meters", json={"name": "Fuel", "kind": "oil"})
 
     assert response.status_code == 400
     assert response.json()["field"] == "kind"

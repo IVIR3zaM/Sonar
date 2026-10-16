@@ -28,6 +28,7 @@ class FieldError(ValueError):
 class Meter:
     name: str
     kind: str
+    main_meter_id: int | None = None  # set on a garden water meter: its main meter
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -77,6 +78,7 @@ class BillingPeriod:
     advance_mode: str = "flexible"
     advance_dates: tuple[date, ...] = ()  # the due dates of a "schedule" period
     settlement_debit_days: int = 0  # days after the settlement date the bank debits it
+    garden_fee_cents: int | None = None  # water only; None = no garden fee
 
 
 def check_period(period: BillingPeriod, kind: str) -> None:
@@ -92,9 +94,20 @@ def check_period(period: BillingPeriod, kind: str) -> None:
             raise FieldError(name, f"{name} is required for gas and must be positive")
         if kind != "gas" and value is not None:
             raise FieldError(name, f"{name} must be empty for {kind}")
+    _check_garden_fee(period, kind)
     _check_advances(period)
     if not 0 <= period.settlement_debit_days <= MAX_DEBIT_DAYS:
         raise FieldError("settlement_debit_days", f"debit days must be 0 to {MAX_DEBIT_DAYS}")
+
+
+def _check_garden_fee(period: BillingPeriod, kind: str) -> None:
+    fee = period.garden_fee_cents
+    if fee is None:
+        return
+    if kind != "water":
+        raise FieldError("garden_fee_cents", f"garden_fee_cents must be empty for {kind}")
+    if fee < 0:
+        raise FieldError("garden_fee_cents", "garden fee must not be negative")
 
 
 def _check_prices(period: BillingPeriod, kind: str) -> None:

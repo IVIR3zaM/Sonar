@@ -42,6 +42,7 @@ PERIOD_DEFAULTS = {
     "advance_mode": "flexible",
     "advance_dates": [],
     "settlement_debit_days": 0,
+    "garden_fee_cents": None,
 }
 
 
@@ -157,6 +158,7 @@ def test_a_water_period_with_a_schedule_round_trips_and_reports_its_status(clien
         "state_factor_e4": None,
         "calorific_value_e4": None,
         "settled_cents": None,
+        "garden_fee_cents": None,
     }
     assert meter["periods"] == [created.json()]
     status = meter["status"]

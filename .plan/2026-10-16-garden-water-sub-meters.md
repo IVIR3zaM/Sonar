@@ -13,25 +13,36 @@ tier: M
 Goal: A household with a Gartenwasserzähler pays wastewater only on the water that reaches the sewer. Sonar
 should let the owner link one or more garden meters to a main water meter, bill wastewater on the main usage
 minus the garden usage (plus an optional yearly garden-meter fee), and keep drinking water on the full usage.
+Alongside, a period whose advances follow the supplier's schedule should drive the recurring payment that
+pays them, so every forecast and the Fixed payments page show the supplier's dates instead of a guessed cadence.
 
 In scope: a nullable link from a water meter to its main water meter; garden meters with readings, exchanges
 and a chart but no periods; per-day net wastewater m³ with the gardens summed; each meter projected from its
 own history; an optional net yearly garden fee on the main period with wastewater VAT; detection of intervals
 where garden usage beats main usage with three owner choices (zero it out, reject the reading, record it as
 an exchange); the Utilities water card, garden meter page, forms, API and the SPEC §13 Utilities bullet.
+The advance link (D16): a schedule-mode period in force sets the due dates and amount of its category's
+recurring payment in the dashboard due list, the payday forecast, Fixed costs, Payoff and Fixed payments; the
+supplier's dates apply from the period's start through its settlement or last advance, the payment's own
+cadence outside; links are derived on each load and pair one-to-one in id order; the link shows on the Fixed
+payments row, the utilities card and meter page, `/api/recurring`, `/api/utilities` and a new SPEC §13 bullet.
 
 Out of scope: one-off registration fees, the 6-year calibration reminder, minimum-deduction thresholds
-(Bagatellgrenze), garden meters for gas or electricity, loading any real data.
+(Bagatellgrenze), garden meters for gas or electricity, loading any real data; a hand-set or stored
+advance link; any link for flexible periods or for recurring payments of another category.
 
 Constraints: a water meter without garden meters keeps every figure it has today (the D6/D7 pins of the
 utilities-water-meters plan stay green, untouched); gas and electricity unchanged; append-only migration
 0017 keeps every hand-entered utility row; strict TDD; pure functions with `today` a parameter; exact
 Fraction math rounded half up once per shown figure; integer cents; page tests on ids and data-*; sonar.css
-rebuilt; test_architecture green; the Decisions below once confirmed.
+rebuilt; test_architecture green; the scheduled-advance tests at tests/cashflow/test_service.py:1020-1054
+change only as D16 requires; each advance is forecast once; the Decisions below once confirmed.
 
 Definition of done: verify passes; a water meter with one or two garden meters shows the deducted wastewater
 cost and the optional fee on /utilities and in the dashboard settlement; a meter without garden meters shows
-unchanged figures; a conflict offers the three choices; the visual gate passes at desktop and 375px, light
+unchanged figures; a conflict offers the three choices; a recurring payment linked to a schedule period is
+due on the supplier's dates on the dashboard and on Fixed payments, with the link shown on both sides, and a
+schedule period without one still adds "<meter> advance"; the visual gate passes at desktop and 375px, light
 and dark; the final check passes SPEC §11 and §12.
 
 ## Decisions
@@ -51,21 +62,30 @@ and dark; the final check passes SPEC §11 and §12.
 - D13 SPEC: the Utilities bullet (SPEC.md:263) gains a "Garden meters:" part stating D1-D12; no other SPEC line changes | confirmed
 - D14 Migration `0017_garden_meters.sql`: ADD COLUMN `utility_meters.main_meter_id` and `utility_periods.garden_fee_cents`, CREATE TABLE `utility_garden_zeroed`; never edits 0001-0016; every utility row survives | confirmed
 - D15 Visual gate, pre-authorized: config `visual_recipe` on a temp DB, balance 2026-10-16 and salary day 1, plus a loader in the session scratchpad (never the repo) posting through `/api/utilities` the meters of N09; no real data | confirmed
+- D16 Advance link (owner): a `schedule`-mode utility period in force is linked to the active (not dismissed) recurring payment of the same category that is not linked to a debt; that payment's due dates and amount come from the period's remaining scheduled advance dates (after the estimate date, no counted debit within 7 days) and its advance instead of its detected cadence, so the dashboard due list, the payday forecast, Fixed costs, Payoff and the Fixed payments page show the supplier's dates; the Fixed payments row and the utilities card and meter page show the link; a schedule period with no such payment keeps its "<meter> advance" due items; flexible periods and other categories' payments are unchanged; no advance is counted twice (replaces SPEC.md:263's "unless a recurring payment ... is due in the window") | confirmed
+- D17 Link span: the supplier's schedule replaces the payment's dates from the period's start through the later of its settlement date and its last advance date; outside that span (no later period in force yet) the payment's own cadence applies, so the 6 forecast pay cycles still show it; the monthly equivalent counts every scheduled date in the span, the due list and pay cycles only the remaining ones | confirmed
+- D18 Link resolution: derived on every load from the stored payments and periods (no table, no migration); when several such payments or several schedule periods in force share a category they pair one-to-one in id order (lowest payment id with lowest meter id) and the unpaired keep today's behavior (own cadence; "<meter> advance" items) | confirmed
+- D19 Link display: Fixed payments row: Amount = the advance, Next due = the first remaining supplier date (none left: the cadence's next date after the span), a badge "Dates from <meter>" linking to `/utilities/meters/{id}` with the remaining dates as its title; Cadence and the edit, pause and resume forms stay the payment's own (they govern only outside the span); dashboard Fixed costs row: amount = the advance, next due as on Fixed payments. Utilities card and meter page (schedule period in force): "Paid as <payment>" linking to `/recurring#payment-{id}`, else "Forecast as <meter> advance" | confirmed
+- D20 API and SPEC: `/api/recurring` items add `advance_meter_id` (null when unlinked) and their `next_due` follows the link; the `/api/utilities` meter status adds `recurring_payment_id` (null); `/api/dashboard` keeps its shape; SPEC gains one new §13 bullet after the Utilities bullet stating D16-D19 and overriding its covered-in-window rule, line 263 itself untouched beyond N06 | confirmed
+- D21 Tier: the plan grows to 13 nodes, past M's 10; it stays M, since moving to the L layout now would relocate the briefs and logs of the running N02 and N03 | confirmed
 
 ## Graph
 
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | garden link, fee and conflict storage | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
-| N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 0 | 0 | TODO | |
+| N02 | garden link, fee and conflict storage | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
+| N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | RUNNING | fail C4 (full verify broken by N02 in-flight changes) |
 | N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 0 | 0 | TODO | |
 | N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
-| N09 | visual check | gate | N06,N08 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
+| N11 | advance link in the forecast | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
+| N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 0 | 0 | TODO | |
+| N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -82,7 +102,10 @@ Done when:
 ## N02 garden link, fee and conflict storage
 Do: Store the garden link, the garden fee and the zeroed conflict cases, and the reading-to-exchange swap.
   Add migration 0017; `Meter.main_meter_id: int | None = None` and `BillingPeriod.garden_fee_cents: int | None
-  = None` (both defaulted so every existing constructor still works); store rules and functions below.
+  = None` (both defaulted so every existing constructor still works); store rules and functions below. The
+  API period JSON (`src/sonar/web/api/utilities.py:146`, every BillingPeriod field) then gains
+  `garden_fee_cents: null`: add it to the expectations at `tests/web/test_api_utilities.py:39` (PERIOD_DEFAULTS)
+  and `:154` (the water round trip); change no API code and no other expectation (N06 owns the API).
 Context: D1 link: main exists, kind water, not a garden; the garden's own kind must be water (FieldError
   `main_meter_id`). D2 set only by `add_meter`; `list_meters` returns it. D3 `add_period`/`update_period` on a
   garden meter raise FieldError `meter`; `delete_meter` on a meter that gardens link to raises MeterNotEmpty
@@ -96,19 +119,22 @@ Context: D1 link: main exists, kind water, not a garden; the garden's own kind m
   garden_fee_cents INTEGER) and `utility_garden_zeroed(id, meter_id NOT NULL REFERENCES utility_meters(id),
   start_date, end_date, UNIQUE(meter_id, start_date, end_date))`. Period columns: store.py:26-55.
 Read: `src/sonar/utilities/model.py`, `src/sonar/utilities/store.py`, `src/sonar/migrations/0016_utilities.sql`,
-  `tests/migrations/test_0016.py`, `tests/utilities/test_store.py`
+  `tests/migrations/test_0016.py`, `tests/utilities/test_store.py`, `tests/web/test_api_utilities.py:26-60,142-161`
 Write: `src/sonar/migrations/0017_garden_meters.sql`, `src/sonar/utilities/model.py`, `src/sonar/utilities/store.py`,
-  `tests/migrations/test_0017.py`, `tests/utilities/test_model.py`, `tests/utilities/test_store.py`
-Test first: a DB migrated to 0016 holding a meter, reading, exchange, period and advance date keeps them all
-  after 0017 with `main_meter_id` and `garden_fee_cents` null; a garden link to a gas meter is refused.
+  `tests/migrations/test_0017.py`, `tests/utilities/test_model.py`, `tests/utilities/test_store.py`,
+  `tests/web/test_api_utilities.py`
+Test first: strictly per rule, each test written and seen failing before its code: a DB migrated to 0016
+  holding a meter, reading, exchange, period and advance date keeps them all after 0017 with `main_meter_id`
+  and `garden_fee_cents` null; a garden link to a gas meter is refused.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/migrations/test_0017.py tests/utilities/test_model.py tests/utilities/test_store.py`
 - C2 [review] tests cover: link refused to a missing, non-water or garden main and for a non-water garden;
   a period refused on a garden meter; delete refused for a main with gardens; fee refused on gas and when
   negative and round-tripping through add/update/list_periods; zero idempotent and garden-only; the swap
   keeps the series and rolls back when the old final makes the series drop
-- C3 [cmd] `git diff --quiet HEAD -- src/sonar/migrations/0016_utilities.sql src/sonar/migrations/0015_energy_settled.sql`
-- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+- C3 [cmd] `git diff --quiet HEAD -- src/sonar/migrations/0016_utilities.sql src/sonar/migrations/0015_energy_settled.sql src/sonar/web/api/utilities.py`
+- C4 [review] `git diff HEAD -- tests/web/test_api_utilities.py` only adds `"garden_fee_cents": None` lines
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 garden usage and conflicts
 Do: New pure module `src/sonar/utilities/garden.py`: `garden_usage(periods, usages) -> DailyUsage` (the summed
@@ -296,8 +322,9 @@ Do: gate, pre-authorized (D15). Start the app per config `visual_recipe` on a te
   and its rule, and posts through `/api/utilities`: "Water" with the D6/D7 periods (tests/utilities/
   test_settlement.py:652-705; schedule 04-15..12-15, debit days 55) and garden_fee_cents 1200 on the current
   one, its readings, and garden "Garden" (main Water; readings 2025-05-31 0, 2025-12-31 21.400, 2026-10-16
-  50.300); "Water 2" the same without garden or fee. Check /, /utilities and the Water and Garden pages at
-  desktop and 375px, light and dark (read_page first, scaled screenshots only where layout matters). Values
+  50.300); "Water 2" the same (category Water too) without garden or fee. Detection then finds the Water
+  debits as one recurring payment of category Water, linked to Water (D16, D18: lowest meter id). Check /,
+  /utilities, /recurring and the Water and Garden pages at desktop and 375px, light and dark (read_page first, scaled screenshots only where layout matters). Values
   assume today 2026-10-16; on a later day compare with `/api/utilities` instead.
 Done when:
 - C1 [visual] the Water card shows Main, Garden and Wastewater m³ (so far 160, 29, 132; projected 203, 37,
@@ -311,23 +338,164 @@ Done when:
   Record as exchange; Zero it out removes the case and the alert
 - C6 [visual] the add-meter form offers "Main meter" (None, Water, Water 2) and the Water period form shows
   "Garden meter fee" 12,00; every checked page is readable at 375px in light and dark with nothing cut off
+- C7 [visual] /recurring: the Water payment's row shows 240,00 €, next due 15.12.2026 and "Dates from
+  Water" linking to the Water page; the Water card and Water page show "Paid as <that payment>" linking
+  back to its row; the Water 2 card shows "Forecast as Water 2 advance"
+- C8 [visual] after the loader PUTs an extra advance date 2026-10-25 on Water's current period and
+  2026-10-28 on Water 2's, the dashboard due list holds the Water payment on 25.10.2026 and "Water 2 advance"
+  on 28.10.2026, each 240,00 €, and no "Water advance"; the Water payment's next due on /recurring reads
+  25.10.2026
 
 ## N10 plan acceptance
-Do: Check the whole plan against verify, SPEC §11 and §12 and the SPEC §13 Utilities bullet's garden part.
+Do: Check the whole plan against verify, SPEC §11 and §12, the SPEC §13 Utilities bullet's garden part and
+  the new advance-link bullet.
 Done when:
 - C1 [cmd] `uv run pytest -q && uv run ruff check . && uv run ruff format --check .`
 - C2 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n10.css" --minify && cmp "$TMPDIR/n10.css" src/sonar/web/static/sonar.css`
-- C3 [cmd] `! grep -rnE "float|date\.today|datetime\.now" src/sonar/utilities`
+- C3 [cmd] `! grep -rnE "float|date\.today|datetime\.now" src/sonar/utilities src/sonar/cashflow`
 - C4 [cmd] `test -z "$(git diff --name-only 54ade8a -- src/sonar/migrations | grep -v 0017_garden_meters.sql)"`
 - C5 [cmd] `test -z "$(git diff 54ade8a -- tests/utilities/test_settlement.py tests/web/test_utilities_page.py | grep -E '^-[^-]')"`
   (the D6/D7 water pins are untouched)
 - C6 [review] SPEC §11 checklist holds and SPEC §12 UI acceptance holds for /utilities, both meter page
-  kinds and the dashboard card (base.html, component macros, no inline `<style>`, 400 inline errors keeping
+  kinds, /recurring and the dashboard card (base.html, component macros, no inline `<style>`, 400 inline errors keeping
   values, `eur` amounts, `money` prefills, usable without script)
 - C7 [review] the SPEC §13 Utilities bullet's "Garden meters:" part matches the code for D1-D12
 - C8 [review] no tracked file holds a real name, IBAN or meter number; fixtures are invented
+- C9 [review] the advance-link bullet after the Utilities bullet matches the code for D16-D20; the old
+  covered-in-window rule (cashflow/service.py `_recurring_categories_due`) is gone; no path forecasts a
+  linked advance twice (due list, pay cycles, monthly equivalent, Payoff)
+
+## N11 advance link in the forecast
+Do: Forecast a linked recurring payment on its supplier's dates. Pure part in `cashflow/forecast.py`:
+  `SupplierDates(start, end, dates, remaining, amount_cents)`, `FixedSource.supplier: SupplierDates | None =
+  None`, a pure `pair_advances` (D18) and a pure `next_due(source, today)`; `fixed_due`, `_year_total` and
+  `_row` (forecast.py:77, :185, :198) take a linked source's occurrences inside [start, end] from it and its
+  own periods outside. DB part in `cashflow/service.py`: `advance_links(conn, today) -> dict[int,
+  AdvanceLink]` (payment id → payment id and name, meter id and name, supplier), applied by `_fixed_sources`
+  (service.py:370) for the dashboard and `load_payoff`; `_advances` (service.py:323) skips linked periods;
+  `_recurring_categories_due` (service.py:336) goes.
+Context: D16 a `schedule` period in force (`current_period`, utilities/settlement.py) links to the active
+  payment (`list_payments`, recurring/store.py:48) of its category not linked to a debt (service.py:389);
+  its due dates = the period's remaining advance dates (`MeterCashflow.advance_dates`,
+  utilities/service.py:132, already paid-filtered, so no last_paid filter on them) at the period's advance
+  each; an unlinked schedule period keeps "<meter> advance"; flexible periods and other categories
+  unchanged. D17 span = [period start, later of settlement date and last advance date]; outside it the
+  payment's own periods apply; the monthly equivalent counts every scheduled date of the span in its 12
+  months, due and pay cycles only the remaining ones. D18 derived on each load, no table; several payments or
+  schedule periods per category pair one-to-one in id order; the unpaired keep today's behavior. D19 a linked
+  Fixed costs row: amount = the advance, next due = the first remaining date, else the cadence's next after
+  the span; day and interval stay its own. `MeterCashflow` (utilities/service.py:126) gains `meter_id` and
+  `period: BillingPeriod | None` (the one in force). `today` stays a parameter.
+  Pins (helpers at tests/cashflow/test_service.py:953-987, TODAY 2026-09-10, window 09-11..09-24; "Water
+  bill" = Water, monthly day 18, 25000): schedule (09-15) with Water bill → due [DueItem("Water bill",
+  09-15, 24000)], expected 76000; Water bill on day 28 → the same; a 09-09 Water debit of −24000 → due [];
+  "Rent" of another category → Rent and "Water advance"; the Water payment linked to a debt → "Water advance"
+  stays; meters "Water" and "Water 2" both in Water with (09-15) and one Water bill → names ["Water 2
+  advance", "Water bill"]; schedule (06-15, 09-15, 12-15) with Water bill → its Fixed costs row 24000 next due
+  09-15, monthly equivalent 20667.
+Read: `src/sonar/cashflow/forecast.py`, `src/sonar/cashflow/service.py`, `src/sonar/utilities/service.py`,
+  `src/sonar/recurring/schedule.py`, `tests/cashflow/test_service.py:940-1060`, `tests/cashflow/test_forecast.py`
+Write: `src/sonar/cashflow/forecast.py`, `src/sonar/cashflow/service.py`, `src/sonar/utilities/service.py`,
+  `tests/cashflow/test_forecast.py`, `tests/cashflow/test_service.py`, `tests/utilities/test_service.py`
+Test first: schedule (09-15) with Water bill gives due [DueItem("Water bill", 09-15, 24000)].
+Done when:
+- C1 [cmd] `uv run pytest -q tests/cashflow tests/utilities/test_service.py`
+- C2 [review] every pin is a test; only the tests at test_service.py:1020 and :1044 are rewritten (D16),
+  no other test line is removed; `load_payoff` and the pay cycles use the links; forecast.py imports no store
+- C3 [cmd] `! grep -nE "float|date\.today|datetime\.now" src/sonar/cashflow/forecast.py src/sonar/cashflow/service.py`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N12 Fixed payments link
+Do: Show the advance link on the Fixed payments page and in `/api/recurring`: a linked row shows the
+  advance, the supplier's next date and a badge linking to the meter page; every row's tbody gets an anchor
+  id. Unlinked rows render exactly as today. Rebuild sonar.css.
+Context: D19 per row from `advance_links(conn, today())` (N11, `src/sonar/cashflow/service.py`), keyed by
+  payment id: Amount `[data-field="amount"]` (recurring.html:87) shows the link's advance; Next due
+  `[data-field="next_due"]` (recurring.html:102 and the mobile copy at :93) = `forecast.next_due` (N11) of the
+  payment's FixedSource with the link's supplier; a badge "Dates from <meter>" `[data-field="advance-link"]`,
+  an `<a href="/utilities/meters/{meter id}">` beside the debt badge (recurring.html:71-73), with the remaining
+  dates (`date` filter) in its `title`; Cadence and the edit, pause and resume drawer stay the payment's own;
+  `<tbody data-payment-id>` (recurring.html:64) gains `id="payment-{id}"` (N13 links to it). D20
+  `_recurring_item` (api/recurring.py:73) adds `advance_meter_id` (null unlinked) and its `next_due` follows
+  the link; `amount_cents` and `periods` stay the payment's own.
+  Pins (TODAY 2026-09-23 of tests/web/test_recurring_page.py:16; meter "Water", schedule period 2026-01-01 to
+  2026-12-31, dates 06-15, 09-15, 12-15, advance 24000, category Water; "Water bill" via `add_manual` in
+  Water, monthly day 18, 25000; "Rent" in another category): the Water bill row shows 240,00, next due
+  15.12.2026 and an advance-link to `/utilities/meters/{id}`; Rent has no advance-link and keeps its own
+  amount and next due; `/api/recurring` gives Water bill `advance_meter_id` = the meter id and `next_due`
+  "2026-12-15", Rent null.
+Read: `src/sonar/web/pages/recurring.py`, `src/sonar/web/templates/recurring.html`, `src/sonar/web/api/recurring.py`,
+  `src/sonar/cashflow/service.py`, `src/sonar/cashflow/forecast.py`, `tests/web/test_recurring_page.py`,
+  `tests/web/test_api_recurring.py`, `tests/html.py`
+Write: `src/sonar/web/pages/recurring.py`, `src/sonar/web/templates/recurring.html`, `src/sonar/web/api/recurring.py`,
+  `src/sonar/web/static/sonar.css`, `tests/web/test_recurring_page.py`, `tests/web/test_api_recurring.py`
+Test first: the Water bill row's `[data-field="next_due"]` reads 15.12.2026.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_recurring_page.py tests/web/test_recurring_page_errors.py tests/web/test_api_recurring.py`
+- C2 [review] every pin is a test; a debt-linked payment of the category has no advance-link; hooks are ids
+  and data-*, never classes; no inline `<style>`
+- C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n12.css" --minify && cmp "$TMPDIR/n12.css" src/sonar/web/static/sonar.css`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N13 utilities link and SPEC
+Do: Show the advance link on /utilities, on the meter page and in `/api/utilities`, and write the SPEC
+  bullet. Meters with flexible or no current period render as today. Rebuild sonar.css.
+Context: D19 a meter whose period in force is `schedule` shows, by its Advance stat (utilities.html:65-69,
+  card prefix `pre` = "meter-{id}", utilities.html:38): linked → "Paid as <payment name>" `#{pre}-recurring-link`,
+  an `<a href="/recurring#payment-{payment id}">` (N12 gave the row that id); unlinked → "Forecast as <meter>
+  advance" `#{pre}-advance-item`; flexible and garden meters show neither. The meter page shows the same on
+  the period in force (utility_meter.html:139-141) as `[data-field="recurring"]`. Links come from
+  `advance_links(conn, today())` (N11, `src/sonar/cashflow/service.py`), inverted to meter id in
+  pages/utilities.py. D20 the `/api/utilities` meter status (api/utilities.py) adds `recurring_payment_id`
+  (null when unlinked or flexible). SPEC: one new bullet right after the Utilities bullet (SPEC.md:263, its
+  garden part included), titled "Utility advances in Fixed payments (§6, §9, §13 Utilities; overrides the
+  Utilities bullet's 'unless a recurring payment (not linked to a debt) in that period's category is due in
+  the window')", stating D16-D20 in the SPEC's terse style; no other SPEC line changes.
+  Pins (N12's "Water" meter and "Water bill"; a second schedule meter "Water 2" in Water; a flexible gas
+  meter): the Water card's recurring-link reads "Water bill" with href `/recurring#payment-{id}`; the Water
+  2 card's advance-item reads "Forecast as Water 2 advance"; the gas card has neither; the Water page's
+  `[data-field="recurring"]` links to the row; the API status `recurring_payment_id` is the payment id for
+  Water and null for Water 2 and gas.
+Read: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utilities.html`,
+  `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/api/utilities.py`, `src/sonar/cashflow/service.py`,
+  `tests/web/test_utilities_page.py`, `tests/web/test_utility_meter_page.py`, `tests/web/test_api_utilities.py`, `SPEC.md:263`
+Write: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utilities.html`,
+  `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/api/utilities.py`, `src/sonar/web/static/sonar.css`,
+  `tests/web/test_utilities_page.py`, `tests/web/test_utility_meter_page.py`, `tests/web/test_api_utilities.py`, `SPEC.md`
+Test first: the Water card's `#meter-{id}-recurring-link` reads "Water bill".
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_utilities_page.py tests/web/test_utility_meter_page.py tests/web/test_api_utilities.py`
+- C2 [cmd] `test -z "$(git diff HEAD -- tests/web/test_utilities_page.py | grep -E '^-[^-]')"` (tests only added)
+- C3 [review] every pin is a test; hooks are ids and data-*; no inline `<style>`; the SPEC diff adds exactly
+  one bullet after line 263 and it states every rule of D16-D20
+- C4 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n13.css" --minify && cmp "$TMPDIR/n13.css" src/sonar/web/static/sonar.css`
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## Log
 
 ### N01 try 1 · 2026-10-16
 check: PASS 5/5
+
+### N02 try 1 · 2026-10-16
+exec: BLOCKED · C1/C3 pass (99 tests), but Verify fails: new BillingPeriod.garden_fee_cents appears in the API period JSON, so tests/web/test_api_utilities.py (PERIOD_DEFAULTS, WATER_PERIOD expectations) needs garden_fee_cents: None, outside Write
+
+### N02 replan 1 · 2026-10-16
+plan: REPLANNED
+- cause: BillingPeriod.garden_fee_cents surfaces in API period JSON (api/utilities.py:146), breaking expectations in tests/web/test_api_utilities.py outside Write
+- brief adds tests/web/test_api_utilities.py to Write, limited to adding garden_fee_cents None at :39 and :154 (new C4 review); API code stays untouched (C3)
+- Test first now states strict red-before-code order
+
+### N03 try 1 · 2026-10-16
+exec: DONE · test_garden 13 passed; full suite 1951 passed, 3 failed outside Write (test_store garden period, test_api_utilities x2: garden_fee_cents) from concurrent uncommitted model.py/store.py edits
+- new pure garden.py: garden_usage, garden_conflicts, garden_cycle_months plus test_garden.py; ruff clean
+- projection keeps only each later period's own days; conflicts compare only days the main measured; excess is the gardens' total over the main on the interval's conflict days
+- chart zeroes drinking price and both base fees, then reuses cycle_months on the garden's raw daily usage
+check: FAIL C4
+- C4 exit 1: 1 failed, 1314 passed, 3 warnings in 21.53s
+
+### N02 try 1 · 2026-10-16
+exec: DONE · 1954 passed
+- migration 0017, Meter.main_meter_id, BillingPeriod.garden_fee_cents, store link/fee/zeroed/reading_to_exchange rules with tests
+- API test expectations gain garden_fee_cents: None only
+check: PASS 3/3
+verify: PASS

@@ -41,6 +41,7 @@ _PERIOD_COLUMN_NAMES = (
     "wastewater_price_micro",
     "wastewater_base_fee_cents",
     "wastewater_vat_percent",
+    "garden_fee_cents",
 )
 _PERIOD_COLUMNS = ", ".join(_PERIOD_COLUMN_NAMES)
 _PERIOD_PLACEHOLDERS = ", ".join("?" for _ in _PERIOD_COLUMN_NAMES)
@@ -50,7 +51,8 @@ _PERIOD_SELECT = """
            p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_usage, c.name,
            p.settled_cents, p.advance_mode, p.settlement_debit_days,
            p.drinking_price_micro, p.drinking_base_fee_cents, p.drinking_vat_percent,
-           p.wastewater_price_micro, p.wastewater_base_fee_cents, p.wastewater_vat_percent
+           p.wastewater_price_micro, p.wastewater_base_fee_cents, p.wastewater_vat_percent,
+           p.garden_fee_cents
     FROM utility_periods p LEFT JOIN categories c ON c.id = p.category_id
 """
 
@@ -60,7 +62,7 @@ class UtilityNotFound(LookupError):
 
 
 class MeterNotEmpty(Exception):
-    """A meter with readings, exchanges or periods cannot be deleted."""
+    """A meter with readings, exchanges, periods or garden meters cannot be deleted."""
 
 
 @dataclass(frozen=True)
@@ -73,15 +75,19 @@ class Stored[T]:
 
 
 def list_meters(conn: sqlite3.Connection) -> list[Stored[Meter]]:
-    rows = conn.execute("SELECT id, name, kind FROM utility_meters ORDER BY name").fetchall()
-    return [Stored(id, Meter(name, kind)) for id, name, kind in rows]
+    rows = conn.execute(
+        "SELECT id, name, kind, main_meter_id FROM utility_meters ORDER BY name"
+    ).fetchall()
+    return [Stored(id, Meter(name, kind, main)) for id, name, kind, main in rows]
 
 
 def add_meter(conn: sqlite3.Connection, meter: Meter) -> int:
     with conn:
+        _check_main_meter(conn, meter)
         try:
             cursor = conn.execute(
-                "INSERT INTO utility_meters (name, kind) VALUES (?, ?)", (meter.name, meter.kind)
+                "INSERT INTO utility_meters (name, kind, main_meter_id) VALUES (?, ?, ?)",
+                (meter.name, meter.kind, meter.main_meter_id),
             )
         except sqlite3.IntegrityError:
             raise _duplicate_name(meter.name) from None
@@ -104,6 +110,11 @@ def delete_meter(conn: sqlite3.Connection, meter_id: int) -> None:
         for table in ("utility_readings", "utility_exchanges", "utility_periods"):
             if conn.execute(f"SELECT 1 FROM {table} WHERE meter_id = ?", (meter_id,)).fetchone():
                 raise MeterNotEmpty(meter_id)
+        if conn.execute(
+            "SELECT 1 FROM utility_meters WHERE main_meter_id = ?", (meter_id,)
+        ).fetchone():
+            raise MeterNotEmpty(meter_id)
+        conn.execute("DELETE FROM utility_garden_zeroed WHERE meter_id = ?", (meter_id,))
         conn.execute("DELETE FROM utility_meters WHERE id = ?", (meter_id,))
 
 
@@ -199,6 +210,50 @@ def delete_exchange(conn: sqlite3.Connection, exchange_id: int) -> None:
         _check_series(conn, meter_id)
 
 
+def reading_to_exchange(conn: sqlite3.Connection, reading_id: int, old_final_milli: int) -> int:
+    """Turn a reading into an exchange on its date: the old meter ends at `old_final_milli`."""
+    with conn:
+        meter_id = _owner(conn, "utility_readings", reading_id)
+        day, value = conn.execute(
+            "SELECT reading_date, value_milli FROM utility_readings WHERE id = ?", (reading_id,)
+        ).fetchone()
+        conn.execute("DELETE FROM utility_readings WHERE id = ?", (reading_id,))
+        cursor = _write_dated(
+            conn,
+            "INSERT INTO utility_exchanges "
+            "(meter_id, exchange_date, old_final_milli, new_start_milli) VALUES (?, ?, ?, ?)",
+            (meter_id, day, old_final_milli, value),
+            date.fromisoformat(day),
+        )
+        _check_series(conn, meter_id)
+    return cursor.lastrowid
+
+
+# Garden conflicts: intervals of a garden meter zeroed against its main meter.
+
+
+def zero_garden_interval(conn: sqlite3.Connection, meter_id: int, start: date, end: date) -> None:
+    with conn:
+        _meter_kind(conn, meter_id)
+        if _main_meter_id(conn, meter_id) is None:
+            raise FieldError("meter", "only a garden meter has zeroed intervals")
+        conn.execute(
+            "INSERT OR IGNORE INTO utility_garden_zeroed (meter_id, start_date, end_date) "
+            "VALUES (?, ?, ?)",
+            (meter_id, start.isoformat(), end.isoformat()),
+        )
+
+
+def list_zeroed(conn: sqlite3.Connection, meter_id: int) -> list[tuple[date, date]]:
+    _meter_kind(conn, meter_id)
+    rows = conn.execute(
+        "SELECT start_date, end_date FROM utility_garden_zeroed WHERE meter_id = ? "
+        "ORDER BY start_date, end_date",
+        (meter_id,),
+    ).fetchall()
+    return [(date.fromisoformat(start), date.fromisoformat(end)) for start, end in rows]
+
+
 # Billing periods
 
 
@@ -210,6 +265,7 @@ def list_periods(conn: sqlite3.Connection, meter_id: int) -> list[Stored[Billing
 def add_period(conn: sqlite3.Connection, meter_id: int, period: BillingPeriod) -> int:
     with conn:
         kind = _meter_kind(conn, meter_id)
+        _reject_garden_period(conn, meter_id)
         category_id = _category_id(conn, period.category)
         # Checked before writing: a repeated advance date would hit the table's UNIQUE first.
         check_period(period, kind)
@@ -238,6 +294,7 @@ def update_period(conn: sqlite3.Connection, period_id: int, period: BillingPerio
     with conn:
         meter_id = _owner(conn, "utility_periods", period_id)
         kind = _meter_kind(conn, meter_id)
+        _reject_garden_period(conn, meter_id)
         category_id = _category_id(conn, period.category)
         check_period(period, kind)
         assignments = ", ".join(f"{column} = ?" for column in _PERIOD_COLUMN_NAMES)
@@ -286,6 +343,34 @@ def _meter_kind(conn: sqlite3.Connection, meter_id: int) -> str:
     return row[0]
 
 
+def _main_meter_id(conn: sqlite3.Connection, meter_id: int) -> int | None:
+    return conn.execute(
+        "SELECT main_meter_id FROM utility_meters WHERE id = ?", (meter_id,)
+    ).fetchone()[0]
+
+
+def _reject_garden_period(conn: sqlite3.Connection, meter_id: int) -> None:
+    if _main_meter_id(conn, meter_id) is not None:
+        raise FieldError("meter", "a garden meter has no billing periods; its main meter has them")
+
+
+def _check_main_meter(conn: sqlite3.Connection, meter: Meter) -> None:
+    """A garden meter is water and links to an existing water meter that is not a garden."""
+    if meter.main_meter_id is None:
+        return
+    if meter.kind != "water":
+        raise FieldError("main_meter_id", "only a water meter can be a garden meter")
+    row = conn.execute(
+        "SELECT kind, main_meter_id FROM utility_meters WHERE id = ?", (meter.main_meter_id,)
+    ).fetchone()
+    if row is None:
+        raise FieldError("main_meter_id", "the main meter does not exist")
+    if row[0] != "water":
+        raise FieldError("main_meter_id", "the main meter must be a water meter")
+    if row[1] is not None:
+        raise FieldError("main_meter_id", "the main meter must not be a garden meter")
+
+
 def _owner(conn: sqlite3.Connection, table: str, row_id: int) -> int:
     """The meter id a reading, exchange or period belongs to."""
     row = conn.execute(f"SELECT meter_id FROM {table} WHERE id = ?", (row_id,)).fetchone()
@@ -327,6 +412,7 @@ def _period_values(period: BillingPeriod) -> tuple:
         period.settlement_debit_days,
         *_charge_values(period.drinking),
         *_charge_values(period.wastewater),
+        period.garden_fee_cents,
     )
 
 
@@ -405,6 +491,7 @@ def _periods(conn: sqlite3.Connection, meter_id: int) -> list[Stored[BillingPeri
                 settlement_debit_days=row[12],
                 drinking=_charge(*row[13:16]),
                 wastewater=_charge(*row[16:19]),
+                garden_fee_cents=row[19],
                 advance_dates=tuple(dates.get(row[0], ())),
             ),
         )

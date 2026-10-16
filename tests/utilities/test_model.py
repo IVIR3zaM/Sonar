@@ -207,3 +207,18 @@ def test_settlement_debit_days_bounds_are_valid(days):
 @pytest.mark.parametrize("days", [-1, 366])
 def test_settlement_debit_days_outside_0_to_365_are_rejected(days):
     assert field_of(replace(GAS, settlement_debit_days=days), "gas") == "settlement_debit_days"
+
+
+def test_a_meter_may_link_to_a_main_meter_and_defaults_to_none():
+    assert Meter("Water", "water").main_meter_id is None
+    assert Meter("Garden", "water", 3).main_meter_id == 3
+
+
+def test_garden_fee_is_water_only_and_not_negative():
+    assert field_of(replace(GAS, garden_fee_cents=0), "gas") == "garden_fee_cents"
+    assert field_of(replace(ELECTRICITY, garden_fee_cents=100), "electricity") == "garden_fee_cents"
+    assert field_of(replace(WATER, garden_fee_cents=-1), "water") == "garden_fee_cents"
+    check_period(replace(WATER, garden_fee_cents=0), "water")
+    check_period(replace(WATER, garden_fee_cents=1_500), "water")
+    check_period(WATER, "water")
+    assert WATER.garden_fee_cents is None

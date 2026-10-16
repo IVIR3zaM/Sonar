@@ -23,13 +23,16 @@ from sonar.utilities.store import (
     list_meters,
     list_periods,
     list_readings,
+    list_zeroed,
     meter_of_exchange,
     meter_of_period,
     meter_of_reading,
+    reading_to_exchange,
     rename_meter,
     update_exchange,
     update_period,
     update_reading,
+    zero_garden_interval,
 )
 
 TABLES = (
@@ -38,6 +41,7 @@ TABLES = (
     "utility_exchanges",
     "utility_periods",
     "utility_advance_dates",
+    "utility_garden_zeroed",
 )
 
 
@@ -420,3 +424,151 @@ def test_a_water_period_without_charges_is_rejected(conn):
 
     assert error.value.field == "drinking"
     assert list_periods(conn, meter) == []
+
+
+def _water(conn: sqlite3.Connection, name: str = "Water", main: int | None = None) -> int:
+    return add_meter(conn, Meter(name, "water", main))
+
+
+def _water_period(**changes) -> BillingPeriod:
+    return _period(
+        base_fee_cents=None,
+        unit_price_micro=None,
+        state_factor_e4=None,
+        calorific_value_e4=None,
+        drinking=Charge(1_800_000, 350, 7),
+        wastewater=Charge(2_400_000, 0, 0),
+        **changes,
+    )
+
+
+def test_a_garden_meter_round_trips_its_main_meter(conn):
+    main = _water(conn)
+
+    garden = _water(conn, "Garden", main)
+
+    assert {m.id: m.item.main_meter_id for m in list_meters(conn)} == {main: None, garden: main}
+
+
+def test_a_garden_link_is_refused_to_a_missing_non_water_or_garden_main(conn):
+    gas = _gas(conn)
+    main = _water(conn)
+    garden = _water(conn, "Garden", main)
+    before = _snapshot(conn)
+
+    refused = [
+        lambda: add_meter(conn, Meter("A", "water", 99)),
+        lambda: add_meter(conn, Meter("B", "water", gas)),
+        lambda: add_meter(conn, Meter("C", "water", garden)),
+        lambda: add_meter(conn, Meter("D", "gas", main)),
+    ]
+    for add in refused:
+        with pytest.raises(FieldError) as error:
+            add()
+        assert error.value.field == "main_meter_id"
+    assert _snapshot(conn) == before
+
+
+def test_a_period_is_refused_on_a_garden_meter(conn):
+    main = _water(conn)
+    garden = _water(conn, "Garden", main)
+    period = add_period(conn, main, _water_period())
+
+    with pytest.raises(FieldError) as added:
+        add_period(conn, garden, _water_period())
+    conn.execute("UPDATE utility_periods SET meter_id = ? WHERE id = ?", (garden, period))
+    conn.commit()
+    with pytest.raises(FieldError) as updated:
+        update_period(conn, period, _water_period())
+
+    assert added.value.field == updated.value.field == "meter"
+    assert [p.id for p in list_periods(conn, garden)] == [period]  # the row seeded by hand
+
+
+def test_a_main_meter_with_gardens_cannot_be_deleted_and_a_garden_takes_its_zeroed_rows(conn):
+    main = _water(conn)
+    garden = _water(conn, "Garden", main)
+    zero_garden_interval(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
+
+    with pytest.raises(MeterNotEmpty):
+        delete_meter(conn, main)
+    delete_meter(conn, garden)
+
+    assert conn.execute("SELECT COUNT(*) FROM utility_garden_zeroed").fetchone() == (0,)
+    delete_meter(conn, main)
+    assert list_meters(conn) == []
+
+
+def test_the_garden_fee_is_refused_on_gas_and_when_negative(conn):
+    gas = _gas(conn)
+    water = _water(conn)
+
+    with pytest.raises(FieldError) as on_gas:
+        add_period(conn, gas, _period(garden_fee_cents=100))
+    with pytest.raises(FieldError) as negative:
+        add_period(conn, water, _water_period(garden_fee_cents=-1))
+
+    assert on_gas.value.field == negative.value.field == "garden_fee_cents"
+    assert list_periods(conn, gas) == list_periods(conn, water) == []
+
+
+@pytest.mark.parametrize("fee", [0, 2_500, None])
+def test_the_garden_fee_round_trips_through_add_update_and_list(conn, fee):
+    water = _water(conn)
+
+    period = add_period(conn, water, _water_period(garden_fee_cents=fee))
+    assert list_periods(conn, water)[0].item.garden_fee_cents == fee
+    update_period(conn, period, _water_period(garden_fee_cents=900))
+    assert list_periods(conn, water)[0].item.garden_fee_cents == 900
+    update_period(conn, period, _water_period(garden_fee_cents=fee))
+    assert list_periods(conn, water)[0].item.garden_fee_cents == fee
+
+
+def test_zeroing_is_idempotent_listed_sorted_and_garden_only(conn):
+    main = _water(conn)
+    garden = _water(conn, "Garden", main)
+
+    zero_garden_interval(conn, garden, date(2026, 3, 1), date(2026, 4, 1))
+    zero_garden_interval(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
+    zero_garden_interval(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
+    with pytest.raises(FieldError) as not_garden:
+        zero_garden_interval(conn, main, date(2026, 1, 1), date(2026, 2, 1))
+    with pytest.raises(UtilityNotFound):
+        zero_garden_interval(conn, 99, date(2026, 1, 1), date(2026, 2, 1))
+    with pytest.raises(UtilityNotFound):
+        list_zeroed(conn, 99)
+
+    assert not_garden.value.field == "meter"
+    assert list_zeroed(conn, garden) == [
+        (date(2026, 1, 1), date(2026, 2, 1)),
+        (date(2026, 3, 1), date(2026, 4, 1)),
+    ]
+    assert list_zeroed(conn, main) == []
+
+
+def test_a_reading_becomes_an_exchange_and_the_series_holds(conn):
+    meter = _water(conn)
+    add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000_000))
+    swap = add_reading(conn, meter, Reading(date(2026, 2, 1), 1_150_000))
+
+    exchange = reading_to_exchange(conn, swap, 1_100_000)
+
+    assert [r.item.reading_date for r in list_readings(conn, meter)] == [date(2026, 1, 1)]
+    assert [(e.id, e.item) for e in list_exchanges(conn, meter)] == [
+        (exchange, Exchange(date(2026, 2, 1), 1_100_000, 1_150_000))
+    ]
+
+
+def test_a_swap_that_makes_the_series_drop_is_rolled_back(conn):
+    meter = _water(conn)
+    add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000_000))
+    swap = add_reading(conn, meter, Reading(date(2026, 2, 1), 1_150_000))
+    before = _snapshot(conn)
+
+    with pytest.raises(FieldError) as dropped:
+        reading_to_exchange(conn, swap, 900_000)
+    with pytest.raises(UtilityNotFound):
+        reading_to_exchange(conn, 99, 1_100_000)
+
+    assert dropped.value.field == "value"
+    assert _snapshot(conn) == before

@@ -78,7 +78,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | DONE | |
 | N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 1 | 0 | DONE | |
 | N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | VERIFYING | fail C3 |
+| N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
@@ -571,4 +571,7 @@ check: PASS 2/2
 
 ### N08 try 1 · 2026-10-16
 check: PASS 3/3
+verify: PASS
+
+### N06 try 2 · 2026-10-16
 verify: PASS

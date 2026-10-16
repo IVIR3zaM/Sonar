@@ -137,7 +137,19 @@ def test_get_lists_a_meter_with_its_status_and_paid_advances(client, db_path):
     assert meter["periods"][0]["category"] == "Utilities"
     assert [r["date"] for r in meter["readings"]] == ["2026-01-01", "2026-01-11"]
     assert meter["exchanges"] == []
-    assert set(meter) == {"id", "name", "kind", "status", "periods", "exchanges", "readings"}
+    assert set(meter) == {
+        "id",
+        "name",
+        "kind",
+        "main_meter_id",
+        "garden_conflicts",
+        "status",
+        "periods",
+        "exchanges",
+        "readings",
+    }
+    assert meter["main_meter_id"] is None
+    assert meter["garden_conflicts"] == []
 
 
 def test_a_water_period_with_a_schedule_round_trips_and_reports_its_status(client):
@@ -506,3 +518,213 @@ def test_with_sign_in_on_no_session_gets_401_and_the_bearer_gets_in(db_path):
 
     assert anonymous.status_code == 401
     assert bearer.status_code == 200
+
+
+# Garden meters
+
+
+def _garden(client: TestClient, main_id: int, name: str = "Garden") -> int:
+    response = client.post(
+        "/api/utilities/meters", json={"name": name, "kind": "water", "main_meter_id": main_id}
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _read(client: TestClient, meter_id: int, readings: dict[str, int]) -> dict[str, int]:
+    ids = {}
+    for day, value in readings.items():
+        reading = {"date": day, "value_milli": value}
+        response = client.post(f"/api/utilities/meters/{meter_id}/readings", json=reading)
+        assert response.status_code == 201
+        ids[day] = response.json()["id"]
+    return ids
+
+
+def _meters(client: TestClient) -> dict[str, dict]:
+    return {m["name"]: m for m in client.get("/api/utilities").json()["meters"]}
+
+
+def test_a_garden_meter_links_to_its_main_water_meter(client):
+    main_id = _water(client)
+
+    created = client.post(
+        "/api/utilities/meters",
+        json={"name": "Garden", "kind": "water", "main_meter_id": main_id},
+    )
+    meters = _meters(client)
+
+    assert created.status_code == 201
+    assert created.json()["main_meter_id"] == main_id
+    assert meters["Garden"]["main_meter_id"] == main_id
+    assert meters["Water"]["main_meter_id"] is None
+
+
+def test_a_garden_linked_to_a_gas_meter_is_a_400_naming_main_meter_id(client):
+    gas_id = _gas(client)
+
+    response = client.post(
+        "/api/utilities/meters",
+        json={"name": "Garden", "kind": "water", "main_meter_id": gas_id},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "main_meter_id"
+
+
+def test_a_period_on_a_garden_meter_is_a_400(client):
+    garden_id = _garden(client, _water(client))
+
+    response = client.post(f"/api/utilities/meters/{garden_id}/periods", json=WATER_PERIOD)
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "meter"
+
+
+def test_deleting_a_main_meter_with_gardens_is_a_409_naming_garden_meters(client):
+    main_id = _water(client)
+    _garden(client, main_id)
+
+    response = client.delete(f"/api/utilities/meters/{main_id}")
+
+    assert response.status_code == 409
+    assert "garden meters" in response.json()["error"]
+    assert len(client.get("/api/utilities").json()["meters"]) == 2
+
+
+def test_a_garden_fee_round_trips_and_null_means_no_fee(client):
+    meter_id = _water(client)
+
+    with_fee = client.post(
+        f"/api/utilities/meters/{meter_id}/periods",
+        json={**WATER_PERIOD, "garden_fee_cents": 1_500},
+    )
+    updated = client.put(
+        f"/api/utilities/periods/{with_fee.json()['id']}",
+        json={**WATER_PERIOD, "garden_fee_cents": None},
+    )
+
+    assert with_fee.status_code == 201
+    assert with_fee.json()["garden_fee_cents"] == 1_500
+    assert _meters(client)["Water"]["periods"][0]["garden_fee_cents"] is None
+    assert updated.json()["garden_fee_cents"] is None
+
+
+def test_a_negative_garden_fee_is_a_400_naming_it(client):
+    meter_id = _water(client)
+
+    response = client.post(
+        f"/api/utilities/meters/{meter_id}/periods", json={**WATER_PERIOD, "garden_fee_cents": -1}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "garden_fee_cents"
+
+
+def test_volumes_are_empty_without_gardens_and_listed_with_one(client):
+    main_id = _water(client)
+    client.post(f"/api/utilities/meters/{main_id}/periods", json=WATER_PERIOD)
+    _read(client, main_id, {"2026-01-01": 10_000, "2026-01-11": 12_000})
+
+    assert _meters(client)["Water"]["status"]["volumes"] == []
+
+    garden_id = _garden(client, main_id)
+    _read(client, garden_id, {"2026-01-01": 0, "2026-01-11": 1_000})
+    volumes = _meters(client)["Water"]["status"]["volumes"]
+
+    assert [v["name"] for v in volumes] == ["main", "garden", "wastewater"]
+
+
+def _conflict(client: TestClient) -> tuple[int, dict[str, int]]:
+    """A garden that measured 5 m³ in ten days while the main measured 2 m³."""
+    main_id = _water(client)
+    client.post(f"/api/utilities/meters/{main_id}/periods", json=WATER_PERIOD)
+    _read(client, main_id, {"2026-01-01": 10_000, "2026-01-11": 12_000})
+    garden_id = _garden(client, main_id)
+    ids = _read(client, garden_id, {"2026-01-01": 0, "2026-01-11": 5_000})
+    return garden_id, ids
+
+
+def test_a_conflict_is_listed_on_the_main_and_the_garden(client):
+    _, ids = _conflict(client)
+    meters = _meters(client)
+
+    expected = {
+        "start_date": "2026-01-01",
+        "end_date": "2026-01-11",
+        "excess_milli": 3_000,
+        "reading_id": ids["2026-01-11"],
+        "exchange_id": None,
+        "zeroed": False,
+    }
+    assert meters["Water"]["garden_conflicts"] == [expected]
+    assert meters["Garden"]["garden_conflicts"] == meters["Water"]["garden_conflicts"]
+
+
+def test_the_zero_action_marks_the_case_zeroed(client):
+    garden_id, _ = _conflict(client)
+
+    response = client.post(
+        f"/api/utilities/meters/{garden_id}/conflicts/zero",
+        json={"start_date": "2026-01-01", "end_date": "2026-01-11"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == garden_id
+    assert [c["zeroed"] for c in response.json()["garden_conflicts"]] == [True]
+    assert [c["zeroed"] for c in _meters(client)["Water"]["garden_conflicts"]] == [True]
+
+
+def test_the_zero_action_on_a_main_meter_is_a_400_and_on_an_unknown_one_a_404(client):
+    garden_id, _ = _conflict(client)
+    main_id = _meters(client)["Water"]["id"]
+    body = {"start_date": "2026-01-01", "end_date": "2026-01-11"}
+
+    on_main = client.post(f"/api/utilities/meters/{main_id}/conflicts/zero", json=body)
+    unknown = client.post("/api/utilities/meters/99/conflicts/zero", json=body)
+    bad_date = client.post(
+        f"/api/utilities/meters/{garden_id}/conflicts/zero",
+        json={"start_date": "soon", "end_date": "2026-01-11"},
+    )
+
+    assert on_main.status_code == 400
+    assert unknown.status_code == 404
+    assert bad_date.status_code == 400
+    assert bad_date.json()["field"] == "start_date"
+
+
+def test_the_exchange_action_swaps_a_reading_for_an_exchange(client):
+    garden_id, ids = _conflict(client)
+
+    response = client.post(
+        f"/api/utilities/readings/{ids['2026-01-11']}/exchange", json={"old_final_milli": 1_500}
+    )
+    garden = _meters(client)["Garden"]
+
+    assert response.status_code == 201
+    assert response.json()["date"] == "2026-01-11"
+    assert response.json()["old_final_milli"] == 1_500
+    assert response.json()["new_start_milli"] == 5_000
+    assert [r["date"] for r in garden["readings"]] == ["2026-01-01"]
+    assert [e["id"] for e in garden["exchanges"]] == [response.json()["id"]]
+
+
+def test_the_exchange_action_is_a_400_when_the_series_would_drop(client):
+    _, ids = _conflict(client)
+
+    response = client.post(
+        f"/api/utilities/readings/{ids['2026-01-11']}/exchange", json={"old_final_milli": -1}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "value"
+    assert [r["date"] for r in _meters(client)["Garden"]["readings"]] == [
+        "2026-01-01",
+        "2026-01-11",
+    ]
+
+
+def test_the_exchange_action_on_an_unknown_reading_is_a_404(client):
+    response = client.post("/api/utilities/readings/99/exchange", json={"old_final_milli": 1})
+
+    assert response.status_code == 404

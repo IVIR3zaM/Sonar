@@ -13,7 +13,7 @@ from pydantic import StrictInt, StrictStr
 
 from sonar.db import connect
 from sonar.utilities.model import BillingPeriod, Charge, Exchange, FieldError, Meter, Reading
-from sonar.utilities.service import MeterView, load_utilities
+from sonar.utilities.service import ConflictCase, MeterView, load_utilities
 from sonar.utilities.store import (
     MeterNotEmpty,
     Stored,
@@ -30,10 +30,12 @@ from sonar.utilities.store import (
     list_meters,
     list_periods,
     list_readings,
+    reading_to_exchange,
     rename_meter,
     update_exchange,
     update_period,
     update_reading,
+    zero_garden_interval,
 )
 from sonar.web.api._common import _jsonable, _parse_body, _StrictModel
 
@@ -43,6 +45,7 @@ Action = Callable[[sqlite3.Connection], object]
 class MeterIn(_StrictModel):
     name: StrictStr
     kind: StrictStr
+    main_meter_id: StrictInt | None = None
 
 
 class MeterRenameIn(_StrictModel):
@@ -58,6 +61,15 @@ class ExchangeIn(_StrictModel):
     date: StrictStr
     old_final_milli: StrictInt
     new_start_milli: StrictInt
+
+
+class ZeroIn(_StrictModel):
+    start_date: StrictStr
+    end_date: StrictStr
+
+
+class ExchangeOfReadingIn(_StrictModel):
+    old_final_milli: StrictInt
 
 
 class ChargeIn(_StrictModel):
@@ -82,6 +94,7 @@ class PeriodIn(_StrictModel):
     advance_mode: StrictStr = "flexible"
     advance_dates: list[StrictStr] = []
     settlement_debit_days: StrictInt = 0
+    garden_fee_cents: StrictInt | None = None
 
 
 def _day(text: str, field: str) -> date:
@@ -122,6 +135,7 @@ def _period(body: PeriodIn) -> BillingPeriod:
         advance_mode=body.advance_mode,
         advance_dates=tuple(_day(text, "advance_dates") for text in body.advance_dates),
         settlement_debit_days=body.settlement_debit_days,
+        garden_fee_cents=body.garden_fee_cents,
     )
 
 
@@ -147,11 +161,24 @@ def _period_item(stored: Stored[BillingPeriod]) -> dict:
     return {"id": stored.id, **_jsonable(stored.item)}
 
 
+def _conflict_item(case: ConflictCase) -> dict:
+    return {
+        "start_date": case.start_date.isoformat(),
+        "end_date": case.end_date.isoformat(),
+        "excess_milli": case.excess_milli,
+        "reading_id": case.reading_id,
+        "exchange_id": case.exchange_id,
+        "zeroed": case.zeroed,
+    }
+
+
 def _meter_item(view: MeterView) -> dict:
     return {
         "id": view.id,
         "name": view.meter.name,
         "kind": view.meter.kind,
+        "main_meter_id": view.main_meter_id,
+        "garden_conflicts": [_conflict_item(case) for case in view.conflicts],
         "status": _jsonable(view.status),
         "periods": [_period_item(period) for period in view.periods],
         "exchanges": [_exchange_item(exchange) for exchange in view.exchanges],
@@ -183,7 +210,10 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
                 return JSONResponse({"error": "No such utility record"}, status_code=404)
             except MeterNotEmpty:
                 return JSONResponse(
-                    {"error": "Delete the meter's readings, exchanges and periods first"},
+                    {
+                        "error": "Delete the meter's readings, exchanges, periods and "
+                        "garden meters first"
+                    },
                     status_code=409,
                 )
         finally:
@@ -210,7 +240,10 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         if isinstance(body, JSONResponse):
             return body
         return respond(
-            lambda conn: meter_item(conn, add_meter(conn, Meter(body.name, body.kind))), 201
+            lambda conn: meter_item(
+                conn, add_meter(conn, Meter(body.name, body.kind, body.main_meter_id))
+            ),
+            201,
         )
 
     @router.put("/utilities/meters/{id}")
@@ -231,6 +264,20 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
             item = meter_item(conn, id)
             delete_meter(conn, id)
             return item
+
+        return respond(action)
+
+    @router.post("/utilities/meters/{id}/conflicts/zero")
+    async def zero_conflict(request: Request, id: int) -> JSONResponse:
+        body = await _parse_body(request, ZeroIn)
+        if isinstance(body, JSONResponse):
+            return body
+
+        def action(conn: sqlite3.Connection) -> dict:
+            start = _day(body.start_date, "start_date")
+            end = _day(body.end_date, "end_date")
+            zero_garden_interval(conn, id, start, end)
+            return meter_item(conn, id)
 
         return respond(action)
 
@@ -269,6 +316,18 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
             return item
 
         return respond(action)
+
+    @router.post("/utilities/readings/{id}/exchange", status_code=201)
+    async def post_reading_exchange(request: Request, id: int) -> JSONResponse:
+        body = await _parse_body(request, ExchangeOfReadingIn)
+        if isinstance(body, JSONResponse):
+            return body
+
+        def action(conn: sqlite3.Connection) -> dict:
+            exchange_id = reading_to_exchange(conn, id, body.old_final_milli)
+            return _exchange_item(_find(conn, list_exchanges, exchange_id))
+
+        return respond(action, 201)
 
     # Exchanges
 

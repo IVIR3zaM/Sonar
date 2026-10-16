@@ -11,7 +11,8 @@
 
 {% set section_title = "text-xs font-semibold uppercase tracking-wide text-ink-muted" %}
 {% set drawer = "mt-2 rounded-control border border-line bg-surface-muted/50 p-3" %}
-{% set charge_labels = {"drinking": "Drinking water", "wastewater": "Wastewater"} %}
+{% set charge_labels = {"drinking": "Drinking water", "wastewater": "Wastewater", "garden_fee": "Garden meter fee"} %}
+{% set volume_labels = {"main": "Main meter", "garden": "Garden meters", "wastewater": "Wastewater"} %}
 {% set kind_options = [("gas", "Gas"), ("electricity", "Electricity"), ("water", "Water")] %}
 
 
@@ -51,6 +52,17 @@
     {% endif %}
   </header>
 
+  {% if m.gardens %}
+  <p id="{{ pre }}-gardens" class="mb-4 text-sm text-ink-muted">Garden meters:
+    {% for garden in m.gardens %}<a data-garden-meter-id="{{ garden.id }}" href="/utilities/meters/{{ garden.id }}" class="font-medium text-accent underline">{{ garden.name }}</a>{{ ", " if not loop.last }}{% endfor %}
+  </p>
+  {% if m.open_conflicts %}
+  <div id="{{ pre }}-garden-conflicts" data-count="{{ m.open_conflicts }}" role="alert" class="mb-4 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">
+    {{ m.open_conflicts }} garden {{ "reading interval" if m.open_conflicts == 1 else "reading intervals" }} measured more than the main meter. Resolve
+    {% for garden in m.gardens if garden.open_cases %}<a href="/utilities/meters/{{ garden.id }}" class="font-medium underline">{{ garden.name }}</a>{{ ", " if not loop.last }}{% endfor %}.
+  </p>
+  {% endif %}
+  {% endif %}
   {% if status %}
   <dl class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     {{ stat("Paid so far", value=amount(status.paid_cents, colored=false, id=pre ~ "-paid"), hint="paid since " ~ date(status.paid_since, id=pre ~ "-paid-since")) }}
@@ -73,13 +85,26 @@
     {% endif %}
   </dl>
   {% if status.charges %}
-  <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+  <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2{{ ' lg:grid-cols-3' if status.charges | length > 2 }}">
     {% for charge in status.charges %}
     <div data-charge="{{ charge.name }}" class="rounded-control border border-line bg-surface-muted/50 p-3">
       <h3 class="{{ section_title }}">{{ charge_labels[charge.name] }}</h3>
       <dl class="mt-2 grid grid-cols-2 gap-3">
         {{ stat("Cost so far", value=amount(charge.cost_so_far_cents, colored=false, attrs={"data-field": "cost_so_far"})) }}
         {{ stat("Projected", value=amount(charge.projected_cost_cents, colored=false, attrs={"data-field": "projected_cost"})) }}
+      </dl>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if status.volumes %}
+  <div id="{{ pre }}-volumes" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    {% for volume in status.volumes %}
+    <div data-volume="{{ volume.name }}" class="rounded-control border border-line bg-surface-muted/50 p-3">
+      <h3 class="{{ section_title }}">{{ volume_labels[volume.name] }}</h3>
+      <dl class="mt-2 grid grid-cols-2 gap-3">
+        {{ stat("So far", value=("<span data-field=\"so_far\" class=\"tabular-nums\">" ~ volume.so_far ~ "</span> m³") | safe) }}
+        {{ stat("Projected", value=("<span data-field=\"projected\" class=\"tabular-nums\">" ~ volume.projected ~ "</span> m³") | safe) }}
       </dl>
     </div>
     {% endfor %}
@@ -128,12 +153,13 @@
 
   {% set key = "add-meter" %}
   {% set err = error if error and error.form == key else none %}
-  {% set v = err.fields if err else {"name": "", "kind": "gas"} %}
+  {% set v = err.fields if err else {"name": "", "kind": "gas", "main_meter_id": ""} %}
   {% call card(title="Add a meter", subtitle="One per gas, electricity or water meter.", id="add-meter-card") %}
   <form id="add-meter" method="post" action="/utilities/meters" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     {{ form_error(err) }}
     {{ field("name", "Name", value=v.name, id="add-meter-name", required=true, attrs={"placeholder": "e.g. Flat gas"}) }}
     {{ field("kind", "Kind", value=v.kind, id="add-meter-kind", options=kind_options) }}
+    <div class="sm:col-span-2">{{ field("main_meter_id", "Main meter (garden meters only)", value=v.main_meter_id, id="add-meter-main-meter", options=main_meter_options, help="Pick the water meter a garden meter hangs on; leave None for any other meter") }}</div>
     <div class="sm:col-span-2">{{ button("Add meter") }}</div>
   </form>
   {% endcall %}

@@ -936,3 +936,71 @@ def test_usage_units_say_m3_for_water_and_kwh_for_the_others(client, db_path):
     )
     power_row = power_page.select_one(f"#meter-{power}-periods [data-row]")
     assert text(power_row.select_one('[data-field="expected_usage"]')) == "3000 kWh"
+
+
+# Garden meter fee (D10)
+
+
+def test_a_water_period_stores_the_garden_fee_and_prefills_it_on_edit(client, db_path):
+    meter = _water_meter(db_path)
+
+    added = client.post(
+        f"/utilities/meters/{meter}/periods", data={**WATER_PERIOD, "garden_fee": "12.00"}
+    )
+
+    assert added.status_code == 303
+    [stored] = _store(db_path, lambda conn: list_periods(conn, meter))
+    assert stored.item == _water_period(garden_fee_cents=1_200)
+    page = _page(client, meter)
+    assert _input(page, f"#period-{stored.id}-edit input[name=garden_fee]") == "12.00"
+
+
+def test_a_water_period_without_a_garden_fee_stores_none(client, db_path):
+    meter = _water_meter(db_path)
+
+    client.post(f"/utilities/meters/{meter}/periods", data={**WATER_PERIOD, "garden_fee": ""})
+
+    [stored] = _store(db_path, lambda conn: list_periods(conn, meter))
+    assert stored.item.garden_fee_cents is None
+    page = _page(client, meter)
+    assert _input(page, f"#period-{stored.id}-edit input[name=garden_fee]") == ""
+
+
+def test_only_the_water_period_form_has_the_garden_fee(client, db_path):
+    water = _water_meter(db_path)
+    power = _electricity_meter(db_path)
+
+    form = _page(client, water).select_one(f"#meter-{water}-new-period")
+    assert "per year, net" in text(form.select_one("label[for$=garden-fee]"))
+    assert form.select_one("input[name=garden_fee]") is not None
+    assert _page(client, power).select_one("input[name=garden_fee]") is None
+
+
+@pytest.mark.parametrize(
+    ("typed", "message"),
+    [
+        ("lots", "Garden meter fee: enter a number like 1234.56 or -250.50"),
+        ("-1.00", "garden fee must not be negative"),
+    ],
+)
+def test_a_bad_garden_fee_is_a_400_that_keeps_the_entry(client, db_path, typed, message):
+    meter = _water_meter(db_path)
+
+    response = client.post(
+        f"/utilities/meters/{meter}/periods", data={**WATER_PERIOD, "garden_fee": typed}
+    )
+
+    assert message in _error(response)
+    form = soup(response).select_one(f"#meter-{meter}-new-period")
+    assert _input(form, "input[name=garden_fee]") == typed
+    assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
+
+
+def test_start_new_period_copies_the_garden_fee(client, db_path):
+    meter = _water_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _water_period(garden_fee_cents=1_200)))
+
+    form = _page(client, meter).select_one(f"#meter-{meter}-new-period")
+
+    assert _input(form, "input[name=garden_fee]") == "12.00"
+    assert _input(form, "input[name=start_date]") == "2027-01-01"

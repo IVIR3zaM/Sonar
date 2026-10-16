@@ -78,12 +78,12 @@ and dark; the final check passes SPEC §11 and §12.
 | N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | DONE | |
 | N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 1 | 0 | DONE | |
 | N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
-| N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
+| N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | RUNNING | fail C3 |
+| N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
-| N11 | advance link in the forecast | exec | N05 | opus/sonnet | 0 | 0 | TODO | |
+| N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | VERIFYING | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 0 | 0 | TODO | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 0 | 0 | TODO | |
 
@@ -520,4 +520,36 @@ exec: DONE · 1974 passed
 - load_utilities nets main water meters by their garden meters; MeterView gains main_meter_id, garden_ids, conflicts; ConflictCase added; garden chart and cases; ended-period projection nets garden
 - zeroed intervals only flag ConflictCase.zeroed; garden usage fed to costing is not zeroed (brief did not say)
 check: PASS 2/2
+verify: PASS
+
+### N06 try 1 · 2026-10-16
+exec: DONE · 2009 passed
+- api/utilities.py: main_meter_id, garden_conflicts, garden_fee_cents, zero and reading-exchange routes; tests added; SPEC line 263 gains Garden meters part
+- D1-D12 text derived from N01-N05 code (plan file not opened); exchange 400 field is value as the store raises it
+
+### N07 try 1 · 2026-10-16
+exec: DONE · 141 passed (3 web page files); full suite: 7 cashflow failures in files outside N07, uncommitted edits by another node
+- main water card: garden links, volumes, garden_fee box, conflict alert; add-meter main_meter_id select; period garden_fee field (copied by Start new period); no card for garden meters; sonar.css rebuilt
+- conflict alert renders only with open cases and links each garden having open cases
+
+### N06 try 1 · 2026-10-16
+check: PASS 2/2
+
+### N11 try 1 · 2026-10-16
+exec: DONE · 2022 passed
+- forecast.py: SupplierDates, FixedSource.supplier, pair_advances, next_due; fixed_due/_year_total/_row take a supplier's dates in its span. service.py: AdvanceLink, advance_links, _advance_links used by _fixed_sources for dashboard and load_payoff; _advances skips linked meters; _recurring_categories_due removed. MeterCashflow gains meter_id and period
+- schedule periods pair in meter id order (one period in force per meter); remaining dates filtered to >= today in next_due
+- rewrote tests at test_service.py:1020 and :1044; added pins for paid date, debt link, two meters, Fixed costs row, pay cycles and payoff
+check: PASS 3/3
+
+### N06 try 1 · 2026-10-16
+check: PASS 2/2
+verify: FAIL C3
+- C3 SPEC.md:263 - the Garden meters part states no page rule (D10): /utilities shows no card for a garden meter, the main water card lists its garden meters with links and an alert for open conflicts, volumes shown on the card - expected every D1-D12 rule stated
+
+### N07 try 1 · 2026-10-16
+check: PASS 4/4
+verify: PASS
+
+### N11 try 1 · 2026-10-16
 verify: PASS

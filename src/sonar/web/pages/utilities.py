@@ -42,7 +42,7 @@ from sonar.utilities.store import (
 from sonar.utilities.usage import continuous_series, daily_usage
 from sonar.web import forms
 
-METER_FIELDS = ("name", "kind")
+METER_FIELDS = ("name", "kind", "main_meter_id")
 READING_FIELDS = ("date", "value")
 EXCHANGE_FIELDS = ("date", "old_final", "new_start")
 PERIOD_FIELDS = (
@@ -65,6 +65,7 @@ PERIOD_FIELDS = (
     "wastewater_price",
     "wastewater_base_fee",
     "wastewater_vat",
+    "garden_fee",
 )
 UNITS = {"gas": "m³", "electricity": "kWh", "water": "m³"}  # what a meter reading counts
 USAGE_UNITS = {"gas": "kWh", "electricity": "kWh", "water": "m³"}  # what usage and cost go by
@@ -79,6 +80,13 @@ class ReadingRow:
 
 
 @dataclass(frozen=True)
+class GardenLink:
+    id: int
+    name: str
+    open_cases: int  # conflicts not zeroed yet
+
+
+@dataclass(frozen=True)
 class MeterCard:
     view: MeterView
     unit: str
@@ -88,6 +96,11 @@ class MeterCard:
     latest: Stored[BillingPeriod] | None
     new_period: dict[str, str]  # the "Start new period" form's prefill
     last_settlement: tuple[int, date] | None  # signed cents and date of the previous bill
+    gardens: tuple[GardenLink, ...] = ()  # a main meter's garden meters
+
+    @property
+    def open_conflicts(self) -> int:
+        return sum(garden.open_cases for garden in self.gardens)
 
     @property
     def is_empty(self) -> bool:
@@ -140,6 +153,11 @@ def _charge_from(values: dict[str, str], name: str, label: str) -> Charge:
     )
 
 
+def _meter_from(values: dict[str, str]) -> Meter:
+    main_meter_id = _optional("Main meter", values["main_meter_id"], "int", int)
+    return Meter(values["name"], values["kind"], main_meter_id)
+
+
 def _period_from(values: dict[str, str], kind: str) -> BillingPeriod:
     if kind == "water":
         charges = {name: _charge_from(values, name, label) for name, label in CHARGES}
@@ -182,6 +200,9 @@ def _period_from(values: dict[str, str], kind: str) -> BillingPeriod:
         settlement_debit_days=forms.field(
             "Settlement debited", values["settlement_debit_days"], "int", int
         ),
+        garden_fee_cents=_optional(
+            "Garden meter fee", values["garden_fee"], "amount", parse_signed_cents
+        ),
         **charges,
     )
 
@@ -222,6 +243,7 @@ def _period_values(period: BillingPeriod | None) -> dict[str, str]:
         "advance_mode": period.advance_mode,
         "advance_dates": ", ".join(day.isoformat() for day in period.advance_dates),
         "settlement_debit_days": str(period.settlement_debit_days),
+        "garden_fee": _optional_scaled(period.garden_fee_cents, 2),
         **_charge_values("drinking", period.drinking),
         **_charge_values("wastewater", period.wastewater),
     }
@@ -307,7 +329,17 @@ def _last_settlement(
     return previous.settled_cents, previous.settlement_date
 
 
-def _card(view: MeterView, today: date) -> MeterCard:
+def _gardens_of(view: MeterView, views: list[MeterView]) -> tuple[GardenLink, ...]:
+    by_id = {other.id: other for other in views}
+    links = []
+    for garden_id in view.garden_ids:
+        garden = by_id[garden_id]
+        open_cases = sum(1 for case in garden.conflicts if not case.zeroed)
+        links.append(GardenLink(garden_id, garden.meter.name, open_cases))
+    return tuple(links)
+
+
+def _card(view: MeterView, today: date, views: list[MeterView]) -> MeterCard:
     periods = [stored.item for stored in view.periods]
     latest = view.periods[-1] if view.periods else None
     current = current_period(periods, today)
@@ -320,6 +352,7 @@ def _card(view: MeterView, today: date) -> MeterCard:
         latest=latest,
         new_period=_next_period_values(latest),
         last_settlement=_last_settlement(periods, current),
+        gardens=_gardens_of(view, views),
     )
 
 
@@ -336,7 +369,17 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             "utilities.html",
             {
-                "cards": [_card(view, today()) for view in views],
+                "cards": [
+                    _card(view, today(), views) for view in views if view.main_meter_id is None
+                ],
+                "main_meter_options": [
+                    ("", "None"),
+                    *(
+                        (view.id, view.meter.name)
+                        for view in views
+                        if view.meter.kind == "water" and view.main_meter_id is None
+                    ),
+                ],
                 "error": error,
             },
             status_code=status_code,
@@ -353,7 +396,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             "utility_meter.html",
             {
-                "meter_card": _card(view, today()),
+                "meter_card": _card(view, today(), views),
                 "category_options": [("", "None"), *((name, name) for name in categories)],
                 "error": error,
                 "values": {
@@ -472,7 +515,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             "add-meter",
             METER_FIELDS,
-            lambda v: Meter(v["name"], v["kind"]),
+            _meter_from,
             add_meter,
         )
 

@@ -61,6 +61,9 @@
   {{ field("state_factor", "State factor", value=v.state_factor, id=key ~ "-state-factor", required=true, help="Zustandszahl, up to 4 decimals") }}
   {{ field("calorific_value", "Calorific value (kWh/m³)", value=v.calorific_value, id=key ~ "-calorific-value", required=true, help="Brennwert, up to 4 decimals") }}
   {% endif %}
+  {% if kind == "water" %}
+  <div class="col-span-2">{{ field("garden_fee", "Garden meter fee (€ per year, net)", value=v.garden_fee, id=key ~ "-garden-fee", help="Only with garden meters; empty = none, e.g. 12.00") }}</div>
+  {% endif %}
   {{ field("advance_mode", "Advances", value=v.advance_mode, id=key ~ "-advance-mode", required=true, options=[("flexible", "Flexible"), ("schedule", "Supplier schedule")]) }}
   {{ field("advance", "Advance (€)", value=v.advance, id=key ~ "-advance", required=true, help="Per month when flexible, per scheduled date on a schedule, e.g. 85.00") }}
   <div class="col-span-2">{{ field("advance_dates", "Scheduled advance dates", value=v.advance_dates, id=key ~ "-advance-dates", help="Only on a schedule: dates like 2026-04-15, 2026-06-15") }}</div>

@@ -16,6 +16,7 @@ from sonar.utilities.store import (
     add_reading,
     list_meters,
     list_readings,
+    zero_garden_interval,
 )
 from sonar.web.app import create_app
 from tests.html import cents, soup, text
@@ -707,3 +708,200 @@ def test_add_a_meter_offers_water_and_creates_one(client, db_path):
 
     assert response.status_code == 303
     assert _store(db_path, list_meters)[0].item == Meter("Flat water", "water")
+
+
+# Garden meters (D10)
+
+GARDEN_READINGS = (
+    (date(2025, 5, 31), 0),
+    (date(2025, 12, 31), 21_400),
+    (date(2026, 10, 16), 50_300),
+)
+CONFLICT_READING = (date(2026, 10, 16), 200_000)  # more than the main meter measured
+
+
+def _volume(card, name: str, field: str) -> str:
+    return text(card.select_one(f'[data-volume="{name}"] [data-field="{field}"]'))
+
+
+def _water_with_garden(path, garden_readings=GARDEN_READINGS) -> tuple[int, int]:
+    main = _store(path, lambda conn: add_meter(conn, Meter("Water", "water")))
+    for period in water_periods(garden_fee_cents=1_200):
+        _store(path, lambda conn, p=period: add_period(conn, main, p))
+    for day, value in (
+        (date(2025, 5, 31), 238_000),
+        (date(2025, 12, 31), 355_000),
+        (date(2026, 10, 16), 516_000),
+    ):
+        _store(path, lambda conn, d=day, v=value: add_reading(conn, main, Reading(d, v)))
+    garden = _store(path, lambda conn: add_meter(conn, Meter("Garden", "water", main)))
+    for day, value in garden_readings:
+        _store(path, lambda conn, d=day, v=value: add_reading(conn, garden, Reading(d, v)))
+    return main, garden
+
+
+@pytest.fixture
+def garden_setup(tmp_path):
+    path = tmp_path / "garden.db"
+    seed(path, CATEGORIES + '\n[[category]]\nname = "Water"\ntype = "fixed"\n')
+    main, garden = _water_with_garden(path)
+    with TestClient(create_app(path, today=lambda: WATER_TODAY)) as client:
+        for booked, amount in WATER_BOOKINGS:
+            _insert_debit(path, booked.isoformat(), amount, "Water")
+        yield client, path, main, garden
+
+
+def test_the_main_water_card_shows_the_wastewater_volume_so_far(garden_setup):
+    client, _, main, _ = garden_setup
+    card = _page(client).select_one(f"#meter-{main}")
+
+    assert _volume(card, "wastewater", "so_far") == "132"
+
+
+def test_the_main_water_card_shows_every_volume_and_the_garden_totals(garden_setup):
+    client, _, main, _ = garden_setup
+    card = _page(client).select_one(f"#meter-{main}")
+
+    for name, so_far, projected in (
+        ("main", "160", "203"),
+        ("garden", "29", "37"),
+        ("wastewater", "132", "166"),
+    ):
+        assert _volume(card, name, "so_far") == so_far
+        assert _volume(card, name, "projected") == projected
+    assert _hook_cents(card, f"#meter-{main}-projected-cost") == 100_828
+    assert _hook_cents(card, '[data-charge="wastewater"] [data-field="projected_cost"]') == 71_020
+    assert _hook_cents(card, '[data-charge="garden_fee"] [data-field="projected_cost"]') == 1_200
+    assert text(card.select_one('[data-charge="garden_fee"]')).startswith("Garden meter fee")
+    assert _hook_cents(card, f"#meter-{main}-settlement") == 19_172
+
+
+def test_the_main_card_links_its_garden_meters_and_the_garden_has_no_card(garden_setup):
+    client, _, main, garden = garden_setup
+    page = _page(client)
+
+    [link] = page.select(f"#meter-{main} [data-garden-meter-id]")
+    assert link["data-garden-meter-id"] == str(garden)
+    assert link["href"] == f"/utilities/meters/{garden}"
+    assert text(link) == "Garden"
+    assert page.select_one(f"#meter-{garden}") is None
+    assert [card["data-meter-id"] for card in page.select("[data-meter-id]")] == [str(main)]
+
+
+def test_a_water_meter_without_gardens_keeps_its_card_and_total(garden_setup):
+    client, path, main, _ = garden_setup
+    plain = _store(path, lambda conn: add_meter(conn, Meter("Water plain", "water")))
+    for period in water_periods():
+        _store(path, lambda conn, p=period: add_period(conn, plain, p))
+    for day, value in (
+        (date(2025, 5, 31), 238_000),
+        (date(2025, 12, 31), 355_000),
+        (date(2026, 10, 16), 516_000),
+    ):
+        _store(path, lambda conn, d=day, v=value: add_reading(conn, plain, Reading(d, v)))
+
+    card = _page(client).select_one(f"#meter-{plain}")
+
+    assert _hook_cents(card, f"#meter-{plain}-projected-cost") == 113_097
+    assert card.select_one("[data-volume]") is None
+    assert card.select_one("[data-garden-meter-id]") is None
+    assert card.select_one('[data-charge="garden_fee"]') is None
+    assert card.select_one(f"#meter-{plain}-garden-conflicts") is None
+
+
+def test_no_conflict_alert_while_the_garden_stays_below_the_main(garden_setup):
+    client, _, main, _ = garden_setup
+
+    assert _page(client).select_one(f"#meter-{main}-garden-conflicts") is None
+
+
+@pytest.fixture
+def conflict_setup(tmp_path):
+    path = tmp_path / "conflict.db"
+    seed(path, CATEGORIES + '\n[[category]]\nname = "Water"\ntype = "fixed"\n')
+    main, garden = _water_with_garden(path, (*GARDEN_READINGS[:2], CONFLICT_READING))
+    with TestClient(create_app(path, today=lambda: WATER_TODAY)) as client:
+        yield client, path, main, garden
+
+
+def test_an_open_case_raises_the_conflict_alert_linking_the_garden_page(conflict_setup):
+    client, _, main, garden = conflict_setup
+
+    alert = _page(client).select_one(f"#meter-{main}-garden-conflicts")
+
+    assert alert["data-count"] == "1"
+    assert alert.select_one("a")["href"] == f"/utilities/meters/{garden}"
+
+
+def test_a_zeroed_case_no_longer_counts_in_the_alert(conflict_setup):
+    client, path, main, garden = conflict_setup
+    _store(
+        path,
+        lambda conn: zero_garden_interval(conn, garden, date(2025, 12, 31), date(2026, 10, 16)),
+    )
+
+    assert _page(client).select_one(f"#meter-{main}-garden-conflicts") is None
+
+
+def test_the_add_meter_form_offers_the_main_meters_for_a_garden(garden_setup):
+    client, path, main, garden = garden_setup
+    _store(path, lambda conn: add_meter(conn, Meter("Flat gas", "gas")))
+    plain = _store(path, lambda conn: add_meter(conn, Meter("Orchard tap", "water")))
+
+    page = _page(client)
+
+    select = page.select_one("#add-meter select[name=main_meter_id]")
+    assert [(o["value"], text(o)) for o in select.select("option")] == [
+        ("", "None"),
+        (str(plain), "Orchard tap"),  # by name
+        (str(main), "Water"),
+    ]
+    assert "Main meter (garden meters only)" in text(page.select_one("#add-meter"))
+
+
+def test_a_garden_meter_is_added_under_its_main_meter(client, db_path):
+    main = _store(db_path, lambda conn: add_meter(conn, Meter("Water", "water")))
+
+    response = client.post(
+        "/utilities/meters",
+        data={"name": "Garden", "kind": "water", "main_meter_id": str(main)},
+    )
+
+    assert response.status_code == 303
+    meters = {stored.item.name: stored.item for stored in _store(db_path, list_meters)}
+    assert meters["Garden"] == Meter("Garden", "water", main)
+
+
+def test_a_meter_without_a_main_meter_is_still_added(client, db_path):
+    response = client.post(
+        "/utilities/meters", data={"name": "Flat gas", "kind": "gas", "main_meter_id": ""}
+    )
+
+    assert response.status_code == 303
+    assert _store(db_path, list_meters)[0].item == Meter("Flat gas", "gas")
+
+
+def test_a_gas_meter_under_a_main_meter_is_a_400_that_keeps_the_entry(client, db_path):
+    main = _store(db_path, lambda conn: add_meter(conn, Meter("Water", "water")))
+
+    response = client.post(
+        "/utilities/meters",
+        data={"name": "Garden gas", "kind": "gas", "main_meter_id": str(main)},
+    )
+
+    assert response.status_code == 400
+    assert "water meter" in _error(response)
+    form = soup(response).select_one("#add-meter")
+    assert _input(form, "input[name=name]") == "Garden gas"
+    assert form.select_one("select[name=kind] option[selected]")["value"] == "gas"
+    assert form.select_one("select[name=main_meter_id] option[selected]")["value"] == str(main)
+    assert len(_store(db_path, list_meters)) == 1
+
+
+def test_a_bad_main_meter_is_a_400(client):
+    response = client.post(
+        "/utilities/meters",
+        data={"name": "Garden", "kind": "water", "main_meter_id": "abc"},
+    )
+
+    assert "Main meter:" in _error(response)

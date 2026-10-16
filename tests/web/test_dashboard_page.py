@@ -21,6 +21,7 @@ from sonar.utilities.store import add_meter, add_period, add_reading
 from sonar.web.app import create_app
 from tests.html import cents, fields, records, soup, text
 from tests.seed import seed
+from tests.utilities.test_settlement import WATER_BOOKINGS, WATER_TODAY, water_periods
 
 TODAY = date(2026, 9, 10)
 
@@ -890,3 +891,50 @@ def test_no_utilities_card_without_a_current_period(tmp_path):
         page = soup(client.get("/"))
 
     assert page.select_one("#utilities-card") is None
+
+
+def test_utilities_card_settles_a_water_meter_net_of_its_garden_and_lists_no_garden(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path, '[[category]]\nname = "Water"\ntype = "fixed"\n')
+    conn = connect(db_path)
+    try:
+        main = add_meter(conn, Meter("Water", "water"))
+        for period in water_periods(garden_fee_cents=1_200):
+            add_period(conn, main, period)
+        for day, value in (
+            (date(2025, 5, 31), 238_000),
+            (date(2025, 12, 31), 355_000),
+            (date(2026, 10, 16), 516_000),
+        ):
+            add_reading(conn, main, Reading(day, value))
+        garden = add_meter(conn, Meter("Garden", "water", main))
+        for day, value in (
+            (date(2025, 5, 31), 0),
+            (date(2025, 12, 31), 21_400),
+            (date(2026, 10, 16), 50_300),
+        ):
+            add_reading(conn, garden, Reading(day, value))
+    finally:
+        conn.close()
+
+    with TestClient(create_app(db_path, today=lambda: WATER_TODAY)) as client:
+        # Booked after startup, which re-applies the rules and would clear the category.
+        conn = sqlite3.connect(db_path)
+        try:
+            for index, (booked, amount) in enumerate(WATER_BOOKINGS):
+                conn.execute(
+                    "INSERT INTO transactions (source, account, booking_date, value_date, "
+                    "amount_cents, currency, counterparty, purpose, raw_row, fingerprint, "
+                    "occurrence, category) VALUES ('test', 'acc', ?, ?, ?, 'EUR', 'Water Co', "
+                    "'', 'raw', ?, 1, 'Water')",
+                    (booked.isoformat(), booked.isoformat(), amount, f"water-{index}"),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        page = soup(client.get("/"))
+
+    [row] = page.select("#utilities-card [data-meter]")
+    assert row["data-meter"] == "Water"
+    assert cents(row.select_one('[data-field="settlement"]')) == 19_172
+    assert page.select_one('#utilities-card [data-meter="Garden"]') is None

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "components/card.html" import card %}
+{% from "components/stat.html" import stat %}
+{% from "components/badge.html" import badge %}
+{% from "components/button.html" import button %}
+{% from "components/field.html" import field %}
+{% from "components/utility_forms.html" import form_error, reading_form %}
+{% from "components/amount.html" import amount, date %}
+{% from "components/empty.html" import empty %}
+{% from "components/charts.html" import utility_chart %}
+
+{% set section_title = "text-xs font-semibold uppercase tracking-wide text-ink-muted" %}
+{% set drawer = "mt-2 rounded-control border border-line bg-surface-muted/50 p-3" %}
+{% set kind_options = [("gas", "Gas"), ("electricity", "Electricity")] %}
+
+
+{#- A projected settlement is worded by its sign: a refund or a back-payment. #}
+{% macro outcome(cents, id) -%}
+{{ amount(cents | abs, colored=false, id=id, attrs={"data-kind": "refund" if cents >= 0 else "back-payment"}) }}
+{%- endmacro %}
+
+
+{% block content %}
+<header class="mb-6">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink">Energy</h1>
+  <p class="mt-1 text-sm text-ink-muted">Gas and electricity meters, what the current billing period costs, and the settlement ahead.</p>
+</header>
+
+{% if error and error.form == "page" %}
+<div id="form-error" role="alert" tabindex="-1" class="mb-6 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">{{ error.message }}</div>
+{% endif %}
+
+<div class="space-y-6">
+  {% for m in cards %}
+  {% set meter = m.view.meter %}
+  {% set status = m.view.status %}
+  {% set pre = "meter-" ~ m.view.id %}
+  {% call card(id=pre, attrs={"data-meter-id": m.view.id}) %}
+  <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold text-ink" data-field="name">{{ meter.name }}</h2>
+      {{ badge(meter.kind, tone="accent", attrs={"data-field": "kind"}) }}
+    </div>
+    {% if m.is_empty %}
+    <form id="{{ pre }}-delete" method="post" action="/utilities/meters/{{ m.view.id }}/delete"
+          hx-post="/utilities/meters/{{ m.view.id }}/delete" hx-confirm="Delete {{ meter.name }}? This cannot be undone."
+          hx-target="#main" hx-select="#main" hx-swap="outerHTML">
+      {{ button("Delete meter", variant="danger", size="sm") }}
+    </form>
+    {% endif %}
+  </header>
+
+  {% if status %}
+  <dl class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    {{ stat("Paid so far", value=amount(status.paid_cents, colored=false, id=pre ~ "-paid"), hint="paid since " ~ date(status.paid_since, id=pre ~ "-paid-since")) }}
+    {% if status.cost_so_far_cents is not none %}
+    {{ stat("Cost so far", value=amount(status.cost_so_far_cents, colored=false, id=pre ~ "-cost-so-far"), hint="as of " ~ date(status.as_of)) }}
+    {{ stat("Left", value=amount(status.left_cents, id=pre ~ "-left"), hint="paid minus cost so far") }}
+    {{ stat("Projected refund" if status.settlement_cents >= 0 else "Projected back-payment", value=outcome(status.settlement_cents, pre ~ "-settlement"), hint=("on " ~ date(m.current.settlement_date, id=pre ~ "-settlement-date"))) }}
+    {{ stat("Worst case refund" if status.worst_settlement_cents >= 0 else "Worst case back-payment", value=outcome(status.worst_settlement_cents, pre ~ "-worst-case"), hint="at the highest of seasonal, expected and last year's usage") }}
+    {% if status.suggested_advance_cents is not none %}
+    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint=("per advance for the next " ~ status.remaining_advance_count ~ (" advance" if status.remaining_advance_count == 1 else " advances") ~ ", about the same at settlement on " ~ date(m.current.settlement_date)) if status.remaining_advance_count else ("no advance left, about this at settlement on " ~ date(m.current.settlement_date))) }}
+    {% else %}
+    {{ stat("Suggested advance", value="–", hint="no advance left in this period") }}
+    {% endif %}
+    {% endif %}
+  </dl>
+  {% if m.last_settlement %}
+  {% set settled_cents, settled_on = m.last_settlement %}
+  <p id="{{ pre }}-last-settlement" data-kind="{{ 'refund' if settled_cents >= 0 else 'back-payment' }}" class="mt-3 text-sm text-ink-muted">Last settlement: {{ "refund" if settled_cents >= 0 else "back-payment" }} {{ amount(settled_cents | abs, colored=false) }} on {{ date(settled_on) }}</p>
+  {% endif %}
+  {% if status.cost_so_far_cents is none %}
+  <p id="{{ pre }}-no-usage" class="text-sm text-ink-muted">No readings in the current period yet, so there is no cost or projection.</p>
+  {% endif %}
+  {% elif m.latest %}
+  <p id="{{ pre }}-settled" class="text-sm text-ink-muted">No billing period is in force today. The latest one ended {{ date(m.latest.item.settlement_date) }} and is settled.</p>
+  {% else %}
+  <p id="{{ pre }}-no-period" class="text-sm text-ink-muted">Add a billing period to see costs and a projection.</p>
+  {% endif %}
+
+  <section class="mt-6">
+    <h3 class="{{ section_title }}">Usage and cost per month</h3>
+    <div class="mt-2">{{ utility_chart(pre ~ "-chart", m.view.chart_months) }}</div>
+  </section>
+
+
+  <section class="mt-6">
+    <h3 class="{{ section_title }}">Latest reading</h3>
+    {% if m.readings %}
+    {% set last = m.readings[0].stored.item %}
+    <p id="{{ pre }}-latest-reading" class="mt-2 text-sm text-ink">
+      <span data-field="date">{{ date(last.reading_date) }}</span>:
+      <span data-field="reading" class="tabular-nums">{{ last.value_milli | scaled(3) }}</span> {{ m.unit }}
+    </p>
+    {% else %}
+    <p class="mt-2 text-sm text-ink-muted">No readings yet.</p>
+    {% endif %}
+    {% set key = pre ~ "-add-reading" %}
+    {% set err = error if error and error.form == key else none %}
+    <div class="{{ drawer }}">
+      <h4 class="mb-2 text-sm font-semibold text-ink">Add a reading</h4>
+      {{ reading_form(key, "/utilities/meters/" ~ m.view.id ~ "/readings", err, {"date": "", "value": ""}, m.unit, "Add reading") }}
+    </div>
+    <p class="mt-3"><a id="{{ pre }}-history" href="/utilities/meters/{{ m.view.id }}" class="text-sm font-medium text-accent underline">History, periods and exchanges</a></p>
+  </section>
+  {% endcall %}
+  {% endfor %}
+
+  {% set key = "add-meter" %}
+  {% set err = error if error and error.form == key else none %}
+  {% set v = err.fields if err else {"name": "", "kind": "gas"} %}
+  {% call card(title="Add a meter", subtitle="One per gas or electricity meter.", id="add-meter-card") %}
+  <form id="add-meter" method="post" action="/utilities/meters" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    {{ form_error(err) }}
+    {{ field("name", "Name", value=v.name, id="add-meter-name", required=true, attrs={"placeholder": "e.g. Flat gas"}) }}
+    {{ field("kind", "Kind", value=v.kind, id="add-meter-kind", options=kind_options) }}
+    <div class="sm:col-span-2">{{ button("Add meter") }}</div>
+  </form>
+  {% endcall %}
+</div>
+<script data-utility-chart-memory>
+  // The checkboxes already work without this; it only remembers them per chart.
+  // Blocked storage leaves the default (off), so every access is guarded.
+  document.querySelectorAll("[data-utility-chart]").forEach(function (chart) {
+    chart.querySelectorAll("[data-toggle]").forEach(function (box) {
+      var key = "utility-chart:" + chart.id + ":" + box.dataset.toggle;
+      try { box.checked = localStorage.getItem(key) === "1"; } catch (e) {}
+      box.addEventListener("change", function () {
+        try { localStorage.setItem(key, box.checked ? "1" : "0"); } catch (e) {}
+      });
+    });
+  });
+</script>
+{% endblock %}
+

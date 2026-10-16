@@ -41,8 +41,8 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | SPEC Utilities bullet | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
-| N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 0 | 0 | TODO | |
+| N02 | SPEC Utilities bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
+| N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 1 | 1 | RUNNING | |
 | N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N05 | water cost and advance modes | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -112,23 +112,26 @@ Do: Rename the Energy feature to Utilities with no change in behavior (D1, D2). 
   the period field `expected_kwh` to `expected_usage` in the model, API, form and period list (the store keeps
   mapping it to the `energy_periods.expected_kwh` column; tables stay `energy_*` until N04). `Dashboard.energy`
   becomes `utilities`, so `/api/dashboard` answers `utilities`; the card becomes "Utilities"
-  (`templates/index.html:291-322`). Rebuild sonar.css.
+  (`templates/index.html:291-322`). Rename the form hint needle to `expected_usage must not be negative`
+  (`web/forms.py:60`) so that error keeps its friendly text. Rebuild sonar.css.
 Context: D1 names; D2 old paths (301; no `/api/energy` alias). Wiring: `src/sonar/web/app.py:36,136`,
   `web/api/__init__.py:19,25`, nav `templates/base.html:11,28`, `cashflow/service.py:35,72-74,137,161,176`,
   chart macro `components/charts.html:183-260`, toggle script `templates/energy.html:121-130`, page routes
   `web/pages/energy.py:364-480`, not-found text `pages/energy.py:298-301`. Migration tests 0014 and 0015 stay.
 Read: `src/sonar/energy/`, `src/sonar/web/pages/energy.py`, `src/sonar/web/api/energy.py`, `tests/html.py`
-Write: `src/sonar/energy/**`, `src/sonar/utilities/**`, `src/sonar/web/pages/energy.py`, `src/sonar/web/pages/utilities.py`, `src/sonar/web/api/energy.py`, `src/sonar/web/api/utilities.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/app.py`, `src/sonar/web/templates/**`, `src/sonar/web/static/sonar.css`, `src/sonar/cashflow/service.py`, `tests/energy/**`, `tests/utilities/**`, `tests/web/**`, `tests/cashflow/**`
+Write: `src/sonar/energy/**`, `src/sonar/utilities/**`, `src/sonar/web/pages/energy.py`, `src/sonar/web/pages/utilities.py`, `src/sonar/web/api/energy.py`, `src/sonar/web/api/utilities.py`, `src/sonar/web/api/__init__.py`, `src/sonar/web/app.py`, `src/sonar/web/forms.py`, `src/sonar/web/templates/**`, `src/sonar/web/static/sonar.css`, `src/sonar/cashflow/service.py`, `tests/energy/**`, `tests/utilities/**`, `tests/web/**`, `tests/cashflow/**`
 Test first: GET /energy → 301 Location /utilities; GET /energy/meters/7 → 301 /utilities/meters/7; GET
   /api/energy → 404 and /api/utilities lists meters; /api/dashboard has `utilities` and no `energy`; the nav
-  item "Utilities" is current on /utilities; a period item has `expected_usage`.
+  item "Utilities" is current on /utilities; a period item has `expected_usage`; a period form with a negative
+  expected usage shows "Expected usage must not be negative.".
 Done when:
 - C1 [cmd] `test ! -e src/sonar/energy && ! grep -rnE "sonar\.energy|load_energy|EnergyNotFound|energy_chart|data-energy|energy-chart" src tests`
 - C2 [review] the only `/energy` routes left are the two GET redirects in `web/pages/utilities.py`, answering
   301; every other page route is under `/utilities` and every API route under `/api/utilities`
 - C3 [review] labels and hooks follow D1: nav "Utilities", page heading "Utilities", card "Utilities" with ids
   `utilities-card` and `utilities`, `utility_chart` with `data-utility-chart` and key prefix `utility-chart:`,
-  404 text "No such utility record", form label "Expected usage per year"
+  404 text "No such utility record", form label "Expected usage per year", and the `web/forms.py`
+  hint keyed on `expected_usage must not be negative`
 - C4 [review] behavior unchanged: the test diff renames paths, names, hooks and the `expected_usage` and
   `utilities` keys only; no asserted figure changes
 - C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n03.css" --minify && cmp "$TMPDIR/n03.css" src/sonar/web/static/sonar.css`
@@ -305,3 +308,21 @@ Done when:
 
 ### N01 try 1 · 2026-10-16
 check: PASS 5/5
+
+### N03 try 1 · 2026-10-16
+exec: BLOCKED · rename done, pytest 1797 passed, ruff clean, C1 and C5 pass; forms.py hint needs one line outside Write
+- src/sonar/web/forms.py:60 maps the needle 'expected_kwh must not be negative', but the model now says 'expected_usage must not be negative', so that form error shows raw text; rename the needle to expected_usage (forms.py is not in Write)
+
+### N02 try 1 · 2026-10-16
+exec: DONE · 1797 passed, ruff clean
+- Appended one SPEC §13 Utilities bullet after the Energy billing cycle bullet stating R1-R10; no other line changed
+- Tree was changed concurrently by other nodes during verify; transient failures there were not from SPEC.md
+
+### N03 replan 1 · 2026-10-16
+plan: REPLANNED
+- cause: forms.py:60 DOMAIN_ERROR_HINTS needle expected_kwh was outside Write
+- brief adds src/sonar/web/forms.py to Write, the needle rename to Do, a negative expected usage form test to Test first, and the hint to C3
+
+### N02 try 1 · 2026-10-16
+check: PASS 1/1
+verify: PASS

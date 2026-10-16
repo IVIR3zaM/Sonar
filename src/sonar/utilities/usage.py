@@ -1,4 +1,4 @@
-"""Usage from meter readings (SPEC §13 Energy): the continuous series and daily usage."""
+"""Usage from meter readings (SPEC §13 Utilities): the continuous series and daily usage."""
 
 from __future__ import annotations
 

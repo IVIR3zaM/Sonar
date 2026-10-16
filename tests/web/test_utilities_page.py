@@ -1,4 +1,4 @@
-"""Tests for the Energy page (SPEC §13 Energy): meters, readings, exchanges, periods."""
+"""Tests for the Utilities page (SPEC §13 Utilities): meters, readings, exchanges, periods."""
 
 from __future__ import annotations
 
@@ -183,7 +183,7 @@ def test_no_meters_shows_the_add_meter_card_only(client):
     assert page.select_one("#add-meter") is not None
 
 
-def test_energy_is_a_nav_item_after_payoff(client):
+def test_utilities_is_a_nav_item_after_payoff(client):
     links = [a["href"] for a in _page(client).select("nav a[href]")]
 
     assert links[links.index("/payoff") + 1] == "/utilities"

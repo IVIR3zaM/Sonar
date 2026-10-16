@@ -1,4 +1,4 @@
-"""Energy cost and settlement math (SPEC §13 Energy).
+"""Utility cost and settlement math (SPEC §13 Utilities).
 
 Pure functions over daily usage in meter units. Everything runs in exact fractions;
 each figure that is shown is rounded half up once, at the end.

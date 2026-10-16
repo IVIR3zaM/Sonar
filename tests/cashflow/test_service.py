@@ -17,10 +17,10 @@ from sonar.cashflow.store import save_settings, set_manual_balance
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import add_debt
-from sonar.energy.model import BillingPeriod, Meter, Reading
-from sonar.energy.store import add_meter, add_period, add_reading
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.recurring.store import add_manual
+from sonar.utilities.model import BillingPeriod, Meter, Reading
+from sonar.utilities.store import add_meter, add_period, add_reading
 
 TODAY = date(2026, 9, 10)
 PAYDAY = date(2026, 9, 25)
@@ -839,7 +839,7 @@ def test_without_income_credits_there_is_no_expected_income(conn: sqlite3.Connec
     assert len(board.fixed_costs.cycles) == 13
 
 
-def _energy_meter(
+def _utility_meter(
     conn: sqlite3.Connection,
     settlement_date: date,
     *,
@@ -863,7 +863,7 @@ def _energy_meter(
             state_factor_e4=None,
             calorific_value_e4=None,
             advance_cents=0,
-            expected_kwh=kwh_per_day * 365,
+            expected_usage=kwh_per_day * 365,
             category=category,
         ),
     )
@@ -871,9 +871,9 @@ def _energy_meter(
     add_reading(conn, meter_id, Reading(date(2026, 9, 11), kwh_per_day * 10 * 1000))
 
 
-def test_energy_back_payment_in_the_window_is_a_due_item(conn: sqlite3.Connection) -> None:
+def test_utilities_back_payment_in_the_window_is_a_due_item(conn: sqlite3.Connection) -> None:
     _configured(conn, 100_000)
-    _energy_meter(conn, date(2026, 9, 20))
+    _utility_meter(conn, date(2026, 9, 20))
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
@@ -882,10 +882,10 @@ def test_energy_back_payment_in_the_window_is_a_due_item(conn: sqlite3.Connectio
     assert board.expected_cents == 88_000
 
 
-def test_energy_refund_in_the_window_is_an_inflow(conn: sqlite3.Connection) -> None:
+def test_utilities_refund_in_the_window_is_an_inflow(conn: sqlite3.Connection) -> None:
     _configured(conn, 100_000)
     conn.execute("INSERT INTO categories (name, type) VALUES ('Rent', 'fixed')")
-    _energy_meter(conn, date(2026, 9, 20), category="Rent")
+    _utility_meter(conn, date(2026, 9, 20), category="Rent")
     _insert_tx(conn, "2026-09-02", -20_000, category="Rent")
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
@@ -896,31 +896,31 @@ def test_energy_refund_in_the_window_is_an_inflow(conn: sqlite3.Connection) -> N
     assert board.expected_cents == 108_000
 
 
-def test_energy_settlement_outside_the_window_changes_nothing(conn: sqlite3.Connection) -> None:
+def test_utilities_settlement_outside_the_window_changes_nothing(conn: sqlite3.Connection) -> None:
     _configured(conn, 100_000)
-    _energy_meter(conn, PAYDAY)  # payday itself is after the window
+    _utility_meter(conn, PAYDAY)  # payday itself is after the window
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
     assert (board.due, board.inflows, board.expected_cents) == ([], [], 100_000)
-    assert [e.meter_name for e in board.energy] == ["Gas"]
+    assert [e.meter_name for e in board.utilities] == ["Gas"]
 
 
-def test_energy_settlement_of_zero_changes_nothing(conn: sqlite3.Connection) -> None:
+def test_utilities_settlement_of_zero_changes_nothing(conn: sqlite3.Connection) -> None:
     _configured(conn, 100_000)
-    _energy_meter(conn, date(2026, 9, 20), kwh_per_day=0)
+    _utility_meter(conn, date(2026, 9, 20), kwh_per_day=0)
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
     assert (board.due, board.inflows, board.expected_cents) == ([], [], 100_000)
 
 
-def test_energy_is_summarized_as_of_the_balance_date(conn: sqlite3.Connection) -> None:
+def test_utilities_is_summarized_as_of_the_balance_date(conn: sqlite3.Connection) -> None:
     # Today (09-10) is past this period; the balance's date (09-05) is inside it.
     _configured(conn, 100_000, as_of=date(2026, 9, 5))
-    _energy_meter(conn, date(2026, 9, 7))
+    _utility_meter(conn, date(2026, 9, 7))
 
-    [summary] = load_dashboard(conn, CATEGORY_TYPES, TODAY).energy
+    [summary] = load_dashboard(conn, CATEGORY_TYPES, TODAY).utilities
 
     assert (summary.meter_name, summary.settlement_date) == ("Gas", date(2026, 9, 7))
     assert summary.settlement_cents == -4_200

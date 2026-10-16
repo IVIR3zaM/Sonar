@@ -16,7 +16,7 @@ GAS = BillingPeriod(
     expected_usage=12_000,
     category=None,
 )
-ELECTRICITY = replace(GAS, state_factor_e4=None, calorific_value_e4=None, category="Energy")
+ELECTRICITY = replace(GAS, state_factor_e4=None, calorific_value_e4=None, category="Utilities")
 
 
 def field_of(period: BillingPeriod, kind: str) -> str:

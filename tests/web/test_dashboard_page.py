@@ -16,8 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
-from sonar.energy.model import BillingPeriod, Meter, Reading
-from sonar.energy.store import add_meter, add_period, add_reading
+from sonar.utilities.model import BillingPeriod, Meter, Reading
+from sonar.utilities.store import add_meter, add_period, add_reading
 from sonar.web.app import create_app
 from tests.html import cents, fields, records, soup, text
 from tests.seed import seed
@@ -739,7 +739,7 @@ def test_income_legend_splits_salary_and_recurring_income(tmp_path):
     assert "recurring" in text(legend)
 
 
-def _add_energy_meter(db_path: Path, name: str, *, category: str | None = None) -> None:
+def _add_utility_meter(db_path: Path, name: str, *, category: str | None = None) -> None:
     """A meter at 0.10 EUR/kWh reading 60 kWh a day since 2026-09-01, billed to year end."""
     conn = connect(db_path)
     try:
@@ -755,7 +755,7 @@ def _add_energy_meter(db_path: Path, name: str, *, category: str | None = None) 
                 state_factor_e4=None,
                 calorific_value_e4=None,
                 advance_cents=0,
-                expected_kwh=21_900,  # 60 kWh a day
+                expected_usage=21_900,  # 60 kWh a day
                 category=category,
             ),
         )
@@ -765,15 +765,15 @@ def _add_energy_meter(db_path: Path, name: str, *, category: str | None = None) 
         conn.close()
 
 
-def test_energy_card_lists_the_projected_settlement_per_meter(tmp_path):
+def test_utilities_card_lists_the_projected_settlement_per_meter(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path)
-    _add_energy_meter(db_path, "Power")
+    _add_utility_meter(db_path, "Power")
 
     with TestClient(create_app(db_path, today=_today)) as client:
         page = soup(client.get("/"))
 
-    [row] = page.select("#energy-card [data-meter]")
+    [row] = page.select("#utilities-card [data-meter]")
     assert row["data-meter"] == "Power"
     # 122 days at 60 kWh and 0.10 EUR/kWh, nothing paid: a back-payment of 732.00.
     assert cents(row.select_one('[data-field="settlement"]')) == 73_200
@@ -785,23 +785,23 @@ def test_energy_card_lists_the_projected_settlement_per_meter(tmp_path):
     assert cents(row.select_one('[data-field="suggested-advance"]')) > 0
 
 
-def test_energy_card_stacks_each_meter_instead_of_a_table(tmp_path):
+def test_utilities_card_stacks_each_meter_instead_of_a_table(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path)
-    _add_energy_meter(db_path, "Power")
+    _add_utility_meter(db_path, "Power")
 
     with TestClient(create_app(db_path, today=_today)) as client:
         page = soup(client.get("/"))
 
-    assert page.select_one("#energy-card table") is None
-    [row] = page.select("#energy-card [data-meter]")
+    assert page.select_one("#utilities-card table") is None
+    [row] = page.select("#utilities-card [data-meter]")
     assert set(fields(row)) == {"name", "date", "settlement", "worst-case", "suggested-advance"}
 
 
-def test_energy_card_words_a_positive_settlement_as_a_refund(tmp_path):
+def test_utilities_card_words_a_positive_settlement_as_a_refund(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path, UTILITIES_TOML)
-    _add_energy_meter(db_path, "Power", category="Utilities")
+    _add_utility_meter(db_path, "Power", category="Utilities")
     _insert_debit(
         db_path,
         fingerprint="advance",
@@ -813,17 +813,17 @@ def test_energy_card_words_a_positive_settlement_as_a_refund(tmp_path):
     with TestClient(create_app(db_path, today=_today)) as client:
         page = soup(client.get("/"))
 
-    [row] = page.select("#energy-card [data-meter]")
+    [row] = page.select("#utilities-card [data-meter]")
     assert text(row.select_one('[data-field="settlement"]')).startswith("Refund")
     assert cents(row.select_one('[data-field="settlement"]')) == 26_800
     assert row.select_one('[data-field="settlement"] [data-kind="refund"]') is not None
 
 
-def test_no_energy_card_without_a_current_period(tmp_path):
+def test_no_utilities_card_without_a_current_period(tmp_path):
     db_path = tmp_path / "t.db"
     seed(db_path)
 
     with TestClient(create_app(db_path, today=_today)) as client:
         page = soup(client.get("/"))
 
-    assert page.select_one("#energy-card") is None
+    assert page.select_one("#utilities-card") is None

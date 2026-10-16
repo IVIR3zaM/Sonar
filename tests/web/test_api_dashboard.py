@@ -11,8 +11,8 @@ from sonar.categorization.store import load_stored_taxonomy
 from sonar.db import connect
 from sonar.debts.model import Loan, MatchRule
 from sonar.debts.store import add_debt
-from sonar.energy.model import BillingPeriod, Meter, Reading
-from sonar.energy.store import add_meter, add_period, add_reading
+from sonar.utilities.model import BillingPeriod, Meter, Reading
+from sonar.utilities.store import add_meter, add_period, add_reading
 from sonar.web.app import create_app
 from tests.seed import seed
 
@@ -163,7 +163,7 @@ def test_without_a_salary_day_expected_income_is_null_and_cycles_are_empty(tmp_p
     assert "months" not in body["fixed_costs"]
 
 
-def test_energy_lists_the_projected_settlement_per_meter(tmp_path):
+def test_utilities_lists_the_projected_settlement_per_meter(tmp_path):
     with _client(tmp_path) as client:
         conn = connect(client.db_path)
         try:
@@ -179,7 +179,7 @@ def test_energy_lists_the_projected_settlement_per_meter(tmp_path):
                     state_factor_e4=None,
                     calorific_value_e4=None,
                     advance_cents=0,
-                    expected_kwh=21_900,  # 60 kWh a day
+                    expected_usage=21_900,  # 60 kWh a day
                     category=None,
                 ),
             )
@@ -190,8 +190,8 @@ def test_energy_lists_the_projected_settlement_per_meter(tmp_path):
         body = client.get("/api/dashboard").json()
         board = _expected_board(client.db_path)
 
-    [expected] = board.energy
-    assert body["energy"] == [
+    [expected] = board.utilities
+    assert body["utilities"] == [
         {
             "meter_name": "Power",
             "settlement_date": "2026-12-31",
@@ -202,8 +202,8 @@ def test_energy_lists_the_projected_settlement_per_meter(tmp_path):
     ]
 
 
-def test_energy_is_empty_without_a_current_period(tmp_path):
+def test_utilities_is_empty_without_a_current_period(tmp_path):
     with _client(tmp_path) as client:
         body = client.get("/api/dashboard").json()
 
-    assert body["energy"] == []
+    assert body["utilities"] == []

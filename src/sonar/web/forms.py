@@ -57,7 +57,7 @@ DOMAIN_ERROR_HINTS = {
     "unit price must be positive": "Unit price must be positive.",
     "base_fee_cents must not be negative": "Base fee must not be negative.",
     "advance_cents must not be negative": "Advance must not be negative.",
-    "expected_kwh must not be negative": "Expected usage must not be negative.",
+    "expected_usage must not be negative": "Expected usage must not be negative.",
     "state_factor_e4 is required": "State factor is required for gas and must be positive.",
     "calorific_value_e4 is required": "Calorific value is required for gas and must be positive.",
     "settlement date must not be before": "Settlement date must not be before the start date.",

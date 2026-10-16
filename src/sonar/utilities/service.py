@@ -1,4 +1,4 @@
-"""Energy service (SPEC §13 Energy): coordinates the energy store, the transactions and the math."""
+"""Utilities service (SPEC §13 Utilities): coordinates the store, the transactions and the math."""
 
 from __future__ import annotations
 

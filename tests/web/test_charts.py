@@ -632,10 +632,10 @@ def chart_month(i: int, cycle: str = "current", projected: bool = False) -> Simp
     )
 
 
-def test_energy_chart_macro_draws_the_last_24_months_with_axis_labels(render):
+def test_utility_chart_macro_draws_the_last_24_months_with_axis_labels(render):
     figures = [chart_month(i) for i in range(30)]
 
-    soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
+    soup = render("utility_chart", 'utility_chart("c", figures)', figures=figures)
     full = soup.select_one("[data-view=all]")
 
     assert len(full.select('[data-series="usage"] rect')) == 24
@@ -644,19 +644,19 @@ def test_energy_chart_macro_draws_the_last_24_months_with_axis_labels(render):
     )
 
 
-def test_energy_chart_trend_runs_over_the_actual_months_only(render):
+def test_utility_chart_trend_runs_over_the_actual_months_only(render):
     figures = [chart_month(0), chart_month(1), chart_month(2, projected=True)]
 
-    soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
+    soup = render("utility_chart", 'utility_chart("c", figures)', figures=figures)
     usage_trend = soup.select_one("[data-view=all] [data-trend=usage]")
 
     assert (usage_trend["x1"], usage_trend["x2"]) == ("14", "42")
 
 
-def test_energy_chart_without_two_current_months_has_no_current_only_view(render):
+def test_utility_chart_without_two_current_months_has_no_current_only_view(render):
     figures = [chart_month(0, "previous"), chart_month(1, "previous"), chart_month(2)]
 
-    soup = render("energy_chart", 'energy_chart("c", figures)', figures=figures)
+    soup = render("utility_chart", 'utility_chart("c", figures)', figures=figures)
 
     assert soup.select_one("[data-view=current]") is None
     assert len(soup.select("[data-view=all] rect")) == 3

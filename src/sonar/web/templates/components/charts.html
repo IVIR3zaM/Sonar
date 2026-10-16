@@ -180,23 +180,23 @@
     until the checkboxes beside the chart are checked, which the group-has
     variants read without any script. Small screens see the current cycle only
     when it has at least two months to draw. #}
-{% macro energy_chart(id, months) %}
+{% macro utility_chart(id, months) %}
 {%- set months = months[-24:] -%}
 {%- if months|length < 2 %}
-<p id="{{ id }}-empty" data-energy-chart-empty class="text-sm text-ink-muted">Not enough full months yet for a chart. It needs readings that cover at least two whole calendar months.</p>
+<p id="{{ id }}-empty" data-utility-chart-empty class="text-sm text-ink-muted">Not enough full months yet for a chart. It needs readings that cover at least two whole calendar months.</p>
 {%- else %}
 {%- set current = months|selectattr("cycle", "equalto", "current")|list -%}
 {%- set narrow = current|length >= 2 -%}
 {%- set has_previous = months|selectattr("cycle", "equalto", "previous")|list|length > 0 -%}
 {%- set has_projected = months|selectattr("projected")|list|length > 0 -%}
-<div id="{{ id }}" data-energy-chart class="group/energy">
+<div id="{{ id }}" data-utility-chart class="group/utility">
   <div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
     <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="values" class="accent-accent">Show values</label>
     <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="trend" class="accent-accent">Show trend</label>
   </div>
-  <div data-view="all" class="{{ 'hidden sm:block' if narrow }}">{{ _energy_svg(months) }}</div>
+  <div data-view="all" class="{{ 'hidden sm:block' if narrow }}">{{ _utility_svg(months) }}</div>
   {%- if narrow %}
-  <div data-view="current" class="sm:hidden">{{ _energy_svg(current) }}</div>
+  <div data-view="current" class="sm:hidden">{{ _utility_svg(current) }}</div>
   {%- endif %}
   <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
     {%- if has_previous %}
@@ -215,9 +215,9 @@
 {%- endif %}
 {%- endmacro %}
 
-{#- One view of energy_chart: columns per month, the cost line solid over the
+{#- One view of utility_chart: columns per month, the cost line solid over the
     measured months and dashed over the projected ones. #}
-{% macro _energy_svg(months) %}
+{% macro _utility_svg(months) %}
 {%- set slot = 28 -%}
 {%- set height = 100 -%}
 {%- set top = 14 -%}
@@ -230,8 +230,8 @@
 {%- set cost_points = charts.own_scale_points(costs, slot, height) -%}
 {%- set summary = "Monthly usage in kWh and cost in euro, " ~ charts.month_label(months[0].month) ~ " to " ~ charts.month_label(months[-1].month) -%}
 {%- if measured < months|length %}{% set summary = summary ~ ", projected from " ~ charts.month_label(months[measured].month) %}{% endif -%}
-{%- set show_values = "invisible group-has-[[data-toggle=values]:checked]/energy:visible" -%}
-{%- set show_trend = "invisible group-has-[[data-toggle=trend]:checked]/energy:visible" -%}
+{%- set show_values = "invisible group-has-[[data-toggle=values]:checked]/utility:visible" -%}
+{%- set show_trend = "invisible group-has-[[data-toggle=trend]:checked]/utility:visible" -%}
 <div class="overflow-x-auto">
   <svg role="img" aria-label="{{ summary }}" viewBox="0 {{ -top }} {{ width }} {{ top + height + below }}"
        width="{{ width * 5 // 4 }}" class="block max-w-none">

@@ -1,4 +1,4 @@
-"""DB shell for energy meters (SPEC §13 Energy): storage only.
+"""DB shell for utility meters (SPEC §13 Utilities): storage only.
 
 `model.py` and `usage.py` hold the pure rules. Every write here is applied inside
 a transaction, then the meter's resulting rows are re-checked with them; a
@@ -23,7 +23,7 @@ from sonar.utilities.usage import check_series
 
 _PERIOD_SELECT = """
     SELECT p.id, p.start_date, p.settlement_date, p.base_fee_cents, p.unit_price_micro,
-           p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_usage, c.name,
+           p.state_factor_e4, p.calorific_value_e4, p.advance_cents, p.expected_kwh, c.name,
            p.settled_cents
     FROM energy_periods p LEFT JOIN categories c ON c.id = p.category_id
 """
@@ -189,7 +189,7 @@ def add_period(conn: sqlite3.Connection, meter_id: int, period: BillingPeriod) -
             """
             INSERT INTO energy_periods (
                 meter_id, start_date, settlement_date, base_fee_cents, unit_price_micro,
-                state_factor_e4, calorific_value_e4, advance_cents, expected_usage, category_id,
+                state_factor_e4, calorific_value_e4, advance_cents, expected_kwh, category_id,
                 settled_cents
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -217,7 +217,7 @@ def update_period(conn: sqlite3.Connection, period_id: int, period: BillingPerio
             UPDATE energy_periods SET
                 start_date = ?, settlement_date = ?, base_fee_cents = ?, unit_price_micro = ?,
                 state_factor_e4 = ?, calorific_value_e4 = ?, advance_cents = ?,
-                expected_usage = ?, category_id = ?, settled_cents = ?
+                expected_kwh = ?, category_id = ?, settled_cents = ?
             WHERE id = ?
             """,
             (*_period_values(period), category_id, period.settled_cents, period_id),

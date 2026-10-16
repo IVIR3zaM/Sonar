@@ -1,4 +1,4 @@
-"""Tests for the decimal helpers the energy forms share (SPEC §13 Energy)."""
+"""Tests for the decimal helpers the utility forms share (SPEC §13 Utilities)."""
 
 import pytest
 

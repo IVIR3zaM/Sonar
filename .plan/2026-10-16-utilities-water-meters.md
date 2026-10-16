@@ -42,7 +42,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | SPEC Utilities bullet | exec | N01 | sonnet/sonnet | 1 | 0 | DONE | |
-| N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 1 | 1 | RUNNING | |
+| N03 | rename Energy to Utilities | exec | N01 | sonnet/sonnet | 2 | 1 | DONE | |
 | N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 0 | 0 | TODO | |
 | N05 | water cost and advance modes | exec | N04 | opus/sonnet | 0 | 0 | TODO | |
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -325,4 +325,18 @@ plan: REPLANNED
 
 ### N02 try 1 · 2026-10-16
 check: PASS 1/1
+verify: PASS
+
+### N03 try 1 · 2026-10-16
+exec: DONE · 1798 passed
+- Energy renamed to Utilities (package, pages, API, templates, tests); 301 redirects from /energy; css rebuilt and matches
+- Fixed forms.py hint needle to expected_usage and added a friendly-error page test
+check: FAIL C1
+- C1 exit 1: Binary file src/sonar/utilities/__pycache__/store.cpython-312.pyc matches
+
+### N03 try 2 · 2026-10-16
+exec: DONE · 1798 passed, ruff clean
+- try 2: removed stale __pycache__ bytecode of old energy modules that tripped C1; no source change
+- C1, C5 (css cmp) and pytest/ruff verified
+check: PASS 3/3
 verify: PASS

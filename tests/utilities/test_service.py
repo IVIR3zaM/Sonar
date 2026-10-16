@@ -1,4 +1,4 @@
-"""Tests for the energy service (SPEC §13 Energy): the meter views the API and pages show."""
+"""Tests for the utilities service (SPEC §13 Utilities): the meter views the API and pages show."""
 
 import sqlite3
 from dataclasses import replace

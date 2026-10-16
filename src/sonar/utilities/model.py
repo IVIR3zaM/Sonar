@@ -1,4 +1,4 @@
-"""Energy model: meters, readings, exchanges and billing periods (SPEC §13 Energy).
+"""Utilities model: meters, readings, exchanges and billing periods (SPEC §13 Utilities).
 
 Pure dataclasses and validation. Readings are integer thousandths of the meter
 unit, prices and factors are scaled integers, money is integer cents.

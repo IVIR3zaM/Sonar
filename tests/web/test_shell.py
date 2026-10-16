@@ -22,7 +22,7 @@ NAV = [
     ("/recurring", "Fixed payments"),
     ("/debts", "Installments and loans"),
     ("/payoff", "Payoff"),
-    ("/energy", "Energy"),
+    ("/utilities", "Utilities"),
     ("/settings", "Settings"),
 ]
 

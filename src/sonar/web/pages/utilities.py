@@ -1,4 +1,4 @@
-"""The energy pages (SPEC §13 Energy): the meters overview and one meter's history."""
+"""The utilities pages (SPEC §13 Utilities): the meters overview and one meter's history."""
 
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ from fastapi.templating import Jinja2Templates
 
 from sonar.categorization.store import list_categories
 from sonar.db import connect
+from sonar.money import parse_signed_cents
 from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.utilities.service import MeterView, load_utilities
 from sonar.utilities.settlement import current_period, daily_kwh, round_half_up
 from sonar.utilities.store import (
-    UtilityNotFound,
     MeterNotEmpty,
     Stored,
+    UtilityNotFound,
     add_exchange,
     add_meter,
     add_period,
@@ -37,7 +38,6 @@ from sonar.utilities.store import (
     update_reading,
 )
 from sonar.utilities.usage import continuous_series, daily_usage
-from sonar.money import parse_signed_cents
 from sonar.web import forms
 
 METER_FIELDS = ("name", "kind")
@@ -122,7 +122,7 @@ def _period_from(values: dict[str, str]) -> BillingPeriod:
             "Calorific value", values["calorific_value"], "decimal4", _scaled(4)
         ),
         advance_cents=forms.field("Advance", values["advance"], "amount", parse_signed_cents),
-        expected_usage=forms.field("Expected kWh", values["expected_usage"], "int", int),
+        expected_usage=forms.field("Expected usage", values["expected_usage"], "int", int),
         category=values["category"].strip() or None,
         settled_cents=_optional("Settled amount", values["settled"], "amount", parse_signed_cents),
     )
@@ -249,7 +249,7 @@ def _card(view: MeterView, today: date) -> MeterCard:
 def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Templates) -> APIRouter:
     router = APIRouter()
 
-    def _render_energy_page(
+    def _render_utilities_page(
         request: Request, status_code: int = 200, error: dict | None = None
     ) -> HTMLResponse:
         # Shared by the GET route and every POST error path, so a 400 re-render
@@ -297,7 +297,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
 
     def _not_found(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(
-            request, "error.html", {"message": "No such energy record"}, status_code=404
+            request, "error.html", {"message": "No such utility record"}, status_code=404
         )
 
     def _run[T](action: Callable[[sqlite3.Connection], T]) -> T:
@@ -312,7 +312,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
 
     def _render_back(request: Request, meter_id: int | None, error: dict) -> HTMLResponse:
         if meter_id is None:
-            return _render_energy_page(request, status_code=400, error=error)
+            return _render_utilities_page(request, status_code=400, error=error)
         return _render_meter_page(request, meter_id, status_code=400, error=error)
 
     async def _submit(
@@ -353,7 +353,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             return _not_found(request)
         except MeterNotEmpty:
             message = "Delete the meter's readings, exchanges and periods first."
-            return _render_energy_page(
+            return _render_utilities_page(
                 request, status_code=400, error={"form": "page", "message": message, "fields": {}}
             )
         except ValueError as error:  # the store rejected a delete that breaks the series
@@ -361,9 +361,18 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             return _render_back(request, meter_id, failure)
         return RedirectResponse(_back_to(meter_id), status_code=303)
 
+    # The pages used to live under /energy; bookmarks keep working.
+    @router.get("/energy")
+    async def energy_redirect() -> RedirectResponse:
+        return RedirectResponse("/utilities", status_code=301)
+
+    @router.get("/energy/meters/{id}")
+    async def energy_meter_redirect(id: int) -> RedirectResponse:
+        return RedirectResponse(f"/utilities/meters/{id}", status_code=301)
+
     @router.get("/utilities", response_class=HTMLResponse)
-    async def energy_page(request: Request) -> HTMLResponse:
-        return _render_energy_page(request)
+    async def utilities_page(request: Request) -> HTMLResponse:
+        return _render_utilities_page(request)
 
     @router.get("/utilities/meters/{id}", response_class=HTMLResponse)
     async def meter_page(request: Request, id: int) -> HTMLResponse:

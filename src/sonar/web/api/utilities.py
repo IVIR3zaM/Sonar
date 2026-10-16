@@ -1,4 +1,4 @@
-"""Energy endpoints (SPEC §13 Energy): meters, readings, exchanges and billing periods."""
+"""Utilities endpoints (SPEC §13 Utilities): meters, readings, exchanges and billing periods."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from sonar.db import connect
 from sonar.utilities.model import BillingPeriod, Exchange, FieldError, Meter, Reading
 from sonar.utilities.service import MeterView, load_utilities
 from sonar.utilities.store import (
-    UtilityNotFound,
     MeterNotEmpty,
     Stored,
+    UtilityNotFound,
     add_exchange,
     add_meter,
     add_period,
@@ -158,7 +158,7 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
             except FieldError as error:
                 return JSONResponse({"error": str(error), "field": error.field}, status_code=400)
             except UtilityNotFound:
-                return JSONResponse({"error": "No such energy record"}, status_code=404)
+                return JSONResponse({"error": "No such utility record"}, status_code=404)
             except MeterNotEmpty:
                 return JSONResponse(
                     {"error": "Delete the meter's readings, exchanges and periods first"},
@@ -175,7 +175,7 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         raise UtilityNotFound(meter_id)
 
     @router.get("/utilities")
-    async def get_energy() -> JSONResponse:
+    async def get_utilities() -> JSONResponse:
         return respond(
             lambda conn: {"meters": [_meter_item(v) for v in load_utilities(conn, today())]}
         )

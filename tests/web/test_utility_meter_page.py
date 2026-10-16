@@ -1,4 +1,4 @@
-"""Tests for the meter page (SPEC §13 Energy): readings, exchanges and billing periods."""
+"""Tests for the meter page (SPEC §13 Utilities): readings, exchanges and billing periods."""
 
 from __future__ import annotations
 
@@ -345,7 +345,9 @@ def test_add_edit_and_delete_a_period(client, db_path):
 def test_settled_amount_is_stored_signed_on_create_and_edit(client, db_path, typed, stored):
     meter = _electricity_meter(db_path)
 
-    created = client.post(f"/utilities/meters/{meter}/periods", data={**NEW_PERIOD, "settled": typed})
+    created = client.post(
+        f"/utilities/meters/{meter}/periods", data={**NEW_PERIOD, "settled": typed}
+    )
 
     assert created.status_code == 303
     period = _store(db_path, lambda conn: list_periods(conn, meter))[0]
@@ -356,7 +358,9 @@ def test_settled_amount_is_stored_signed_on_create_and_edit(client, db_path, typ
     assert edited.status_code == 303
     after = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
     assert after.settled_cents == -500
-    cleared = client.post(f"/utilities/periods/{period.id}/edit", data={**NEW_PERIOD, "settled": ""})
+    cleared = client.post(
+        f"/utilities/periods/{period.id}/edit", data={**NEW_PERIOD, "settled": ""}
+    )
     assert cleared.status_code == 303
     assert _store(db_path, lambda conn: list_periods(conn, meter))[0].item.settled_cents is None
 
@@ -364,7 +368,9 @@ def test_settled_amount_is_stored_signed_on_create_and_edit(client, db_path, typ
 def test_an_invalid_settled_amount_is_a_400_that_keeps_the_value(client, db_path):
     meter = _electricity_meter(db_path)
 
-    response = client.post(f"/utilities/meters/{meter}/periods", data={**NEW_PERIOD, "settled": "abc"})
+    response = client.post(
+        f"/utilities/meters/{meter}/periods", data={**NEW_PERIOD, "settled": "abc"}
+    )
 
     assert "Settled amount" in _error(response)
     form = soup(response).select_one(f"#meter-{meter}-new-period")
@@ -434,6 +440,16 @@ def test_a_bad_price_is_a_400_that_keeps_every_entry(client, db_path):
     assert form.select_one("input[name=unit_price]")["value"] == "12.34567"
     assert form.select_one("input[name=advance]")["value"] == "60"
     assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
+
+
+def test_a_negative_expected_usage_shows_a_friendly_error(client, db_path):
+    meter = _electricity_meter(db_path)
+
+    response = client.post(
+        f"/utilities/meters/{meter}/periods", data={**NEW_PERIOD, "expected_usage": "-1"}
+    )
+
+    assert _error(response) == "Expected usage must not be negative."
 
 
 def test_a_gas_period_without_a_state_factor_is_a_400(client, db_path):
@@ -511,14 +527,14 @@ def test_an_unknown_meter_is_a_404(client):
     assert soup(response).select_one("#error-page") is not None
 
 
-def test_the_meter_page_keeps_energy_current_in_the_nav_and_links_back(client, db_path):
+def test_the_meter_page_keeps_utilities_current_in_the_nav_and_links_back(client, db_path):
     meter = _gas_meter(db_path)
 
     page = _page(client, meter)
 
     current = [a["href"] for a in page.select('nav a[aria-current="page"]')]
     assert current == ["/utilities"]
-    assert page.select_one("#back-to-energy")["href"] == "/utilities"
+    assert page.select_one("#back-to-utilities")["href"] == "/utilities"
 
 
 def test_the_meter_page_has_the_exchange_and_period_lists_with_their_forms(client, db_path):
@@ -579,7 +595,7 @@ def test_an_invalid_reading_edit_re_renders_the_meter_page(client, db_path):
     assert "Reading" in _error(response)
     page = soup(response)
     assert page.select_one(f"#meter-{meter}-readings") is not None
-    assert page.select_one("#back-to-energy") is not None
+    assert page.select_one("#back-to-utilities") is not None
     assert _input(page, f"#reading-{reading.id}-edit input[name=value]") == "abc"
 
 
@@ -598,7 +614,7 @@ def test_an_invalid_exchange_edit_re_renders_the_meter_page(client, db_path):
 
     assert "Old meter final" in _error(response)
     page = soup(response)
-    assert page.select_one("#back-to-energy") is not None
+    assert page.select_one("#back-to-utilities") is not None
     assert _input(page, f"#exchange-{exchange.id}-edit input[name=old_final]") == "x"
 
 
@@ -612,7 +628,7 @@ def test_an_invalid_period_edit_re_renders_the_meter_page(client, db_path):
 
     assert "Unit price" in _error(response)
     page = soup(response)
-    assert page.select_one("#back-to-energy") is not None
+    assert page.select_one("#back-to-utilities") is not None
     assert _input(page, f"#period-{period.id}-edit input[name=unit_price]") == "12.34567"
 
 
@@ -623,7 +639,7 @@ def test_an_invalid_new_period_re_renders_the_meter_page(client, db_path):
         f"/utilities/meters/{meter}/periods", data={**NEW_PERIOD, "unit_price": "12.34567"}
     )
 
-    assert soup(response).select_one("#back-to-energy")["href"] == "/utilities"
+    assert soup(response).select_one("#back-to-utilities")["href"] == "/utilities"
 
 
 def test_a_missing_record_on_the_meter_page_routes_is_a_404(client):

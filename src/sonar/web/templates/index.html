@@ -288,14 +288,14 @@
     {% endif %}
   {% endcall %}
 
-  {% if dashboard.energy %}
+  {% if dashboard.utilities %}
   {#- A settlement is worded by its sign: a refund or a back-payment. -#}
   {% macro outcome(cents) -%}
   {{ "Refund" if cents >= 0 else "Back-payment" }} {{ amount(cents | abs, colored=false, attrs={"data-kind": "refund" if cents >= 0 else "back-payment"}) }}
   {%- endmacro %}
-  {% call card(title="Energy", subtitle="Projected settlement at the end of the billing period", id="energy-card") %}
-    <div id="energy" class="divide-y divide-line">
-    {% for item in dashboard.energy %}
+  {% call card(title="Utilities", subtitle="Projected settlement at the end of the billing period", id="utilities-card") %}
+    <div id="utilities" class="divide-y divide-line">
+    {% for item in dashboard.utilities %}
       <div data-row data-meter="{{ item.meter_name }}" class="py-3 first:pt-0 last:pb-0">
         <div class="flex items-baseline justify-between gap-3">
           <span class="min-w-0 break-words font-medium text-ink" data-field="name">{{ item.meter_name }}</span>

@@ -1,4 +1,4 @@
-"""Tests for the JSON API's energy endpoints (SPEC §13 Energy)."""
+"""Tests for the JSON API's utilities endpoints (SPEC §13 Utilities)."""
 
 from __future__ import annotations
 
@@ -88,7 +88,8 @@ def test_get_lists_a_meter_with_its_status_and_paid_advances(client, db_path):
     for day, value in (("2026-01-01", 1_000_000), ("2026-01-11", 1_100_000)):
         reading = {"date": day, "value_milli": value}
         assert (
-            client.post(f"/api/utilities/meters/{meter_id}/readings", json=reading).status_code == 201
+            client.post(f"/api/utilities/meters/{meter_id}/readings", json=reading).status_code
+            == 201
         )
     _debit(db_path, "2026-01-05", -10_000, "Utilities")
 
@@ -146,7 +147,8 @@ def test_reading_create_update_and_delete(client):
 def test_exchange_create_update_and_delete(client):
     meter_id = _gas(client)
     client.post(
-        f"/api/utilities/meters/{meter_id}/readings", json={"date": "2026-01-01", "value_milli": 100}
+        f"/api/utilities/meters/{meter_id}/readings",
+        json={"date": "2026-01-01", "value_milli": 100},
     )
     body = {"date": "2026-02-01", "old_final_milli": 200, "new_start_milli": 0}
 
@@ -184,11 +186,13 @@ def test_period_create_update_and_delete(client):
 def test_a_dropping_reading_is_a_400_naming_value(client):
     meter_id = _gas(client)
     client.post(
-        f"/api/utilities/meters/{meter_id}/readings", json={"date": "2026-01-01", "value_milli": 500}
+        f"/api/utilities/meters/{meter_id}/readings",
+        json={"date": "2026-01-01", "value_milli": 500},
     )
 
     response = client.post(
-        f"/api/utilities/meters/{meter_id}/readings", json={"date": "2026-01-02", "value_milli": 400}
+        f"/api/utilities/meters/{meter_id}/readings",
+        json={"date": "2026-01-02", "value_milli": 400},
     )
 
     assert response.status_code == 400
@@ -219,7 +223,9 @@ def test_settled_cents_round_trips_in_post_put_and_get(client):
     )
     period_id = created.json()["id"]
     listed = client.get("/api/utilities").json()["meters"][0]["periods"][0]
-    updated = client.put(f"/api/utilities/periods/{period_id}", json={**PERIOD, "settled_cents": -100})
+    updated = client.put(
+        f"/api/utilities/periods/{period_id}", json={**PERIOD, "settled_cents": -100}
+    )
     omitted = client.put(
         f"/api/utilities/periods/{period_id}",
         json={k: v for k, v in PERIOD.items() if k != "settled_cents"},
@@ -336,7 +342,9 @@ def test_deleting_a_meter_with_rows_is_a_409_and_keeps_it(client):
 
 
 def test_an_unknown_key_is_a_422(client):
-    response = client.post("/api/utilities/meters", json={"name": "Gas", "kind": "gas", "color": "x"})
+    response = client.post(
+        "/api/utilities/meters", json={"name": "Gas", "kind": "gas", "color": "x"}
+    )
 
     assert response.status_code == 422
 
@@ -345,7 +353,8 @@ def test_a_wrong_json_type_is_a_422(client):
     meter_id = _gas(client)
 
     response = client.post(
-        f"/api/utilities/meters/{meter_id}/readings", json={"date": "2026-01-01", "value_milli": "5"}
+        f"/api/utilities/meters/{meter_id}/readings",
+        json={"date": "2026-01-01", "value_milli": "5"},
     )
 
     assert response.status_code == 422

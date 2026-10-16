@@ -32,10 +32,10 @@ from sonar.debts import model
 from sonar.debts.model import Installment
 from sonar.debts.payoff import LadderDebt, PayoffStep, payoff_ladder
 from sonar.debts.store import DebtView, debt_overview, remaining_cents
-from sonar.energy.service import SettlementSummary, settlement_summaries
 from sonar.recurring.detect import Row, detect_income
 from sonar.recurring.store import list_payments
 from sonar.transactions import ParsedTransaction
+from sonar.utilities.service import SettlementSummary, settlement_summaries
 
 
 @dataclass(frozen=True)
@@ -69,9 +69,9 @@ class Dashboard:
     fixed_costs: FixedCosts
     debts: list[tuple[str, int]]
     debts_total_cents: int
-    # Projected energy settlements as of the estimate date; those inside the window
+    # Projected utility settlements as of the estimate date; those inside the window
     # are also in `due` or `inflows`.
-    energy: list[SettlementSummary]
+    utilities: list[SettlementSummary]
     uncategorized_count: int
 
 
@@ -134,7 +134,7 @@ def load_dashboard(
     views = debt_overview(conn, estimate_date)
     sources = _fixed_sources(conn, views, [tx for tx, _ in rows])
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
-    energy = settlement_summaries(conn, estimate_date)
+    utilities = settlement_summaries(conn, estimate_date)
     board = Dashboard(
         salary_day=settings.salary_day,
         payday=None,
@@ -158,7 +158,7 @@ def load_dashboard(
         fixed_costs=_fixed_costs(sources, rows, category_types, settings.salary_day, estimate_date),
         debts=remaining,
         debts_total_cents=sum(cents for _, cents in remaining),
-        energy=energy,
+        utilities=utilities,
         uncategorized_count=uncategorized_count(conn),
     )
     if settings.salary_day is None or balance is None:
@@ -173,7 +173,7 @@ def load_dashboard(
     start = estimate_date + timedelta(days=1)
     end = next_payday - timedelta(days=1)
     window_days = (end - start).days + 1
-    settlements = _settlements(energy, start, end)
+    settlements = _settlements(utilities, start, end)
     due = forecast.fixed_due(sources, start, end) + [
         replace(item, amount_cents=-item.amount_cents)
         for item in settlements

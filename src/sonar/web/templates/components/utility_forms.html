@@ -1,5 +1,5 @@
 {#-
-  Energy form macros shared by the energy page and the meter page. Each form
+  Utility form macros shared by the utilities page and the meter page. Each form
   `key` owns the error `err`, if any: it then shows what was typed instead of
   its defaults.
 -#}
@@ -48,7 +48,7 @@
   {{ field("calorific_value", "Calorific value (kWh/m³)", value=v.calorific_value, id=key ~ "-calorific-value", required=true, help="Brennwert, up to 4 decimals") }}
   {% endif %}
   {{ field("advance", "Advance per month (€)", value=v.advance, id=key ~ "-advance", required=true, help="Abschlag, e.g. 85.00") }}
-  {{ field("expected_usage", "Expected usage per year (kWh)", type="number", value=v.expected_usage, id=key ~ "-expected-kwh", required=true, attrs={"min": 0}) }}
+  {{ field("expected_usage", "Expected usage per year", type="number", value=v.expected_usage, id=key ~ "-expected-usage", required=true, attrs={"min": 0}) }}
   <div class="col-span-2">{{ field("settled", "Settled amount (€)", value=v.settled, id=key ~ "-settled", help="Optional, signed as on the bill: negative for a back-payment, e.g. -31.69") }}</div>
   <div class="col-span-2">{{ field("category", "Category of the advances", value=v.category, id=key ~ "-category", options=categories) }}</div>
   <div class="col-span-2">{{ button(submit, size="sm") }}</div>

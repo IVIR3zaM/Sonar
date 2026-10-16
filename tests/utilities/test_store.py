@@ -1,4 +1,4 @@
-"""Tests for the energy DB shell (SPEC §13 Energy): round trips, validation, deletes."""
+"""Tests for the utilities DB shell (SPEC §13 Utilities): round trips, validation, deletes."""
 
 import sqlite3
 from dataclasses import replace
@@ -9,8 +9,8 @@ import pytest
 from sonar.db import MIGRATIONS_DIR, apply_migrations
 from sonar.utilities.model import BillingPeriod, Exchange, FieldError, Meter, Reading
 from sonar.utilities.store import (
-    UtilityNotFound,
     MeterNotEmpty,
+    UtilityNotFound,
     add_exchange,
     add_meter,
     add_period,

@@ -33,7 +33,6 @@ from sonar.web.pages import (
     categories,
     dashboard,
     debts,
-    energy,
     import_,
     legal,
     lights_on,
@@ -42,6 +41,7 @@ from sonar.web.pages import (
     recurring,
     settings,
     uncategorized,
+    utilities,
 )
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -133,7 +133,7 @@ def create_app(
     app.include_router(recurring.build_router(db_path, today, templates))
     app.include_router(debts.build_router(db_path, today, templates))
     app.include_router(payoff.build_router(db_path, today, templates))
-    app.include_router(energy.build_router(db_path, today, templates))
+    app.include_router(utilities.build_router(db_path, today, templates))
     app.include_router(settings.build_router(db_path, today, templates))
     app.include_router(categories.build_router(db_path, today, templates))
     app.include_router(legal.build_router(templates))

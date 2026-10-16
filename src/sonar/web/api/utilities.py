@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import StrictInt, StrictStr
 
+from sonar.cashflow.service import AdvanceLink, advance_links
 from sonar.db import connect
 from sonar.utilities.model import BillingPeriod, Charge, Exchange, FieldError, Meter, Reading
 from sonar.utilities.service import ConflictCase, MeterView, load_utilities
@@ -172,14 +173,20 @@ def _conflict_item(case: ConflictCase) -> dict:
     }
 
 
-def _meter_item(view: MeterView) -> dict:
+def _meter_item(view: MeterView, links: dict[int, AdvanceLink]) -> dict:
+    status = _jsonable(view.status)
+    if status is not None:
+        # The payment that pays a schedule's advances; null when unlinked or flexible.
+        status["recurring_payment_id"] = next(
+            (payment for payment, link in links.items() if link.meter_id == view.id), None
+        )
     return {
         "id": view.id,
         "name": view.meter.name,
         "kind": view.meter.kind,
         "main_meter_id": view.main_meter_id,
         "garden_conflicts": [_conflict_item(case) for case in view.conflicts],
-        "status": _jsonable(view.status),
+        "status": status,
         "periods": [_period_item(period) for period in view.periods],
         "exchanges": [_exchange_item(exchange) for exchange in view.exchanges],
         "readings": [_reading_item(reading) for reading in view.readings],
@@ -221,16 +228,19 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         return JSONResponse(item, status_code=status)
 
     def meter_item(conn: sqlite3.Connection, meter_id: int) -> dict:
+        links = advance_links(conn, today())
         for view in load_utilities(conn, today()):
             if view.id == meter_id:
-                return _meter_item(view)
+                return _meter_item(view, links)
         raise UtilityNotFound(meter_id)
+
+    def all_meters(conn: sqlite3.Connection) -> list[dict]:
+        links = advance_links(conn, today())
+        return [_meter_item(view, links) for view in load_utilities(conn, today())]
 
     @router.get("/utilities")
     async def get_utilities() -> JSONResponse:
-        return respond(
-            lambda conn: {"meters": [_meter_item(v) for v in load_utilities(conn, today())]}
-        )
+        return respond(lambda conn: {"meters": all_meters(conn)})
 
     # Meters
 

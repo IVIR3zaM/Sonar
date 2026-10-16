@@ -1,5 +1,5 @@
 # Garden water sub-meters
-status: RUNNING
+status: WAITING
 created: 2026-10-16 · updated: 2026-10-16
 goal: optional garden water meters whose usage is deducted from the main water meter's wastewater
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -85,7 +85,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |
-| N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 0 | 0 | TODO | |
+| N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 2 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -581,4 +581,18 @@ exec: DONE · 2040 passed
 - Fixed payments page and /api/recurring show the advance link: advance amount, supplier next date, Dates-from badge to the meter page, tbody id payment-{id}; API adds advance_meter_id
 - next_due built from FixedSource with the link's supplier in both web modules; sonar.css rebuilt, no change needed
 check: PASS 3/3
+verify: PASS
+
+### N13 try 1 · 2026-10-16
+exec: DONE · 2047 passed
+- Advance link on /utilities cards, meter page period in force and recurring_payment_id in the API status; SPEC bullet after line 263
+- Unlinked schedule shows 'Forecast as <meter> advance'; links come from advance_links loaded with the page; sonar.css unchanged
+check: FAIL C2
+- C2 exit 1:
+
+### N13 try 2 · 2026-10-16
+exec: DONE · 2047 passed
+- fixed C2: restored the original model import line in test_utilities_page.py (tests only added)
+- Charge now reached via 'from sonar.utilities import model as utility_model' to keep ruff isort clean
+check: PASS 4/4
 verify: PASS

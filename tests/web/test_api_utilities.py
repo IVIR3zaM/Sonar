@@ -10,7 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.auth.settings import AuthSettings
-from sonar.db import MIGRATIONS_DIR, apply_migrations
+from sonar.categorization.store import add_category
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
+from sonar.recurring.schedule import SchedulePeriod
+from sonar.recurring.store import add_manual
 from sonar.web.app import create_app
 
 TODAY = date(2026, 1, 20)
@@ -728,3 +731,34 @@ def test_the_exchange_action_on_an_unknown_reading_is_a_404(client):
     response = client.post("/api/utilities/readings/99/exchange", json={"old_final_milli": 1})
 
     assert response.status_code == 404
+
+
+def test_the_status_names_the_payment_that_pays_a_schedules_advances(client, db_path):
+    conn = connect(db_path)
+    try:
+        add_category(conn, "Water", "fixed")
+        payment = add_manual(
+            conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 25_000, 1, 18)
+        )
+    finally:
+        conn.close()
+    schedule = {**WATER_PERIOD, "category": "Water"}
+    for name, kind, period in (
+        ("Water", "water", schedule),
+        ("Water 2", "water", schedule),
+        ("Gas", "gas", {**PERIOD, **PERIOD_DEFAULTS}),
+    ):
+        meter = client.post("/api/utilities/meters", json={"name": name, "kind": kind}).json()
+        assert (
+            client.post(f"/api/utilities/meters/{meter['id']}/periods", json=period).status_code
+            == 201
+        )
+        for day, value in (("2026-01-01", 1_000_000), ("2026-01-11", 1_100_000)):
+            reading = {"date": day, "value_milli": value}
+            client.post(f"/api/utilities/meters/{meter['id']}/readings", json=reading)
+
+    meters = {m["name"]: m for m in client.get("/api/utilities").json()["meters"]}
+
+    assert meters["Water"]["status"]["recurring_payment_id"] == payment
+    assert meters["Water 2"]["status"]["recurring_payment_id"] is None
+    assert meters["Gas"]["status"]["recurring_payment_id"] is None

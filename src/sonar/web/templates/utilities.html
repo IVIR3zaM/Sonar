@@ -16,6 +16,16 @@
 {% set kind_options = [("gas", "Gas"), ("electricity", "Electricity"), ("water", "Water")] %}
 
 
+{#- Which payment pays a scheduled meter's advances, or that the forecast pays them itself. #}
+{% macro advance_note(m, pre) -%}
+{%- if m.advance_link -%}
+<span>Paid as <a id="{{ pre }}-recurring-link" href="/recurring#payment-{{ m.advance_link.payment_id }}" class="font-medium text-accent underline">{{ m.advance_link.payment_name }}</a></span>
+{%- else -%}
+<span id="{{ pre }}-advance-item">Forecast as {{ m.view.meter.name }} advance</span>
+{%- endif -%}
+{%- endmacro %}
+
+
 {#- A projected settlement is worded by its sign: a refund or a back-payment. #}
 {% macro outcome(cents, id) -%}
 {{ amount(cents | abs, colored=false, id=id, attrs={"data-kind": "refund" if cents >= 0 else "back-payment"}) }}
@@ -78,7 +88,7 @@
     {% if status.remaining_advance_dates %}
     {{ stat("Next advance", value=date(status.remaining_advance_dates[0], id=pre ~ "-next-advance"), hint="from the supplier's schedule") }}
     {% endif %}
-    {{ stat("Advance", value=("<span id=\"" ~ pre ~ "-set-by-supplier\">Set by the supplier</span>") | safe) }}
+    {{ stat("Advance", value=("<span id=\"" ~ pre ~ "-set-by-supplier\">Set by the supplier</span>") | safe, hint=advance_note(m, pre)) }}
     {% elif status.suggested_advance_cents is not none %}
     {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint=("per advance for the next " ~ remaining ~ (" advance" if remaining == 1 else " advances") ~ ", about the same at settlement on " ~ date(m.current.settlement_date)) if remaining else ("no advance left, about this at settlement on " ~ date(m.current.settlement_date))) }}
     {% endif %}

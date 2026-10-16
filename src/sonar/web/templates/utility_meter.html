@@ -183,6 +183,9 @@
           {% endif %}
           <div><dt class="text-xs text-ink-muted">Advances</dt><dd data-field="advance_mode" data-mode="{{ period.advance_mode }}">{{ "Flexible" if period.advance_mode == "flexible" else "Supplier schedule" }}</dd></div>
           <div><dt class="text-xs text-ink-muted">{{ "Advance per month" if period.advance_mode == "flexible" else "Advance per date" }}</dt><dd data-field="advance">{{ amount(period.advance_cents, colored=false) }}</dd></div>
+          {% if period == m.current and period.advance_mode == "schedule" %}
+          <div><dt class="text-xs text-ink-muted">Advance payment</dt><dd data-field="recurring">{% if m.advance_link %}<a href="/recurring#payment-{{ m.advance_link.payment_id }}" class="font-medium text-accent underline">{{ m.advance_link.payment_name }}</a>{% else %}Forecast as {{ meter.name }} advance{% endif %}</dd></div>
+          {% endif %}
           <div class="col-span-2 sm:col-span-3"><dt class="text-xs text-ink-muted">Scheduled advance dates</dt><dd data-field="advance_dates" class="tabular-nums">{% for due in period.advance_dates %}{{ date(due) }}{% if not loop.last %}, {% endif %}{% else %}–{% endfor %}</dd></div>
           <div><dt class="text-xs text-ink-muted">Expected usage per year</dt><dd data-field="expected_usage" class="tabular-nums">{{ period.expected_usage }} {{ m.usage_unit }}</dd></div>
           <div><dt class="text-xs text-ink-muted">Settlement debited</dt><dd data-field="settlement_debit_days" data-days="{{ period.settlement_debit_days }}">{% if period.settlement_debit_days == 0 %}On the settlement date{% elif period.settlement_debit_days == 1 %}1 day after settlement{% else %}{{ period.settlement_debit_days }} days after settlement{% endif %}</dd></div>

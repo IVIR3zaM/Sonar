@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from sonar.cashflow.service import AdvanceLink, advance_links
 from sonar.categorization.store import list_categories
 from sonar.db import connect
 from sonar.money import parse_signed_cents
@@ -101,6 +102,7 @@ class MeterCard:
     last_settlement: tuple[int, date] | None  # signed cents and date of the previous bill
     gardens: tuple[GardenLink, ...] = ()  # a main meter's garden meters
     main_name: str | None = None  # a garden meter's main meter
+    advance_link: AdvanceLink | None = None  # the payment that pays its scheduled advances
 
     @property
     def open_conflicts(self) -> int:
@@ -362,7 +364,12 @@ def _gardens_of(view: MeterView, views: list[MeterView]) -> tuple[GardenLink, ..
     return tuple(links)
 
 
-def _card(view: MeterView, today: date, views: list[MeterView]) -> MeterCard:
+def _card(
+    view: MeterView,
+    today: date,
+    views: list[MeterView],
+    links: dict[int, AdvanceLink],
+) -> MeterCard:
     main = next((other for other in views if other.id == view.main_meter_id), None)
     periods = [stored.item for stored in view.periods]
     latest = view.periods[-1] if view.periods else None
@@ -378,6 +385,7 @@ def _card(view: MeterView, today: date, views: list[MeterView]) -> MeterCard:
         last_settlement=_last_settlement(periods, current),
         gardens=_gardens_of(view, views),
         main_name=main.meter.name if main else None,
+        advance_link=next((link for link in links.values() if link.meter_id == view.id), None),
     )
 
 
@@ -389,13 +397,15 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
     ) -> HTMLResponse:
         # Shared by the GET route and every POST error path, so a 400 re-render
         # shows the page a fresh GET would, plus the one form that failed.
-        views, _ = _load()
+        views, _, links = _load()
         return templates.TemplateResponse(
             request,
             "utilities.html",
             {
                 "cards": [
-                    _card(view, today(), views) for view in views if view.main_meter_id is None
+                    _card(view, today(), views, links)
+                    for view in views
+                    if view.main_meter_id is None
                 ],
                 "main_meter_options": [
                     ("", "None"),
@@ -413,7 +423,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
     def _render_meter_page(
         request: Request, meter_id: int, status_code: int = 200, error: dict | None = None
     ) -> HTMLResponse:
-        views, categories = _load()
+        views, categories, links = _load()
         view = next((view for view in views if view.id == meter_id), None)
         if view is None:
             return _not_found(request)
@@ -421,7 +431,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             "utility_meter.html",
             {
-                "meter_card": _card(view, today(), views),
+                "meter_card": _card(view, today(), views, links),
                 "category_options": [("", "None"), *((name, name) for name in categories)],
                 "error": error,
                 "values": {
@@ -433,10 +443,14 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             status_code=status_code,
         )
 
-    def _load() -> tuple[list[MeterView], list[str]]:
+    def _load() -> tuple[list[MeterView], list[str], dict[int, AdvanceLink]]:
         conn = connect(db_path)
         try:
-            return load_utilities(conn, today()), [c.name for c in list_categories(conn)]
+            return (
+                load_utilities(conn, today()),
+                [c.name for c in list_categories(conn)],
+                advance_links(conn, today()),
+            )
         finally:
             conn.close()
 

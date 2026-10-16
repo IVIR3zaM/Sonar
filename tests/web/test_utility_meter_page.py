@@ -8,7 +8,10 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
+from sonar.categorization.store import add_category
 from sonar.db import connect
+from sonar.recurring.schedule import SchedulePeriod
+from sonar.recurring.store import add_manual
 from sonar.utilities.model import BillingPeriod, Charge, Exchange, Meter, Reading
 from sonar.utilities.store import (
     add_exchange,
@@ -1217,3 +1220,68 @@ def test_the_main_meter_page_keeps_its_periods_and_shows_no_garden_parts(client,
     assert page.select_one("#main-meter-link") is None
     assert page.select_one("[data-conflict]") is None
     assert page.select_one(f"#meter-{main}-chart, #meter-{main}-chart-empty") is None
+
+
+# Advance link on the period in force (D19)
+
+
+def _scheduled_water(**changes) -> BillingPeriod:
+    return _period(
+        base_fee_cents=None,
+        unit_price_micro=None,
+        advance_cents=24_000,
+        expected_usage=150,
+        category="Water",
+        drinking=Charge(1_140_000, 3600, 7),
+        wastewater=Charge(3_690_000, 9600, 0),
+        advance_mode="schedule",
+        advance_dates=(date(2026, 6, 15), date(2026, 9, 15), date(2026, 12, 15)),
+        **changes,
+    )
+
+
+def _water_with_schedule(db_path, name: str) -> int:
+    meter = _store(db_path, lambda conn: add_meter(conn, Meter(name, "water")))
+    _store(db_path, lambda conn: add_period(conn, meter, _scheduled_water()))
+    return meter
+
+
+def _bill_payment(db_path) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute("SELECT id FROM recurring_payments WHERE name = 'Water bill'").fetchone()
+        return row[0]
+    finally:
+        conn.close()
+
+
+def test_the_period_in_force_links_to_the_payment_that_pays_its_advances(client, db_path):
+    _store(db_path, lambda conn: add_category(conn, "Water", "fixed"))
+    water = _water_with_schedule(db_path, "Water")
+    _store(
+        db_path,
+        lambda conn: add_manual(
+            conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 25_000, 1, 18)
+        ),
+    )
+
+    link = _page(client, water).select_one('[data-period-id] [data-field="recurring"] a')
+
+    assert text(link) == "Water bill"
+    assert link["href"] == f"/recurring#payment-{_bill_payment(db_path)}"
+
+
+def test_an_unlinked_period_in_force_says_it_is_forecast_as_the_meters_advance(client, db_path):
+    _store(db_path, lambda conn: add_category(conn, "Water", "fixed"))
+    water = _water_with_schedule(db_path, "Water 2")
+
+    note = _page(client, water).select_one('[data-period-id] [data-field="recurring"]')
+
+    assert text(note) == "Forecast as Water 2 advance"
+    assert note.select_one("a") is None
+
+
+def test_a_flexible_period_shows_no_advance_note(client, db_path):
+    meter = _with_readings(db_path)
+
+    assert _page(client, meter).select_one('[data-field="recurring"]') is None

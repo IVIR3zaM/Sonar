@@ -89,7 +89,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 2 | 0 | DONE | |
 | N14 | plain-text badge title | exec | N13 | haiku/sonnet | 1 | 0 | DONE | |
 | N15 | conflict cases per main run | exec | N13 | opus/sonnet | 1 | 0 | DONE | |
-| N16 | garden reading form | exec | N15 | sonnet/sonnet | 0 | 0 | TODO | |
+| N16 | garden reading form | exec | N15 | sonnet/sonnet | 1 | 0 | DONE | |
 | N17 | SPEC conflict part | exec | N15,N16 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
@@ -740,4 +740,11 @@ exec: DONE · 2059 passed
 - reject 404s for a non-numeric, missing, own-main or foreign point; record-exchange redirects to the main for a garden reading, else its own meter; card #conflicts shown on a main only when it has gardens
 - MeterCard gains names map; GardenLink drops open_cases; sonar.css rebuilt
 check: PASS 4/4
+verify: PASS
+
+### N16 try 1 · 2026-10-16
+exec: DONE · 2064 passed
+- garden meter page has the add-reading form in a details drawer; add_reading_route returns to the garden page (303 / 400 with form open) via _garden_page_of
+- sonar.css rebuilt, unchanged (no new classes); 5 pin tests added
+check: PASS 3/3
 verify: PASS

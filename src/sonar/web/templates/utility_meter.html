@@ -136,6 +136,14 @@
     {% else %}
     <p class="mt-2 text-sm text-ink-muted">No readings yet.</p>
     {% endif %}
+    {% if m.is_garden %}
+    {% set key = pre ~ "-add-reading" %}
+    {% set err = error if error and error.form == key else none %}
+    <details{% if err %} open{% endif %} class="mt-3">
+      <summary class="{{ summary }}">Add reading</summary>
+      <div class="{{ drawer }}">{{ reading_form(key, "/utilities/meters/" ~ m.view.id ~ "/readings", err, {"date": "", "value": ""}, m.unit, "Add reading") }}</div>
+    </details>
+    {% endif %}
   </section>
 
   <section class="mt-6">

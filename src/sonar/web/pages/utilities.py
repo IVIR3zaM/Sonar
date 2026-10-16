@@ -396,6 +396,15 @@ def _main_of(conn: sqlite3.Connection, meter_id: int) -> int | None:
     return next(stored.item.main_meter_id for stored in list_meters(conn) if stored.id == meter_id)
 
 
+def _garden_page_of(conn: sqlite3.Connection, meter_id: int) -> int | None:
+    """A garden meter has no card on the overview, so its page is where its form lives."""
+    is_garden = any(
+        stored.id == meter_id and stored.item.main_meter_id is not None
+        for stored in list_meters(conn)
+    )
+    return meter_id if is_garden else None
+
+
 def _point_id(text: str) -> int:
     """A posted reading or exchange id; anything else names no record."""
     try:
@@ -520,11 +529,11 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         field_names: tuple[str, ...],
         build: Callable[[dict[str, str]], object],
         write: Callable[[sqlite3.Connection, object], object],
-        meter_of: Callable[[sqlite3.Connection], int] | None = None,
+        meter_of: Callable[[sqlite3.Connection], int | None] | None = None,
     ) -> HTMLResponse | RedirectResponse:
         """Parse, write and redirect; a bad entry re-renders with 400 and `form` open.
 
-        With `meter_of` the page is that meter's page, otherwise the overview.
+        With `meter_of` giving a meter the page is that meter's page, otherwise the overview.
         """
         values = await _form_values(request, field_names)
         meter_id = None
@@ -542,7 +551,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
     def _delete(
         request: Request,
         remove: Callable[[sqlite3.Connection], object],
-        meter_of: Callable[[sqlite3.Connection], int] | None = None,
+        meter_of: Callable[[sqlite3.Connection], int | None] | None = None,
     ) -> HTMLResponse | RedirectResponse:
         meter_id = None
         try:
@@ -603,6 +612,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             READING_FIELDS,
             _reading_from,
             lambda conn, reading: add_reading(conn, id, reading),
+            meter_of=lambda conn: _garden_page_of(conn, id),
         )
 
     @router.post("/utilities/readings/{id}/edit")

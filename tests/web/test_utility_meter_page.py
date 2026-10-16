@@ -1476,3 +1476,74 @@ def test_a_flexible_period_shows_no_advance_note(client, db_path):
     meter = _with_readings(db_path)
 
     assert _page(client, meter).select_one('[data-field="recurring"]') is None
+
+
+# A garden meter has no /utilities card (D10), so its page adds the readings
+
+
+def _garden_with_first_reading(db_path) -> tuple[int, int]:
+    main, ids = _main_with_gardens(db_path, {"Garden": [(MARCH, 0)]})
+    return main, ids["Garden"]
+
+
+def test_the_garden_page_has_the_add_reading_form(client, db_path):
+    _, garden = _garden_with_first_reading(db_path)
+
+    form = _page(client, garden).select_one(f"#meter-{garden}-add-reading")
+
+    assert form is not None
+    assert form["action"] == f"/utilities/meters/{garden}/readings"
+    assert form.select_one("input[name=date]")["value"] == ""
+    assert form.select_one("input[name=value]")["value"] == ""
+    assert "m³" in text(form.select_one("label[for$=value]"))
+
+
+def test_adding_a_garden_reading_redirects_to_the_garden_page(client, db_path):
+    _, garden = _garden_with_first_reading(db_path)
+
+    response = client.post(
+        f"/utilities/meters/{garden}/readings", data={"date": "2026-06-01", "value": "5.000"}
+    )
+
+    assert (response.status_code, response.headers["location"]) == (
+        303,
+        f"/utilities/meters/{garden}",
+    )
+    rows = _page(client, garden).select(f"#meter-{garden}-readings [data-reading-id]")
+    assert [text(row.select_one('[data-field="reading"]')) for row in rows] == ["5.000", "0.000"]
+
+
+def test_a_bad_garden_reading_re_renders_the_garden_page_with_the_form_open(client, db_path):
+    _, garden = _garden_with_first_reading(db_path)
+    client.post(
+        f"/utilities/meters/{garden}/readings", data={"date": "2026-06-01", "value": "5.000"}
+    )
+
+    response = client.post(
+        f"/utilities/meters/{garden}/readings", data={"date": "2026-07-01", "value": "4.000"}
+    )
+
+    assert _error(response)
+    page = soup(response)
+    assert page.select_one("#back-to-utilities") is not None
+    assert page.select_one("#main-meter-link") is not None
+    form = page.select_one(f"#meter-{garden}-add-reading")
+    assert form.find_parent("details").has_attr("open")
+    assert _input(form, "input[name=date]") == "2026-07-01"
+    assert _input(form, "input[name=value]") == "4.000"
+
+
+def test_a_main_meter_reading_still_redirects_to_utilities(client, db_path):
+    main, _ = _garden_with_first_reading(db_path)
+
+    response = client.post(
+        f"/utilities/meters/{main}/readings", data={"date": "2026-11-01", "value": "101"}
+    )
+
+    assert (response.status_code, response.headers["location"]) == (303, "/utilities")
+
+
+def test_the_main_meter_page_has_no_add_reading_form(client, db_path):
+    main, _ = _garden_with_first_reading(db_path)
+
+    assert _page(client, main).select_one(f"#meter-{main}-add-reading") is None

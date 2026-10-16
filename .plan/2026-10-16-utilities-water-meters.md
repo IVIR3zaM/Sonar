@@ -22,7 +22,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 
 ## Decisions
 
-- D1 Names: package `src/sonar/utilities/` (same modules), `web/pages/utilities.py`, `web/api/utilities.py`, templates `utilities.html`, `utilities_meter.html`, `components/utility_forms.html`, chart macro `utility_chart` with `data-utility-chart` and localStorage prefix `utility-chart:` (saved toggles reset once), tests in `tests/utilities/` and `tests/web/test_utilities_page.py`, `test_utilities_meter_page.py`, `test_api_utilities.py`; `load_energy` → `load_utilities`, `EnergyNotFound` → `UtilityNotFound`; nav "Utilities" in Energy's slot with the same icon; dashboard card "Utilities" with ids `utilities-card` and `utilities`; `Dashboard.utilities` and `/api/dashboard` key `utilities` | confirmed
+- D1 Names: package `src/sonar/utilities/` (same modules), `web/pages/utilities.py`, `web/api/utilities.py`, templates `utilities.html`, `utility_meter.html`, `components/utility_forms.html`, chart macro `utility_chart` with `data-utility-chart` and localStorage prefix `utility-chart:` (saved toggles reset once), tests in `tests/utilities/` and `tests/web/test_utilities_page.py`, `test_utility_meter_page.py`, `test_api_utilities.py`; `load_energy` → `load_utilities`, `EnergyNotFound` → `UtilityNotFound`; nav "Utilities" in Energy's slot with the same icon; dashboard card "Utilities" with ids `utilities-card` and `utilities`; `Dashboard.utilities` and `/api/dashboard` key `utilities` | confirmed
 - D2 Old paths: GET `/energy` and GET `/energy/meters/{id}` answer 301 to `/utilities` and `/utilities/meters/{id}`; old POST routes and `/api/energy/...` are removed (404) | confirmed
 - D3 Storage: `0016_utilities.sql` creates `utility_meters` (kind CHECK gas, electricity, water), `utility_readings`, `utility_exchanges`, `utility_periods` and `utility_advance_dates (id, period_id, due_date, UNIQUE (period_id, due_date))`, copies every row with its id, then drops the `energy_*` tables; a rebuild is needed anyway because SQLite cannot alter the kind CHECK and `unit_price_micro`, `base_fee_cents` become nullable; `expected_kwh` becomes `expected_usage`; new period columns `advance_mode TEXT NOT NULL DEFAULT 'flexible'`, `settlement_debit_days INTEGER NOT NULL DEFAULT 0`, `drinking_price_micro`, `drinking_base_fee_cents`, `drinking_vat_percent`, `wastewater_price_micro`, `wastewater_base_fee_cents`, `wastewater_vat_percent` (nullable); applied migrations untouched | confirmed
 - D4 Water kind: `water`, unit m³, priced per m³ as is (state factor and calorific value must be empty); readings, exchanges, chart, seasonal projection and worst case as for electricity, labelled m³; the yearly expectation is renamed `expected_usage` (kWh for gas and electricity, m³ for water) in model, API, form and period list | confirmed
@@ -47,9 +47,10 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N05 | water cost and advance modes | exec | N04 | opus/sonnet | 1 | 1 | DONE | |
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | utilities API | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
-| N08 | utilities pages | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
-| N09 | visual check | gate | N07,N08 | -/- | 0 | 0 | TODO | |
+| N08 | meter page period form | exec | N06 | sonnet/sonnet | 1 | 1 | DONE | |
+| N09 | visual check | gate | N07,N11 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N02,N09 | -/sonnet | 0 | 0 | TODO | |
+| N11 | utilities page cards | exec | N08 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -266,32 +267,79 @@ Done when:
 - C3 [review] PUT replaces a period's dates and charges; DELETE removes them; 404 for unknown meter or period
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
-## N08 utilities pages
-Do: Bring the pages to D11. Add meter offers `water`. The meter page's period form shows by meter kind: gas and
-  electricity keep today's fields; water shows Drinking water and Wastewater groups (D5 labels) instead of unit
-  price, base fee, state factor and calorific value; every kind gets "Advances" (Flexible, Supplier schedule),
-  "Scheduled advance dates" and "Settlement debited (days after)". The period list shows them; "Start new
-  period" prefills per D8. Each /utilities card shows paid so far, remaining advances (schedule: count, amount,
-  next date), expected settlement with its debit date and worst case; a water card adds per-charge and total
-  cost so far and projected; schedule cards say "Set by the supplier" instead of the suggested advance. Units
-  per kind (`UNITS`, `pages/utilities.py:58`) label the readings table and chart (m³ for water). Rebuild css.
-Context: D5 form labels and scales (ct/m³ to µ€ like `_period_from` `pages/utilities.py:112-129`), D7 date
-  field syntax, D8 prefill (`_one_year_later` `:169`, `_next_period_values` `:176`), D11 contents. Invalid input
-  re-renders 400 with the inline error and the entered values (SPEC §12); hooks: `data-charge="drinking"`,
-  `data-charge="wastewater"`, `data-field` per stat.
-Read: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utilities.html`, `src/sonar/web/templates/utilities_meter.html`, `src/sonar/web/templates/components/utility_forms.html`, `tests/html.py`
-Write: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utilities.html`, `src/sonar/web/templates/utilities_meter.html`, `src/sonar/web/templates/components/utility_forms.html`, `src/sonar/web/templates/components/charts.html`, `src/sonar/web/forms.py`, `src/sonar/web/static/sonar.css`, `tests/web/test_utilities_page.py`, `tests/web/test_utilities_meter_page.py`, `tests/web/test_charts.py`, `tests/web/test_forms.py`
+## N08 meter page period form
+Do: The meter page's period form and period list cover the D5, D7 and D8 fields per meter kind. The readings
+  table labels usage per kind. Build the period with the meter's kind, looked up by the meter id the route
+  already resolves (`list_meters` `utilities/store.py:75`; no hidden kind field). Gas and electricity keep
+  today's fields. Water replaces base fee, unit price, state factor and calorific value with two groups,
+  "Drinking water" and "Wastewater". Every kind gets the advance mode, scheduled dates and debit days. Rebuild css.
+Context: D5: a water period has both `drinking` and `wastewater` `Charge` (`utilities/model.py:55`) and null
+  `unit_price_micro`/`base_fee_cents`; `check_period` `model.py:80` validates. Fields `drinking_price`,
+  `drinking_base_fee`, `drinking_vat` (and `wastewater_*`), labelled "Price (ct/m³, net)" (up to 4 decimals,
+  parsed like unit price `web/pages/utilities.py:119`), "Base fee per year (€, net)" (`parse_signed_cents`)
+  and "VAT (%)" (a whole number 0-100). Each group wraps `data-charge="drinking"` or `data-charge="wastewater"`.
+  D7: `advance_mode` select "Advances" (`flexible` Flexible, `schedule` Supplier schedule). `advance_dates` is a
+  text field "Scheduled advance dates": YYYY-MM-DD dates separated by commas or spaces, prefilled ", "-joined.
+  A bad token gives 400 "Scheduled advance dates: enter dates like 2026-04-15, 2026-06-15" (a new
+  `FIELD_HINTS` kind, `web/forms.py:16`). The advance field is "Advance (€)": per month when flexible, per
+  scheduled date on a schedule. D8: `settlement_debit_days` "Settlement debited (days after)", a whole number
+  0-365, default 0. Start new period (`_next_period_values` `:176`) also copies mode, charges, debit days and
+  expected usage. It moves each scheduled date with `_one_year_later` (`:169`).
+  Units: `UNITS` (`:58`) is the reading unit; add water m³. Add `USAGE_UNITS` (gas and electricity kWh, water
+  m³) as `MeterCard.usage_unit` (`:69`). It goes in the per-day column header (`utility_meter.html:45`) and in
+  the expected-usage label and list value (`:127`). Period list (`utility_meter.html:119-129`): add `data-field`
+  `advance_mode` (raw value), `advance_dates` (ISO, space-joined) and `settlement_debit_days`. Water shows the two
+  charge groups, with `data-field` `price`, `base_fee` and `vat`, instead of unit price and base fee.
+  Give the new model errors `DOMAIN_ERROR_HINTS` sentences (`forms.py:41`). Bad input re-renders 400 with the
+  inline error and the entered values (SPEC §12). Tests use hooks via `tests/html.py`. D6/D7 values are in
+  `tests/utilities/test_settlement.py:708`.
+Read: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/templates/components/utility_forms.html`, `src/sonar/utilities/model.py`, `src/sonar/web/forms.py`, `tests/web/test_utility_meter_page.py`, `tests/html.py`
+Write: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/templates/components/utility_forms.html`, `src/sonar/web/forms.py`, `src/sonar/web/static/sonar.css`, `tests/web/test_utility_meter_page.py`, `tests/web/test_forms.py`
+Test first: posting a water meter's period form with 2026-01-01..2026-12-31, drinking 114 ct/m³, 36.00 €, 7 %,
+  wastewater 369 ct/m³, 96.00 €, 0 %, schedule "2026-04-15, 2026-06-15 2026-08-15,2026-10-15 2026-12-15",
+  advance 240.00, expected 150, debit days 55 → 303; the list row's hooks show exactly those values.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_utility_meter_page.py tests/web/test_forms.py`
+- C2 [review] the water form creates and edits that period; gas and electricity forms keep their fields and add
+  mode, dates and debit days; 400 re-renders keep the entered values for a bad date, a blank drinking price, VAT 101
+- C3 [review] the period list shows mode, dates, debit days and the water charges by hook; the per-day header
+  and expected usage say m³ for water and kWh for gas and electricity
+- C4 [review] Start new period copies mode, charges, debit days and expected usage and moves dates a year later
+- C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n08.css" --minify && cmp "$TMPDIR/n08.css" src/sonar/web/static/sonar.css`
+- C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N11 utilities page cards
+Do: Every /utilities card shows paid so far, remaining advances, the expected settlement with its debit date
+  and the worst case. A water card adds cost so far and projected, per charge and in total. A schedule card
+  says "Set by the supplier" in place of the suggested advance. The usage chart labels its unit per kind. Add a
+  meter offers water. Rebuild css.
+Context: D11. Data is ready: `MeterStatus` (`utilities/settlement.py:54`) has `charges` (`ChargeFigure` name,
+  `cost_so_far_cents`, `projected_cost_cents`; water with a projection only), `projected_cost_cents`,
+  `remaining_advance_count`, `remaining_advances_cents`, `remaining_advance_dates`, `advance_mode`,
+  `debit_date` and `suggested_advance_cents` (None on a schedule). Card stats are at `utilities.html:54-66`;
+  keep their ids. Add `{pre}-projected-cost` (projected total). The settlement stat adds `{pre}-debit-date`
+  ("settles <date>, debited <date>"). Add `{pre}-remaining-advances` (amount) with a `data-field="remaining_count"`
+  count. On a schedule, add `{pre}-next-advance` (first remaining date) and show `{pre}-set-by-supplier`
+  "Set by the supplier" instead of `{pre}-suggested-advance`. For water, add one block per charge,
+  `data-charge="drinking"` "Drinking water" and `data-charge="wastewater"` "Wastewater". Each block has
+  `data-field="cost_so_far"` and `data-field="projected_cost"` amounts.
+  Chart: `utility_chart(id, months, unit="kWh")` (`components/charts.html:183`) puts `unit` in the summary
+  (`:231`) and the bar titles (`:251`). The card passes `m.usage_unit` (`MeterCard`, `web/pages/utilities.py`).
+  Add a meter: kind option `("water", "Water")` (`utilities.html:14`), the subtitle (`:112`) and the header
+  (`:26`) name water. Amounts use `amount` and dates use `date` (`components/amount.html`). Tests use hooks via
+  `tests/html.py`. Build the D6/D7 water fixture like `tests/web/test_dashboard_page.py:834`.
+Read: `src/sonar/web/templates/utilities.html`, `src/sonar/web/templates/components/charts.html`, `src/sonar/utilities/settlement.py`, `tests/web/test_utilities_page.py`, `tests/web/test_dashboard_page.py`, `tests/html.py`
+Write: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utilities.html`, `src/sonar/web/templates/components/charts.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_utilities_page.py`, `tests/web/test_charts.py`
 Test first: as of 2026-10-16 the D6/D7 water card shows drinking 226,15 € / 286,08 €, wastewater 667,91 € /
   844,89 €, total 894,06 € / 1.130,97 €, paid 960,00 €, 1 advance left 240,00 € on 15.12.2026, refund 69,03 €
   debited 24.02.2027 and "Set by the supplier".
 Done when:
-- C1 [cmd] `uv run pytest -q tests/web/test_utilities_page.py tests/web/test_utilities_meter_page.py tests/web/test_charts.py tests/web/test_forms.py`
-- C2 [review] the water period form creates and edits the D6/D7 period; gas and electricity forms keep their
-  fields and add mode, dates and debit days; 400 re-renders keep values for a bad date, a missing charge, VAT 101
-- C3 [review] the water card pins the Test first figures by hooks; a flexible gas card still shows the
-  suggested advance; readings table and chart say m³ for water and kWh for electricity
-- C4 [review] Start new period copies mode, charges, debit days and expected usage and moves dates a year later
-- C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n08.css" --minify && cmp "$TMPDIR/n08.css" src/sonar/web/static/sonar.css`
+- C1 [cmd] `uv run pytest -q tests/web/test_utilities_page.py tests/web/test_charts.py`
+- C2 [review] the water card pins every Test first figure by hook, per charge and in total
+- C3 [review] a flexible gas card still shows the suggested advance, remaining count and amount, and has no
+  next-advance or set-by-supplier hook; the chart says m³ for water and kWh for gas and electricity
+- C4 [review] Add a meter offers water and creates a water meter
+- C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n11.css" --minify && cmp "$TMPDIR/n11.css" src/sonar/web/static/sonar.css`
 - C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N09 visual check
@@ -417,4 +465,21 @@ exec: DONE · 1896 passed, ruff clean
 - API extended for water meters and period fields; tests added in test_api_utilities.py
 - try 2: no code change; full suite and ruff pass twice (try-1 failure not reproducible)
 check: PASS 2/2
+verify: PASS
+
+### N08 try 1 · 2026-10-16
+exec: BLOCKED · brief omits D5/D7/D8/D11 text (advance dates field syntax, exact labels, card hooks) and Write names utilities_meter.html and test_utilities_meter_page.py, but the files are utility_meter.html and test_utility_meter_page.py (C1 runs a file that does not exist)
+
+### N08 replan 1 · 2026-10-16
+plan: REPLANNED +N11
+- cause: brief cited D5/D7/D8/D11 without their content and named utilities_meter.html and test_utilities_meter_page.py, which do not exist
+- split: N08 is now the meter page period form and list (charges, mode, dates, debit days, prefill, per-kind units); new N11 (deps N08) does the /utilities cards, chart unit and water in Add a meter; N09 now depends on N07,N11
+- briefs restate field names, labels, date syntax, error hint, data-* hooks and ids with path:line; file names fixed to utility_meter.html and test_utility_meter_page.py, also in D1
+
+### N08 try 1 · 2026-10-16
+exec: DONE · 1914 passed
+- Period form, list and Start new period cover water charges, advance mode/dates and debit days; usage_unit (m³/kWh) on header, label and list; new FIELD_HINTS dates and DOMAIN_ERROR_HINTS sentences; css rebuilt
+- Period kind looked up via list_meters by the resolved meter id; mode, dates and debit days are required form fields (blank mode is a 400), existing tests' NEW_PERIOD gained them
+- Flexible period list shows '–' for advance dates; advance_mode hook shows the raw value
+check: PASS 3/3
 verify: PASS

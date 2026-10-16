@@ -2,7 +2,7 @@
 
 import pytest
 
-from sonar.web.forms import format_scaled, parse_scaled
+from sonar.web.forms import field, format_scaled, friendly, parse_scaled
 
 
 @pytest.mark.parametrize(
@@ -45,3 +45,24 @@ def test_parse_scaled_rejects_blank():
 def test_format_scaled_round_trips_through_parse_scaled(value, places, expected):
     assert format_scaled(value, places) == expected
     assert parse_scaled(expected, places) == value
+
+
+def test_a_bad_date_list_names_the_field_and_the_format():
+    with pytest.raises(ValueError, match="Dates: enter dates like 2026-04-15, 2026-06-15"):
+        field("Dates", "x", "dates", int)
+
+
+@pytest.mark.parametrize(
+    ("raw", "sentence"),
+    [
+        ("drinking VAT must be 0 to 100 percent", "Drinking water VAT must be 0 to 100 percent."),
+        ("wastewater price must be positive", "Wastewater price must be positive."),
+        (
+            "a schedule needs at least one advance date",
+            "Enter at least one scheduled advance date.",
+        ),
+        ("debit days must be 0 to 365", "Settlement debit days must be 0 to 365."),
+    ],
+)
+def test_friendly_words_the_water_and_advance_errors(raw, sentence):
+    assert friendly(ValueError(raw)) == sentence

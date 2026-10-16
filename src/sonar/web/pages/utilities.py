@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sonar.categorization.store import list_categories
 from sonar.db import connect
 from sonar.money import parse_signed_cents
-from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Exchange, Meter, Reading
 from sonar.utilities.service import MeterView, load_utilities
 from sonar.utilities.settlement import current_period, daily_kwh, round_half_up
 from sonar.utilities.store import (
@@ -30,6 +31,7 @@ from sonar.utilities.store import (
     delete_meter,
     delete_period,
     delete_reading,
+    list_meters,
     meter_of_exchange,
     meter_of_period,
     meter_of_reading,
@@ -54,8 +56,19 @@ PERIOD_FIELDS = (
     "expected_usage",
     "category",
     "settled",
+    "advance_mode",
+    "advance_dates",
+    "settlement_debit_days",
+    "drinking_price",
+    "drinking_base_fee",
+    "drinking_vat",
+    "wastewater_price",
+    "wastewater_base_fee",
+    "wastewater_vat",
 )
-UNITS = {"gas": "m³", "electricity": "kWh"}
+UNITS = {"gas": "m³", "electricity": "kWh", "water": "m³"}  # what a meter reading counts
+USAGE_UNITS = {"gas": "kWh", "electricity": "kWh", "water": "m³"}  # what usage and cost go by
+CHARGES = (("drinking", "Drinking water"), ("wastewater", "Wastewater"))
 
 
 @dataclass(frozen=True)
@@ -69,6 +82,7 @@ class ReadingRow:
 class MeterCard:
     view: MeterView
     unit: str
+    usage_unit: str
     readings: list[ReadingRow]  # newest first
     current: BillingPeriod | None
     latest: Stored[BillingPeriod] | None
@@ -109,22 +123,66 @@ def _exchange_from(values: dict[str, str]) -> Exchange:
     )
 
 
-def _period_from(values: dict[str, str]) -> BillingPeriod:
+def _dates(text: str) -> tuple[date, ...]:
+    """YYYY-MM-DD dates separated by commas or spaces."""
+    return tuple(date.fromisoformat(token) for token in re.split(r"[,\s]+", text.strip()) if token)
+
+
+def _charge_from(values: dict[str, str], name: str, label: str) -> Charge:
+    return Charge(
+        unit_price_micro=forms.field(
+            f"{label} price", values[f"{name}_price"], "decimal4", _scaled(4)
+        ),
+        base_fee_cents=forms.field(
+            f"{label} base fee", values[f"{name}_base_fee"], "amount", parse_signed_cents
+        ),
+        vat_percent=forms.field(f"{label} VAT", values[f"{name}_vat"], "int", int),
+    )
+
+
+def _period_from(values: dict[str, str], kind: str) -> BillingPeriod:
+    if kind == "water":
+        charges = {name: _charge_from(values, name, label) for name, label in CHARGES}
+        energy = {
+            "base_fee_cents": None,
+            "unit_price_micro": None,
+            "state_factor_e4": None,
+            "calorific_value_e4": None,
+        }
+    else:
+        charges = {}
+        energy = {
+            "base_fee_cents": forms.field(
+                "Base fee", values["base_fee"], "amount", parse_signed_cents
+            ),
+            "unit_price_micro": forms.field(
+                "Unit price", values["unit_price"], "decimal4", _scaled(4)
+            ),
+            "state_factor_e4": _optional(
+                "State factor", values["state_factor"], "decimal4", _scaled(4)
+            ),
+            "calorific_value_e4": _optional(
+                "Calorific value", values["calorific_value"], "decimal4", _scaled(4)
+            ),
+        }
     return BillingPeriod(
         start_date=forms.field("Start", values["start_date"], "date", date.fromisoformat),
         settlement_date=forms.field(
             "Settlement date", values["settlement_date"], "date", date.fromisoformat
         ),
-        base_fee_cents=forms.field("Base fee", values["base_fee"], "amount", parse_signed_cents),
-        unit_price_micro=forms.field("Unit price", values["unit_price"], "decimal4", _scaled(4)),
-        state_factor_e4=_optional("State factor", values["state_factor"], "decimal4", _scaled(4)),
-        calorific_value_e4=_optional(
-            "Calorific value", values["calorific_value"], "decimal4", _scaled(4)
-        ),
+        **energy,
         advance_cents=forms.field("Advance", values["advance"], "amount", parse_signed_cents),
         expected_usage=forms.field("Expected usage", values["expected_usage"], "int", int),
         category=values["category"].strip() or None,
         settled_cents=_optional("Settled amount", values["settled"], "amount", parse_signed_cents),
+        advance_mode=values["advance_mode"],
+        advance_dates=forms.field(
+            "Scheduled advance dates", values["advance_dates"], "dates", _dates
+        ),
+        settlement_debit_days=forms.field(
+            "Settlement debited", values["settlement_debit_days"], "int", int
+        ),
+        **charges,
     )
 
 
@@ -145,25 +203,40 @@ def _exchange_values(exchange: Exchange) -> dict[str, str]:
 
 def _period_values(period: BillingPeriod | None) -> dict[str, str]:
     if period is None:
-        return dict.fromkeys(PERIOD_FIELDS, "")
+        return {
+            **dict.fromkeys(PERIOD_FIELDS, ""),
+            "advance_mode": "flexible",
+            "settlement_debit_days": "0",
+        }
     return {
         "start_date": period.start_date.isoformat(),
         "settlement_date": period.settlement_date.isoformat(),
-        "base_fee": forms.format_scaled(period.base_fee_cents, 2),
-        "unit_price": forms.format_scaled(period.unit_price_micro, 4),
-        "state_factor": _optional_scaled(period.state_factor_e4),
-        "calorific_value": _optional_scaled(period.calorific_value_e4),
+        "base_fee": _optional_scaled(period.base_fee_cents, 2),
+        "unit_price": _optional_scaled(period.unit_price_micro, 4),
+        "state_factor": _optional_scaled(period.state_factor_e4, 4),
+        "calorific_value": _optional_scaled(period.calorific_value_e4, 4),
         "advance": forms.format_scaled(period.advance_cents, 2),
         "expected_usage": str(period.expected_usage),
         "category": period.category or "",
-        "settled": ""
-        if period.settled_cents is None
-        else forms.format_scaled(period.settled_cents, 2),
+        "settled": _optional_scaled(period.settled_cents, 2),
+        "advance_mode": period.advance_mode,
+        "advance_dates": ", ".join(day.isoformat() for day in period.advance_dates),
+        "settlement_debit_days": str(period.settlement_debit_days),
+        **_charge_values("drinking", period.drinking),
+        **_charge_values("wastewater", period.wastewater),
     }
 
 
-def _optional_scaled(value: int | None) -> str:
-    return "" if value is None else forms.format_scaled(value, 4)
+def _charge_values(name: str, charge: Charge | None) -> dict[str, str]:
+    return {
+        f"{name}_price": _optional_scaled(charge and charge.unit_price_micro, 4),
+        f"{name}_base_fee": _optional_scaled(charge and charge.base_fee_cents, 2),
+        f"{name}_vat": "" if charge is None else str(charge.vat_percent),
+    }
+
+
+def _optional_scaled(value: int | None, places: int) -> str:
+    return "" if value is None else forms.format_scaled(value, places)
 
 
 def _one_year_later(day: date) -> date:
@@ -183,6 +256,9 @@ def _next_period_values(latest: Stored[BillingPeriod] | None) -> dict[str, str]:
         "start_date": (settles + timedelta(days=1)).isoformat(),
         "settlement_date": _one_year_later(settles).isoformat(),
         "settled": "",  # the new bill is not in yet
+        "advance_dates": ", ".join(
+            _one_year_later(day).isoformat() for day in latest.item.advance_dates
+        ),
     }
 
 
@@ -238,6 +314,7 @@ def _card(view: MeterView, today: date) -> MeterCard:
     return MeterCard(
         view=view,
         unit=UNITS[view.meter.kind],
+        usage_unit=USAGE_UNITS[view.meter.kind],
         readings=_reading_rows(view),
         current=current,
         latest=latest,
@@ -294,6 +371,15 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             return load_utilities(conn, today()), [c.name for c in list_categories(conn)]
         finally:
             conn.close()
+
+    def _kind_of(meter_id: int) -> str:
+        def look_up(conn: sqlite3.Connection) -> str:
+            for stored in list_meters(conn):
+                if stored.id == meter_id:
+                    return stored.item.kind
+            raise UtilityNotFound(meter_id)
+
+        return _run(look_up)
 
     def _not_found(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(
@@ -465,7 +551,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             f"meter-{id}-new-period",
             PERIOD_FIELDS,
-            _period_from,
+            lambda values: _period_from(values, _kind_of(id)),
             lambda conn, period: add_period(conn, id, period),
             meter_of=lambda conn: id,
         )
@@ -476,7 +562,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             f"period-{id}-edit",
             PERIOD_FIELDS,
-            _period_from,
+            lambda values: _period_from(values, _kind_of(_run(lambda c: meter_of_period(c, id)))),
             lambda conn, period: update_period(conn, id, period),
             meter_of=lambda conn: meter_of_period(conn, id),
         )

@@ -35,20 +35,37 @@
 </form>
 {% endmacro %}
 
-{% macro period_form(key, action, err, defaults, kind, categories, submit) %}
+{% macro charge_fields(key, v, name, title) %}
+<fieldset data-charge="{{ name }}" class="col-span-2 grid grid-cols-2 gap-3 rounded-control border border-line p-3">
+  <legend class="px-1 text-sm font-medium text-ink">{{ title }}</legend>
+  <div class="col-span-2">{{ field(name ~ "_price", "Price (ct/m³, net)", value=v[name ~ "_price"], id=key ~ "-" ~ name ~ "-price", required=true, help="Up to 4 decimals") }}</div>
+  {{ field(name ~ "_base_fee", "Base fee per year (€, net)", value=v[name ~ "_base_fee"], id=key ~ "-" ~ name ~ "-base-fee", required=true, help="e.g. 36.00") }}
+  {{ field(name ~ "_vat", "VAT (%)", type="number", value=v[name ~ "_vat"], id=key ~ "-" ~ name ~ "-vat", required=true, attrs={"min": 0, "max": 100}) }}
+</fieldset>
+{% endmacro %}
+
+{% macro period_form(key, action, err, defaults, kind, usage_unit, categories, submit) %}
 {% set v = err.fields if err else defaults %}
 <form id="{{ key }}" method="post" action="{{ action }}" class="grid grid-cols-2 gap-3">
   {{ form_error(err) }}
   {{ field("start_date", "Start", type="date", value=v.start_date, id=key ~ "-start-date", required=true) }}
   {{ field("settlement_date", "Settlement date", type="date", value=v.settlement_date, id=key ~ "-settlement-date", required=true, help="Last day of the period") }}
+  {% if kind == "water" %}
+  {{ charge_fields(key, v, "drinking", "Drinking water") }}
+  {{ charge_fields(key, v, "wastewater", "Wastewater") }}
+  {% else %}
   {{ field("base_fee", "Base fee per month (€)", value=v.base_fee, id=key ~ "-base-fee", required=true, help="e.g. 12.50") }}
   {{ field("unit_price", "Unit price (ct/kWh)", value=v.unit_price, id=key ~ "-unit-price", required=true, help="Up to 4 decimals") }}
+  {% endif %}
   {% if kind == "gas" %}
   {{ field("state_factor", "State factor", value=v.state_factor, id=key ~ "-state-factor", required=true, help="Zustandszahl, up to 4 decimals") }}
   {{ field("calorific_value", "Calorific value (kWh/m³)", value=v.calorific_value, id=key ~ "-calorific-value", required=true, help="Brennwert, up to 4 decimals") }}
   {% endif %}
-  {{ field("advance", "Advance per month (€)", value=v.advance, id=key ~ "-advance", required=true, help="Abschlag, e.g. 85.00") }}
-  {{ field("expected_usage", "Expected usage per year", type="number", value=v.expected_usage, id=key ~ "-expected-usage", required=true, attrs={"min": 0}) }}
+  {{ field("advance_mode", "Advances", value=v.advance_mode, id=key ~ "-advance-mode", required=true, options=[("flexible", "Flexible"), ("schedule", "Supplier schedule")]) }}
+  {{ field("advance", "Advance (€)", value=v.advance, id=key ~ "-advance", required=true, help="Per month when flexible, per scheduled date on a schedule, e.g. 85.00") }}
+  <div class="col-span-2">{{ field("advance_dates", "Scheduled advance dates", value=v.advance_dates, id=key ~ "-advance-dates", help="Only on a schedule: dates like 2026-04-15, 2026-06-15") }}</div>
+  {{ field("expected_usage", "Expected usage per year (" ~ usage_unit ~ ")", type="number", value=v.expected_usage, id=key ~ "-expected-usage", required=true, attrs={"min": 0}) }}
+  {{ field("settlement_debit_days", "Settlement debited (days after)", type="number", value=v.settlement_debit_days, id=key ~ "-settlement-debit-days", required=true, help="Days after the settlement date, 0 to 365", attrs={"min": 0, "max": 365}) }}
   <div class="col-span-2">{{ field("settled", "Settled amount (€)", value=v.settled, id=key ~ "-settled", help="Optional, signed as on the bill: negative for a back-payment, e.g. -31.69") }}</div>
   <div class="col-span-2">{{ field("category", "Category of the advances", value=v.category, id=key ~ "-category", options=categories) }}</div>
   <div class="col-span-2">{{ button(submit, size="sm") }}</div>

@@ -21,6 +21,7 @@ FIELD_HINTS = {
     "percent": "enter a percent like 3.5",
     "decimal3": "enter a number with up to 3 decimals, like 1234.567",
     "decimal4": "enter a number with up to 4 decimals, like 8.1234",
+    "dates": "enter dates like 2026-04-15, 2026-06-15",
 }
 
 
@@ -61,6 +62,23 @@ DOMAIN_ERROR_HINTS = {
     "state_factor_e4 is required": "State factor is required for gas and must be positive.",
     "calorific_value_e4 is required": "Calorific value is required for gas and must be positive.",
     "settlement date must not be before": "Settlement date must not be before the start date.",
+    "drinking charge is required": "Drinking water price, base fee and VAT are required.",
+    "wastewater charge is required": "Wastewater price, base fee and VAT are required.",
+    "drinking price must be positive": "Drinking water price must be positive.",
+    "wastewater price must be positive": "Wastewater price must be positive.",
+    "drinking base fee must not be negative": "Drinking water base fee must not be negative.",
+    "wastewater base fee must not be negative": "Wastewater base fee must not be negative.",
+    "drinking VAT must be": "Drinking water VAT must be 0 to 100 percent.",
+    "wastewater VAT must be": "Wastewater VAT must be 0 to 100 percent.",
+    "advance mode must be one of": "Advances must be Flexible or Supplier schedule.",
+    "a flexible period has no advance dates": "Flexible advances take no scheduled dates.",
+    "a schedule needs at least one": "Enter at least one scheduled advance date.",
+    "advance dates must be unique": "Scheduled advance dates must all be different.",
+    "advance dates must fall between": (
+        "Scheduled advance dates must fall between the start date "
+        "and 14 days after the settlement date."
+    ),
+    "debit days must be 0 to": "Settlement debit days must be 0 to 365.",
 }
 
 

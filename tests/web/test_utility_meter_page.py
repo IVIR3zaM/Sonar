@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sonar.db import connect
-from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Exchange, Meter, Reading
 from sonar.utilities.store import (
     add_exchange,
     add_meter,
@@ -98,6 +98,10 @@ def _insert_debit(db_path, booking_date: str, amount_cents: int, category: str) 
         conn.commit()
     finally:
         conn.close()
+
+
+def _water_meter(db_path) -> int:
+    return _store(db_path, lambda conn: add_meter(conn, Meter("Water", "water")))
 
 
 def _gas_meter(db_path) -> int:
@@ -304,6 +308,9 @@ NEW_PERIOD = {
     "advance": "60",
     "expected_usage": "3100",
     "category": "Utilities",
+    "advance_mode": "flexible",
+    "advance_dates": "",
+    "settlement_debit_days": "0",
 }
 
 
@@ -652,3 +659,232 @@ def test_a_missing_record_on_the_meter_page_routes_is_a_404(client):
         "/utilities/periods/99/delete",
     ):
         assert client.post(path, data={"date": "2026-01-01"}).status_code == 404
+
+
+# Water periods, advance modes and debit days
+
+WATER_PERIOD = {
+    "start_date": "2026-01-01",
+    "settlement_date": "2026-12-31",
+    "drinking_price": "114",
+    "drinking_base_fee": "36.00",
+    "drinking_vat": "7",
+    "wastewater_price": "369",
+    "wastewater_base_fee": "96.00",
+    "wastewater_vat": "0",
+    "advance_mode": "schedule",
+    "advance_dates": "2026-04-15, 2026-06-15 2026-08-15,2026-10-15 2026-12-15",
+    "advance": "240.00",
+    "expected_usage": "150",
+    "settlement_debit_days": "55",
+    "category": "Utilities",
+}
+WATER_DATES = (
+    date(2026, 4, 15),
+    date(2026, 6, 15),
+    date(2026, 8, 15),
+    date(2026, 10, 15),
+    date(2026, 12, 15),
+)
+
+
+def _water_period(**changes) -> BillingPeriod:
+    values = {
+        "start_date": date(2026, 1, 1),
+        "settlement_date": date(2026, 12, 31),
+        "base_fee_cents": None,
+        "unit_price_micro": None,
+        "state_factor_e4": None,
+        "calorific_value_e4": None,
+        "advance_cents": 24_000,
+        "expected_usage": 150,
+        "category": "Utilities",
+        "drinking": Charge(1_140_000, 3_600, 7),
+        "wastewater": Charge(3_690_000, 9_600, 0),
+        "advance_mode": "schedule",
+        "advance_dates": WATER_DATES,
+        "settlement_debit_days": 55,
+    }
+    return BillingPeriod(**{**values, **changes})
+
+
+def test_a_water_period_is_created_listed_and_edited(client, db_path):
+    meter = _water_meter(db_path)
+
+    added = client.post(f"/utilities/meters/{meter}/periods", data=WATER_PERIOD)
+
+    assert added.status_code == 303
+    [stored] = _store(db_path, lambda conn: list_periods(conn, meter))
+    assert stored.item == _water_period()
+    page = _page(client, meter)
+    row = page.select_one(f"#meter-{meter}-periods [data-row]")
+    assert text(row.select_one('[data-field="advance_mode"]')) == "schedule"
+    assert text(row.select_one('[data-field="advance_dates"]')) == (
+        "2026-04-15 2026-06-15 2026-08-15 2026-10-15 2026-12-15"
+    )
+    assert text(row.select_one('[data-field="settlement_debit_days"]')) == "55"
+    drinking = row.select_one('[data-charge="drinking"]')
+    assert text(drinking.select_one('[data-field="price"]')) == "114.0000 ct/m³"
+    assert cents(drinking.select_one('[data-field="base_fee"]')) == 3_600
+    assert text(drinking.select_one('[data-field="vat"]')) == "7 %"
+    wastewater = row.select_one('[data-charge="wastewater"]')
+    assert text(wastewater.select_one('[data-field="price"]')) == "369.0000 ct/m³"
+    assert cents(wastewater.select_one('[data-field="base_fee"]')) == 9_600
+    assert text(wastewater.select_one('[data-field="vat"]')) == "0 %"
+    assert row.select_one('[data-field="unit_price"]') is None
+    assert text(row.select_one('[data-field="expected_usage"]')) == "150 m³"
+
+    form = page.select_one(f"#period-{stored.id}-edit")
+    assert form.select_one("input[name=base_fee]") is None
+    assert form.select_one("input[name=unit_price]") is None
+    assert _input(form, "[data-charge=drinking] input[name=drinking_price]") == "114.0000"
+    assert _input(form, "[data-charge=wastewater] input[name=wastewater_base_fee]") == "96.00"
+    assert _input(form, "input[name=advance_dates]") == (
+        "2026-04-15, 2026-06-15, 2026-08-15, 2026-10-15, 2026-12-15"
+    )
+    assert form.select_one("select[name=advance_mode] option[selected]")["value"] == "schedule"
+    assert _input(form, "input[name=settlement_debit_days]") == "55"
+    edited = client.post(
+        form["action"],
+        data={
+            **WATER_PERIOD,
+            "drinking_vat": "19",
+            "advance_mode": "flexible",
+            "advance_dates": "",
+        },
+    )
+    assert edited.status_code == 303
+    after = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
+    assert after == _water_period(
+        drinking=Charge(1_140_000, 3_600, 19), advance_mode="flexible", advance_dates=()
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "message", "name", "typed"),
+    [
+        (
+            {"advance_dates": "2026-04-15, soon"},
+            "Scheduled advance dates: enter dates like 2026-04-15, 2026-06-15",
+            "advance_dates",
+            "2026-04-15, soon",
+        ),
+        ({"drinking_price": ""}, "Drinking water price:", "drinking_price", ""),
+        (
+            {"wastewater_vat": "101"},
+            "Wastewater VAT must be 0 to 100 percent.",
+            "wastewater_vat",
+            "101",
+        ),
+    ],
+)
+def test_a_bad_water_entry_is_a_400_that_keeps_every_entry(
+    client, db_path, change, message, name, typed
+):
+    meter = _water_meter(db_path)
+
+    response = client.post(f"/utilities/meters/{meter}/periods", data={**WATER_PERIOD, **change})
+
+    assert message in _error(response)
+    form = soup(response).select_one(f"#meter-{meter}-new-period")
+    assert _input(form, f"input[name={name}]") == typed
+    assert _input(form, "input[name=wastewater_price]") == change.get("wastewater_price", "369")
+    assert _store(db_path, lambda conn: list_periods(conn, meter)) == []
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"advance_dates": ""}, "Enter at least one scheduled advance date."),
+        (
+            {"advance_dates": "2027-06-01"},
+            "Scheduled advance dates must fall between the start date "
+            "and 14 days after the settlement date.",
+        ),
+        ({"settlement_debit_days": "366"}, "Settlement debit days must be 0 to 365."),
+        ({"drinking_price": "0"}, "Drinking water price must be positive."),
+        ({"wastewater_base_fee": "-1"}, "Wastewater base fee must not be negative."),
+    ],
+)
+def test_the_new_model_errors_have_plain_sentences(client, db_path, change, message):
+    meter = _water_meter(db_path)
+
+    response = client.post(f"/utilities/meters/{meter}/periods", data={**WATER_PERIOD, **change})
+
+    assert _error(response) == message
+
+
+def test_a_gas_and_an_electricity_period_take_mode_dates_and_debit_days(client, db_path):
+    meter = _electricity_meter(db_path)
+    data = {
+        **NEW_PERIOD,
+        "advance_mode": "schedule",
+        "advance_dates": "2027-02-15 2027-03-15",
+        "settlement_debit_days": "30",
+    }
+
+    response = client.post(f"/utilities/meters/{meter}/periods", data=data)
+
+    assert response.status_code == 303
+    period = _store(db_path, lambda conn: list_periods(conn, meter))[0].item
+    assert period.advance_mode == "schedule"
+    assert period.advance_dates == (date(2027, 2, 15), date(2027, 3, 15))
+    assert period.settlement_debit_days == 30
+    form = _page(client, meter).select_one(f"#meter-{meter}-new-period")
+    assert form.select_one("[data-charge]") is None
+    assert form.select_one("input[name=drinking_price]") is None
+    row = _page(client, meter).select_one(f"#meter-{meter}-periods [data-row]")
+    assert text(row.select_one('[data-field="advance_mode"]')) == "schedule"
+    assert text(row.select_one('[data-field="advance_dates"]')) == "2027-02-15 2027-03-15"
+    assert text(row.select_one('[data-field="settlement_debit_days"]')) == "30"
+
+
+def test_the_new_period_form_defaults_to_flexible_and_zero_debit_days(client, db_path):
+    meter = _electricity_meter(db_path)
+
+    form = _page(client, meter).select_one(f"#meter-{meter}-new-period")
+
+    assert form.select_one("select[name=advance_mode] option[selected]")["value"] == "flexible"
+    assert _input(form, "input[name=settlement_debit_days]") == "0"
+    assert _input(form, "input[name=advance_dates]") == ""
+
+
+def test_start_new_period_copies_the_water_period_and_moves_dates_a_year(client, db_path):
+    meter = _water_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _water_period()))
+
+    form = _page(client, meter).select_one(f"#meter-{meter}-new-period")
+
+    assert _input(form, "input[name=start_date]") == "2027-01-01"
+    assert _input(form, "input[name=advance_dates]") == (
+        "2027-04-15, 2027-06-15, 2027-08-15, 2027-10-15, 2027-12-15"
+    )
+    assert form.select_one("select[name=advance_mode] option[selected]")["value"] == "schedule"
+    assert _input(form, "input[name=drinking_price]") == "114.0000"
+    assert _input(form, "input[name=drinking_base_fee]") == "36.00"
+    assert _input(form, "input[name=drinking_vat]") == "7"
+    assert _input(form, "input[name=wastewater_price]") == "369.0000"
+    assert _input(form, "input[name=settlement_debit_days]") == "55"
+    assert _input(form, "input[name=expected_usage]") == "150"
+
+
+def test_usage_units_say_m3_for_water_and_kwh_for_the_others(client, db_path):
+    water = _water_meter(db_path)
+    power = _with_readings(db_path)
+    _store(db_path, lambda conn: add_period(conn, water, _water_period()))
+    for day, value in ((date(2026, 1, 1), 1_000), (date(2026, 1, 11), 2_000)):
+        _store(db_path, lambda conn, d=day, v=value: add_reading(conn, water, Reading(d, v)))
+
+    water_page = _page(client, water)
+    power_page = _page(client, power)
+
+    assert "m³ per day" in text(water_page.select_one(f"#meter-{water}-readings thead"))
+    assert "kWh per day" in text(power_page.select_one(f"#meter-{power}-readings thead"))
+    assert "m³" in text(
+        water_page.select_one(f"#meter-{water}-new-period label[for$=expected-usage]")
+    )
+    assert "kWh" in text(
+        power_page.select_one(f"#meter-{power}-new-period label[for$=expected-usage]")
+    )
+    power_row = power_page.select_one(f"#meter-{power}-periods [data-row]")
+    assert text(power_row.select_one('[data-field="expected_usage"]')) == "3000 kWh"

@@ -76,7 +76,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | garden link, fee and conflict storage | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
 | N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | DONE | |
-| N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 0 | 0 | TODO | |
+| N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 1 | 0 | DONE | |
 | N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
 | N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -504,5 +504,13 @@ verify: PASS
 exec: DONE · 1954 passed
 - No code change in try 2: the try-1 C4 failure no longer reproduces; full suite passes twice and ruff is clean
 - garden.py and test_garden.py (13 tests) from try 1 kept as is
+check: PASS 3/3
+verify: PASS
+
+### N04 try 1 · 2026-10-16
+exec: DONE · 1963 passed
+- settlement.py: cost, month_figures, cycle_months, meter_status take keyword garden; wastewater priced on max(0, main - garden) per day incl. projected and worst days; garden_fee part and ChargeFigure with wastewater VAT; MeterStatus.volumes main/garden/wastewater
+- garden fee follows the period's garden_fee_cents on every day with usage, independent of the garden argument; gas/electricity _day_costs ignore garden
+- 9 tests appended to test_settlement.py covering every pin, the garden > main day, month_figures and cycle_months netting
 check: PASS 3/3
 verify: PASS

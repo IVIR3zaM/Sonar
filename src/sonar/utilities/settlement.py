@@ -46,9 +46,16 @@ class ChartMonth:
 
 @dataclass(frozen=True)
 class ChargeFigure:
-    name: str  # "drinking" or "wastewater"
+    name: str  # "drinking", "wastewater" or "garden_fee"
     cost_so_far_cents: int
     projected_cost_cents: int
+
+
+@dataclass(frozen=True)
+class VolumeFigure:
+    name: str  # "main", "garden" or "wastewater"
+    so_far: int  # whole m³
+    projected: int
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,7 @@ class MeterStatus:
     advance_mode: str
     remaining_advance_dates: tuple[date, ...]  # a schedule's unpaid dates after today
     debit_date: date  # when the bank debits the settlement
+    volumes: tuple[VolumeFigure, ...] = ()  # water with a garden only
 
 
 def round_half_up(value: Fraction) -> int:
@@ -113,15 +121,25 @@ def cost(
     usage: DailyUsage,
     first: date,
     last: date,
+    *,
+    garden: DailyUsage | None = None,
 ) -> int:
     """Cents for the days of [first, last] that have usage and a period in force."""
-    return round_half_up(_exact_cost(periods, daily_kwh(kind, periods, usage), first, last))
+    kwh_by_day = daily_kwh(kind, periods, usage)
+    return round_half_up(_exact_cost(periods, kwh_by_day, first, last, garden))
 
 
 def month_figures(
-    kind: str, periods: Sequence[BillingPeriod], usage: DailyUsage
+    kind: str,
+    periods: Sequence[BillingPeriod],
+    usage: DailyUsage,
+    *,
+    garden: DailyUsage | None = None,
 ) -> list[MonthFigure]:
-    """Usage and cost of every calendar month whose days all have usage and a period."""
+    """Usage and cost of every calendar month whose days all have usage and a period.
+
+    `garden` is the garden m³ per day; it is taken off the wastewater, never the usage.
+    """
     kwh_by_day = daily_kwh(kind, periods, usage)
     figures = []
     for month in _months_touched(kwh_by_day):
@@ -131,14 +149,21 @@ def month_figures(
                 MonthFigure(
                     month,
                     kwh=round_half_up(sum(kwh_by_day[day] for day in days)),
-                    cost_cents=round_half_up(_exact_cost(periods, kwh_by_day, days[0], days[-1])),
+                    cost_cents=round_half_up(
+                        _exact_cost(periods, kwh_by_day, days[0], days[-1], garden)
+                    ),
                 )
             )
     return figures
 
 
 def cycle_months(
-    kind: str, periods: Sequence[BillingPeriod], usage: DailyUsage, today: date
+    kind: str,
+    periods: Sequence[BillingPeriod],
+    usage: DailyUsage,
+    today: date,
+    *,
+    garden: DailyUsage | None = None,
 ) -> list[ChartMonth]:
     """The previous and the current billing cycle month by month, the latest 24.
 
@@ -154,11 +179,11 @@ def cycle_months(
     cycles = {"previous": previous, "current": current}
     actual = [
         ChartMonth(figure.month, figure.kwh, figure.cost_cents, cycle, projected=False)
-        for figure in month_figures(kind, periods, usage)
+        for figure in month_figures(kind, periods, usage, garden=garden)
         for cycle, period in cycles.items()
         if period is not None and period_on([period], figure.month) is not None
     ]
-    projected = _projected_months(kind, periods, current, usage, actual) if in_force else []
+    projected = _projected_months(kind, periods, current, usage, actual, garden) if in_force else []
     return (actual + projected)[-CHART_MONTHS:]
 
 
@@ -168,6 +193,7 @@ def _projected_months(
     period: BillingPeriod,
     usage: DailyUsage,
     actual: list[ChartMonth],
+    garden: DailyUsage | None,
 ) -> list[ChartMonth]:
     """Measured days before `as_of` plus the seasonal days after, priced by the period."""
     as_of = _usage_end(period, usage)
@@ -185,7 +211,7 @@ def _projected_months(
         last = min(month.replace(day=days_in_month(month)), period.settlement_date)
         days = {day: kwh_by_day[day] for day in _days(month, last) if day in kwh_by_day}
         total = sum(days.values(), start=Fraction(0))
-        cost_cents = round_half_up(_rest_cost(period, days))
+        cost_cents = round_half_up(_rest_cost(period, days, garden))
         months.append(ChartMonth(month, round_half_up(total), cost_cents, "current", True))
     return months
 
@@ -217,8 +243,13 @@ def meter_status(
     usage: DailyUsage,
     bookings: Iterable[Booking],
     today: date,
+    *,
+    garden: DailyUsage | None = None,
 ) -> MeterStatus | None:
-    """The outlook of the period in force today, or None without one."""
+    """The outlook of the period in force today, or None without one.
+
+    `garden` is the garden m³ per day, measured and projected; it nets the wastewater.
+    """
     period = current_period(periods, today)
     if period is None:
         return None
@@ -255,11 +286,17 @@ def meter_status(
 
     first_day = max(period.start_date, min(usage))
     kwh_by_day = daily_kwh(kind, periods, usage)
-    so_far = _exact_costs(periods, kwh_by_day, first_day, end - timedelta(days=1))
-    rest = _rest_costs(period, seasonal_daily_kwh(kind, period, usage, end))
+    measured = {
+        day: kwh_by_day[day]
+        for day in _days(first_day, end - timedelta(days=1))
+        if day in kwh_by_day
+    }
+    seasonal = seasonal_daily_kwh(kind, period, usage, end)
+    so_far = _exact_costs(periods, kwh_by_day, first_day, end - timedelta(days=1), garden)
+    rest = _rest_costs(period, seasonal, garden)
     cost_so_far = _total(so_far)
     projected = cost_so_far + _total(rest)
-    worst = cost_so_far + _rest_cost(period, worst_daily_kwh(kind, period, usage, end))
+    worst = cost_so_far + _rest_cost(period, worst_daily_kwh(kind, period, usage, end), garden)
     projected_cents = round_half_up(projected)
     cost_so_far_cents = round_half_up(cost_so_far)
     flexible = period.advance_mode == "flexible"
@@ -280,7 +317,36 @@ def meter_status(
         advance_mode=period.advance_mode,
         remaining_advance_dates=remaining_dates,
         debit_date=debit_date,
+        volumes=_volume_figures(measured, seasonal, garden),
     )
+
+
+def _volume_figures(
+    measured: DailyUsage, seasonal: DailyUsage, garden: DailyUsage | None
+) -> tuple[VolumeFigure, ...]:
+    """Main, garden and wastewater m³ so far and projected; only with a garden."""
+    if garden is None:
+        return ()
+    return tuple(
+        VolumeFigure(name, round_half_up(_sum(so_far)), round_half_up(_sum(so_far) + _sum(rest)))
+        for name, so_far, rest in (
+            ("main", measured.values(), seasonal.values()),
+            ("garden", _garden_days(measured, garden), _garden_days(seasonal, garden)),
+            ("wastewater", _wastewater_days(measured, garden), _wastewater_days(seasonal, garden)),
+        )
+    )
+
+
+def _garden_days(main: DailyUsage, garden: DailyUsage) -> list[Fraction]:
+    return [_garden_units(garden, day) for day in main]
+
+
+def _wastewater_days(main: DailyUsage, garden: DailyUsage) -> list[Fraction]:
+    return [_wastewater_units(units, garden, day) for day, units in main.items()]
+
+
+def _sum(units: Iterable[Fraction]) -> Fraction:
+    return sum(units, start=Fraction(0))
 
 
 def _charge_figures(
@@ -296,7 +362,8 @@ def _charge_figures(
                 so_far.get(name, Fraction(0)) + rest.get(name, Fraction(0))
             ),
         )
-        for name in ("drinking", "wastewater")
+        for name in ("drinking", "wastewater", "garden_fee")
+        if name != "garden_fee" or name in so_far or name in rest
     )
 
 
@@ -391,14 +458,36 @@ def _fee_per_day(period: BillingPeriod, day: date) -> Fraction:
     return Fraction(period.base_fee_cents, days_in_month(day))
 
 
-def _day_costs(period: BillingPeriod, day: date, units: Fraction) -> dict[str, Fraction]:
-    """A day's cents by part: each water charge with its VAT, else the energy with its fee."""
+def _day_costs(
+    period: BillingPeriod, day: date, units: Fraction, garden: DailyUsage | None
+) -> dict[str, Fraction]:
+    """A day's cents by part: each water charge with its VAT, else the energy with its fee.
+
+    Garden water never reaches the drain, so wastewater is priced on the main m³ less it.
+    """
     if period.drinking is None or period.wastewater is None:
         return {"energy": _energy_cents(period, units) + _fee_per_day(period, day)}
-    return {
+    costs = {
         "drinking": _charge_cents(period.drinking, day, units),
-        "wastewater": _charge_cents(period.wastewater, day, units),
+        "wastewater": _charge_cents(period.wastewater, day, _wastewater_units(units, garden, day)),
     }
+    if period.garden_fee_cents is not None:
+        costs["garden_fee"] = _garden_fee_cents(period.garden_fee_cents, period.wastewater, day)
+    return costs
+
+
+def _garden_units(garden: DailyUsage | None, day: date) -> Fraction:
+    return garden.get(day, Fraction(0)) if garden else Fraction(0)
+
+
+def _wastewater_units(units: Fraction, garden: DailyUsage | None, day: date) -> Fraction:
+    return max(Fraction(0), units - _garden_units(garden, day))
+
+
+def _garden_fee_cents(yearly_fee_cents: int, wastewater: Charge, day: date) -> Fraction:
+    """The day's share of a twelfth of the yearly garden fee, with the wastewater VAT."""
+    net = Fraction(yearly_fee_cents, 12 * days_in_month(day))
+    return net * (100 + wastewater.vat_percent) / 100
 
 
 def _charge_cents(charge: Charge, day: date, units: Fraction) -> Fraction:
@@ -419,37 +508,49 @@ def _total(costs: dict[str, Fraction]) -> Fraction:
 
 
 def _exact_costs(
-    periods: Sequence[BillingPeriod], kwh_by_day: DailyUsage, first: date, last: date
+    periods: Sequence[BillingPeriod],
+    kwh_by_day: DailyUsage,
+    first: date,
+    last: date,
+    garden: DailyUsage | None = None,
 ) -> dict[str, Fraction]:
     """Cents by part for the days of [first, last] that have usage and a period in force."""
     totals: dict[str, Fraction] = {}
     for day in _days(first, last):
         period = period_on(periods, day)
         if period is not None and day in kwh_by_day:
-            _add_costs(totals, _day_costs(period, day, kwh_by_day[day]))
+            _add_costs(totals, _day_costs(period, day, kwh_by_day[day], garden))
     return totals
 
 
 def _exact_cost(
-    periods: Sequence[BillingPeriod], kwh_by_day: DailyUsage, first: date, last: date
+    periods: Sequence[BillingPeriod],
+    kwh_by_day: DailyUsage,
+    first: date,
+    last: date,
+    garden: DailyUsage | None = None,
 ) -> Fraction:
-    return _total(_exact_costs(periods, kwh_by_day, first, last))
+    return _total(_exact_costs(periods, kwh_by_day, first, last, garden))
 
 
 def _energy_cents(period: BillingPeriod, kwh: Fraction) -> Fraction:
     return kwh * period.unit_price_micro * CENTS_PER_MICRO_EURO
 
 
-def _rest_costs(period: BillingPeriod, kwh_by_day: DailyUsage) -> dict[str, Fraction]:
+def _rest_costs(
+    period: BillingPeriod, kwh_by_day: DailyUsage, garden: DailyUsage | None = None
+) -> dict[str, Fraction]:
     """Cents by part for the projected days, all priced by the current period."""
     totals: dict[str, Fraction] = {}
     for day, kwh in kwh_by_day.items():
-        _add_costs(totals, _day_costs(period, day, kwh))
+        _add_costs(totals, _day_costs(period, day, kwh, garden))
     return totals
 
 
-def _rest_cost(period: BillingPeriod, kwh_by_day: DailyUsage) -> Fraction:
-    return _total(_rest_costs(period, kwh_by_day))
+def _rest_cost(
+    period: BillingPeriod, kwh_by_day: DailyUsage, garden: DailyUsage | None = None
+) -> Fraction:
+    return _total(_rest_costs(period, kwh_by_day, garden))
 
 
 def _previous_period(

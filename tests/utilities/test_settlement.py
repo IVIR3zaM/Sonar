@@ -8,6 +8,7 @@ from sonar.utilities.settlement import (
     ChargeFigure,
     MeterStatus,
     MonthFigure,
+    VolumeFigure,
     cost,
     current_period,
     cycle_months,
@@ -777,3 +778,104 @@ def test_schedule_date_on_or_before_today_is_never_remaining():
     status = water_status(bookings, today=date(2026, 10, 15))
     assert status.remaining_advance_dates == (date(2026, 12, 15),)
     assert status.remaining_advance_count == 1
+
+
+# --- garden sub-meters: net wastewater and the garden fee ---------------------
+
+
+def per_day(units: Fraction, first: date, last: date) -> dict[date, Fraction]:
+    return {first.fromordinal(n): units for n in range(first.toordinal(), last.toordinal() + 1)}
+
+
+GARDEN = per_day(Fraction(1, 10), date(2025, 5, 31), date(2026, 12, 31))
+
+
+def more_garden() -> dict[date, Fraction]:
+    extra = per_day(Fraction(1, 50), date(2026, 1, 1), date(2026, 10, 15))
+    return {day: units + extra.get(day, Fraction(0)) for day, units in GARDEN.items()}
+
+
+def garden_status(garden=GARDEN, **current_changes):
+    periods = water_periods(**current_changes)
+    return meter_status("water", periods, water_usage(), WATER_BOOKINGS, WATER_TODAY, garden=garden)
+
+
+def test_garden_status_costs_wastewater_on_the_main_less_the_garden():
+    status = garden_status()
+    assert status.charges == (
+        ChargeFigure("drinking", cost_so_far_cents=22_615, projected_cost_cents=28_608),
+        ChargeFigure("wastewater", cost_so_far_cents=56_163, projected_cost_cents=71_020),
+    )
+    assert (status.cost_so_far_cents, status.projected_cost_cents) == (78_778, 99_628)
+    assert status.left_cents == 96_000 - 78_778
+    assert status.settlement_cents == 20_372
+    assert status.worst_settlement_cents == 20_372  # the worst cost is the projection: 99628
+
+
+def test_garden_status_volumes_count_main_garden_and_wastewater_m3():
+    assert garden_status().volumes == (
+        VolumeFigure("main", so_far=160, projected=203),
+        VolumeFigure("garden", so_far=29, projected=37),
+        VolumeFigure("wastewater", so_far=132, projected=166),
+    )
+
+
+def test_garden_fee_is_a_third_charge_with_the_wastewater_vat():
+    status = garden_status(garden_fee_cents=1200)
+    assert status.charges[2] == ChargeFigure(
+        "garden_fee", cost_so_far_cents=948, projected_cost_cents=1200
+    )
+    assert (status.cost_so_far_cents, status.projected_cost_cents) == (79_727, 100_828)
+    assert status.settlement_cents == 19_172
+
+
+def test_garden_worst_case_is_the_worst_main_less_the_garden():
+    status = garden_status(garden_fee_cents=1200, expected_usage=300)
+    assert status.projected_cost_cents == 100_828
+    assert status.worst_settlement_cents == 8969  # worst total 111031
+
+
+def test_garden_status_with_more_garden_and_a_fee():
+    status = garden_status(more_garden(), garden_fee_cents=1200)
+    assert status.charges[1] == ChargeFigure(
+        "wastewater", cost_so_far_cents=54_038, projected_cost_cents=68_895
+    )
+    assert (status.cost_so_far_cents, status.projected_cost_cents) == (77_601, 98_703)
+    assert status.settlement_cents == 21_297
+    assert status.volumes == (
+        VolumeFigure("main", so_far=160, projected=203),
+        VolumeFigure("garden", so_far=35, projected=42),
+        VolumeFigure("wastewater", so_far=126, projected=161),
+    )
+
+
+def test_without_a_garden_there_are_no_volumes():
+    assert water_status().volumes == ()
+
+
+def test_a_day_with_more_garden_than_main_costs_no_wastewater_m3():
+    period = water_period(date(2026, 1, 1), date(2026, 12, 31))
+    usage = usage_of((date(2026, 1, 1), 0), (date(2026, 2, 1), 31_000))  # 1 m³ a day
+    garden = per_day(Fraction(3), date(2026, 1, 1), date(2026, 1, 31))
+    # drinking (31 x 114 + 300) x 1.07 = 4102.38; wastewater only its fee share, 800
+    assert cost("water", [period], usage, date(2026, 1, 1), date(2026, 1, 31), garden=garden) == (
+        round_half_up(Fraction(410_238, 100) + 800)
+    )
+
+
+def test_month_figures_and_cycle_months_cost_the_net_wastewater():
+    period = water_period(date(2026, 1, 1), date(2026, 12, 31), garden_fee_cents=1200)
+    usage = usage_of((date(2026, 1, 1), 0), (date(2026, 2, 1), 10_000))  # 10 m³ in January
+    garden = per_day(Fraction(1, 31), date(2026, 1, 1), date(2026, 12, 31))  # 1 m³ in January
+    # drinking 1540.8; wastewater 9 x 369 + 800 = 4121; garden fee 100
+    [january] = month_figures("water", [period], usage, garden=garden)
+    assert (january.kwh, january.cost_cents) == (10, 5762)
+    months = cycle_months("water", [period], usage, date(2026, 2, 1), garden=garden)
+    assert months[0].cost_cents == 5762
+
+
+def test_garden_shifts_the_projected_chart_months():
+    plain = cycle_months("water", water_periods(), water_usage(), WATER_TODAY)
+    netted = cycle_months("water", water_periods(), water_usage(), WATER_TODAY, garden=GARDEN)
+    assert [m.month for m in plain] == [m.month for m in netted]
+    assert all(n.cost_cents < p.cost_cents for p, n in zip(plain, netted, strict=True))

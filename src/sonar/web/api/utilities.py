@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import StrictInt, StrictStr
 
 from sonar.db import connect
-from sonar.utilities.model import BillingPeriod, Exchange, FieldError, Meter, Reading
+from sonar.utilities.model import BillingPeriod, Charge, Exchange, FieldError, Meter, Reading
 from sonar.utilities.service import MeterView, load_utilities
 from sonar.utilities.store import (
     MeterNotEmpty,
@@ -60,17 +60,28 @@ class ExchangeIn(_StrictModel):
     new_start_milli: StrictInt
 
 
+class ChargeIn(_StrictModel):
+    unit_price_micro: StrictInt
+    base_fee_cents: StrictInt
+    vat_percent: StrictInt
+
+
 class PeriodIn(_StrictModel):
     start_date: StrictStr
     settlement_date: StrictStr
-    base_fee_cents: StrictInt
-    unit_price_micro: StrictInt
+    base_fee_cents: StrictInt | None = None
+    unit_price_micro: StrictInt | None = None
     state_factor_e4: StrictInt | None = None
     calorific_value_e4: StrictInt | None = None
     advance_cents: StrictInt
     expected_usage: StrictInt
     category: StrictStr | None = None
     settled_cents: StrictInt | None = None
+    drinking: ChargeIn | None = None
+    wastewater: ChargeIn | None = None
+    advance_mode: StrictStr = "flexible"
+    advance_dates: list[StrictStr] = []
+    settlement_debit_days: StrictInt = 0
 
 
 def _day(text: str, field: str) -> date:
@@ -88,6 +99,12 @@ def _exchange(body: ExchangeIn) -> Exchange:
     return Exchange(_day(body.date, "date"), body.old_final_milli, body.new_start_milli)
 
 
+def _charge(body: ChargeIn | None) -> Charge | None:
+    if body is None:
+        return None
+    return Charge(body.unit_price_micro, body.base_fee_cents, body.vat_percent)
+
+
 def _period(body: PeriodIn) -> BillingPeriod:
     return BillingPeriod(
         start_date=_day(body.start_date, "start_date"),
@@ -100,6 +117,11 @@ def _period(body: PeriodIn) -> BillingPeriod:
         expected_usage=body.expected_usage,
         category=body.category,
         settled_cents=body.settled_cents,
+        drinking=_charge(body.drinking),
+        wastewater=_charge(body.wastewater),
+        advance_mode=body.advance_mode,
+        advance_dates=tuple(_day(text, "advance_dates") for text in body.advance_dates),
+        settlement_debit_days=body.settlement_debit_days,
     )
 
 

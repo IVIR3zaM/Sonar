@@ -35,13 +35,29 @@ PERIOD = {
     "category": "Utilities",
     "settled_cents": None,
 }
-# Period fields the API reports but does not accept yet.
+# Period fields a gas body may leave out.
 PERIOD_DEFAULTS = {
     "drinking": None,
     "wastewater": None,
     "advance_mode": "flexible",
     "advance_dates": [],
     "settlement_debit_days": 0,
+}
+
+
+DRINKING = {"unit_price_micro": 1_900_000, "base_fee_cents": 4_800, "vat_percent": 7}
+WASTEWATER = {"unit_price_micro": 2_500_000, "base_fee_cents": 3_600, "vat_percent": 0}
+WATER_PERIOD = {
+    "start_date": "2026-01-01",
+    "settlement_date": "2026-12-31",
+    "advance_cents": 5_500,
+    "expected_usage": 90_000,
+    "category": "Utilities",
+    "drinking": DRINKING,
+    "wastewater": WASTEWATER,
+    "advance_mode": "schedule",
+    "advance_dates": ["2026-02-05", "2026-05-05", "2026-11-05"],
+    "settlement_debit_days": 55,
 }
 
 
@@ -68,6 +84,13 @@ def client(db_path) -> TestClient:
 def _gas(client: TestClient) -> int:
     response = client.post("/api/utilities/meters", json={"name": "Gas", "kind": "gas"})
     assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _water(client: TestClient) -> int:
+    response = client.post("/api/utilities/meters", json={"name": "Water", "kind": "water"})
+    assert response.status_code == 201
+    assert response.json()["kind"] == "water"
     return response.json()["id"]
 
 
@@ -114,6 +137,107 @@ def test_get_lists_a_meter_with_its_status_and_paid_advances(client, db_path):
     assert [r["date"] for r in meter["readings"]] == ["2026-01-01", "2026-01-11"]
     assert meter["exchanges"] == []
     assert set(meter) == {"id", "name", "kind", "status", "periods", "exchanges", "readings"}
+
+
+def test_a_water_period_with_a_schedule_round_trips_and_reports_its_status(client):
+    meter_id = _water(client)
+
+    created = client.post(f"/api/utilities/meters/{meter_id}/periods", json=WATER_PERIOD)
+    for day, value in (("2026-01-01", 10_000), ("2026-01-11", 12_000)):
+        reading = {"date": day, "value_milli": value}
+        client.post(f"/api/utilities/meters/{meter_id}/readings", json=reading)
+    [meter] = client.get("/api/utilities").json()["meters"]
+
+    assert created.status_code == 201
+    assert created.json() == {
+        "id": created.json()["id"],
+        **WATER_PERIOD,
+        "base_fee_cents": None,
+        "unit_price_micro": None,
+        "state_factor_e4": None,
+        "calorific_value_e4": None,
+        "settled_cents": None,
+    }
+    assert meter["periods"] == [created.json()]
+    status = meter["status"]
+    assert [c["name"] for c in status["charges"]] == ["drinking", "wastewater"]
+    assert status["advance_mode"] == "schedule"
+    assert status["remaining_advance_dates"] == ["2026-02-05", "2026-05-05", "2026-11-05"]
+    assert status["debit_date"] == "2027-02-24"
+
+
+def test_put_replaces_a_periods_dates_and_charges(client):
+    meter_id = _water(client)
+    period_id = client.post(f"/api/utilities/meters/{meter_id}/periods", json=WATER_PERIOD).json()[
+        "id"
+    ]
+    body = {
+        **WATER_PERIOD,
+        "advance_dates": ["2026-03-05"],
+        "drinking": {**DRINKING, "vat_percent": 19},
+        "settlement_debit_days": 10,
+    }
+
+    updated = client.put(f"/api/utilities/periods/{period_id}", json=body)
+    [meter] = client.get("/api/utilities").json()["meters"]
+
+    assert updated.status_code == 200
+    assert meter["periods"] == [updated.json()]
+    assert updated.json()["advance_dates"] == ["2026-03-05"]
+    assert updated.json()["drinking"]["vat_percent"] == 19
+    assert updated.json()["settlement_debit_days"] == 10
+    assert client.delete(f"/api/utilities/periods/{period_id}").status_code == 200
+    assert client.get("/api/utilities").json()["meters"][0]["periods"] == []
+
+
+def _gas_period(**changes):
+    return {**PERIOD, **changes}
+
+
+@pytest.mark.parametrize(
+    ("kind", "changes", "field"),
+    [
+        ("water", {"drinking": None}, "drinking"),
+        ("gas", {"drinking": DRINKING}, "drinking"),
+        ("water", {"drinking": {**DRINKING, "vat_percent": 101}}, "drinking_vat_percent"),
+        ("water", {"advance_dates": []}, "advance_dates"),
+        ("water", {"advance_mode": "flexible"}, "advance_dates"),
+        ("water", {"advance_dates": ["2027-02-01"]}, "advance_dates"),
+        ("water", {"advance_dates": ["2026-02-05", "2026-02-05"]}, "advance_dates"),
+        ("water", {"advance_dates": ["2026-13-01"]}, "advance_dates"),
+        ("water", {"settlement_debit_days": -1}, "settlement_debit_days"),
+    ],
+)
+def test_an_invalid_new_period_field_is_a_400_naming_it(client, kind, changes, field):
+    if kind == "water":
+        meter_id = _water(client)
+        body = {**WATER_PERIOD, **changes}
+    else:
+        meter_id = _gas(client)
+        body = _gas_period(**changes)
+
+    response = client.post(f"/api/utilities/meters/{meter_id}/periods", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["field"] == field
+    assert client.get("/api/utilities").json()["meters"][0]["periods"] == []
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"drinking": {**DRINKING, "colour": "blue"}},
+        {"advance_dates": "2026-02-05"},
+    ],
+)
+def test_an_unknown_charge_key_or_a_string_for_dates_is_a_422(client, changes):
+    meter_id = _water(client)
+
+    response = client.post(
+        f"/api/utilities/meters/{meter_id}/periods", json={**WATER_PERIOD, **changes}
+    )
+
+    assert response.status_code == 422
 
 
 def test_status_is_null_without_a_current_period(client):

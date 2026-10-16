@@ -46,7 +46,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N04 | utility tables and period model | exec | N03 | sonnet/sonnet | 1 | 1 | DONE | |
 | N05 | water cost and advance modes | exec | N04 | opus/sonnet | 1 | 1 | DONE | |
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
-| N07 | utilities API | exec | N05 | sonnet/sonnet | 2 | 0 | RUNNING | fail C4 |
+| N07 | utilities API | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
 | N08 | utilities pages | exec | N06 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N07,N08 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N02,N09 | -/sonnet | 0 | 0 | TODO | |
@@ -410,4 +410,11 @@ exec: DONE · 1896 passed
 - D10 key names chosen to match MeterStatus (debit_date, advance_mode, remaining_advance_dates, remaining_advances_cents); settlement_date kept; zero-amount advances add no item
 - sonar.css unchanged (rebuild is byte-identical)
 check: PASS 3/3
+verify: PASS
+
+### N07 try 2 · 2026-10-16
+exec: DONE · 1896 passed, ruff clean
+- API extended for water meters and period fields; tests added in test_api_utilities.py
+- try 2: no code change; full suite and ruff pass twice (try-1 failure not reproducible)
+check: PASS 2/2
 verify: PASS

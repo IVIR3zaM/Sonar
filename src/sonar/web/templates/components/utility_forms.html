@@ -82,3 +82,31 @@
   {{ button("Delete", variant="danger", size="sm") }}
 </form>
 {% endmacro %}
+
+{#- The three ways out of a garden conflict. Each form is a plain post that
+    redirects back to the garden page. #}
+{% macro zero_form(action, start, end) %}
+<form method="post" action="{{ action }}" data-action="zero">
+  <input type="hidden" name="start_date" value="{{ start.isoformat() }}">
+  <input type="hidden" name="end_date" value="{{ end.isoformat() }}">
+  {{ button("Zero it out", variant="secondary", size="sm") }}
+</form>
+{% endmacro %}
+
+{% macro reject_form(action, label) %}
+<form method="post" action="{{ action }}" data-action="reject">
+  {{ button(label, variant="danger", size="sm") }}
+</form>
+{% endmacro %}
+
+{% macro record_exchange_form(key, action, err, unit) %}
+{% set v = err.fields if err else {"old_final": ""} %}
+<details data-action-drawer{% if err %} open{% endif %}>
+  <summary class="inline-flex cursor-pointer select-none items-center rounded-control px-2 py-1 text-xs font-medium text-accent hover:bg-accent-soft">Record as exchange</summary>
+  <form id="{{ key }}" method="post" action="{{ action }}" data-action="exchange" class="mt-2 grid grid-cols-2 gap-3 rounded-control border border-line bg-surface-muted/50 p-3">
+    {{ form_error(err) }}
+    <div class="col-span-2">{{ field("old_final", "Old meter final (" ~ unit ~ ")", value=v.old_final, id=key ~ "-old-final", required=true, help="What the old meter showed on this date, up to 3 decimals") }}</div>
+    <div class="col-span-2">{{ button("Record as exchange", size="sm") }}</div>
+  </form>
+</details>
+{% endmacro %}

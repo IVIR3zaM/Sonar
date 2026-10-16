@@ -17,7 +17,7 @@ from sonar.categorization.store import list_categories
 from sonar.db import connect
 from sonar.money import parse_signed_cents
 from sonar.utilities.model import BillingPeriod, Charge, Exchange, Meter, Reading
-from sonar.utilities.service import MeterView, load_utilities
+from sonar.utilities.service import ConflictCase, MeterView, load_utilities
 from sonar.utilities.settlement import current_period, daily_kwh, round_half_up
 from sonar.utilities.store import (
     MeterNotEmpty,
@@ -35,9 +35,11 @@ from sonar.utilities.store import (
     meter_of_exchange,
     meter_of_period,
     meter_of_reading,
+    reading_to_exchange,
     update_exchange,
     update_period,
     update_reading,
+    zero_garden_interval,
 )
 from sonar.utilities.usage import continuous_series, daily_usage
 from sonar.web import forms
@@ -45,6 +47,7 @@ from sonar.web import forms
 METER_FIELDS = ("name", "kind", "main_meter_id")
 READING_FIELDS = ("date", "value")
 EXCHANGE_FIELDS = ("date", "old_final", "new_start")
+ZERO_FIELDS = ("start_date", "end_date")
 PERIOD_FIELDS = (
     "start_date",
     "settlement_date",
@@ -97,10 +100,19 @@ class MeterCard:
     new_period: dict[str, str]  # the "Start new period" form's prefill
     last_settlement: tuple[int, date] | None  # signed cents and date of the previous bill
     gardens: tuple[GardenLink, ...] = ()  # a main meter's garden meters
+    main_name: str | None = None  # a garden meter's main meter
 
     @property
     def open_conflicts(self) -> int:
         return sum(garden.open_cases for garden in self.gardens)
+
+    @property
+    def is_garden(self) -> bool:
+        return self.view.main_meter_id is not None
+
+    @property
+    def open_cases(self) -> list[ConflictCase]:
+        return [case for case in self.view.conflicts if not case.zeroed]
 
     @property
     def is_empty(self) -> bool:
@@ -212,6 +224,17 @@ def _reading_values(reading: Reading) -> dict[str, str]:
         "date": reading.reading_date.isoformat(),
         "value": forms.format_scaled(reading.value_milli, 3),
     }
+
+
+def _zero_from(values: dict[str, str]) -> tuple[date, date]:
+    return (
+        forms.field("Start", values["start_date"], "date", date.fromisoformat),
+        forms.field("End", values["end_date"], "date", date.fromisoformat),
+    )
+
+
+def _old_final_from(values: dict[str, str]) -> int:
+    return forms.field("Old meter final", values["old_final"], "decimal3", _scaled(3))
 
 
 def _exchange_values(exchange: Exchange) -> dict[str, str]:
@@ -340,6 +363,7 @@ def _gardens_of(view: MeterView, views: list[MeterView]) -> tuple[GardenLink, ..
 
 
 def _card(view: MeterView, today: date, views: list[MeterView]) -> MeterCard:
+    main = next((other for other in views if other.id == view.main_meter_id), None)
     periods = [stored.item for stored in view.periods]
     latest = view.periods[-1] if view.periods else None
     current = current_period(periods, today)
@@ -353,6 +377,7 @@ def _card(view: MeterView, today: date, views: list[MeterView]) -> MeterCard:
         new_period=_next_period_values(latest),
         last_settlement=_last_settlement(periods, current),
         gardens=_gardens_of(view, views),
+        main_name=main.meter.name if main else None,
     )
 
 
@@ -584,6 +609,30 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             request,
             lambda conn: delete_exchange(conn, id),
             lambda conn: meter_of_exchange(conn, id),
+        )
+
+    # Garden conflicts
+
+    @router.post("/utilities/meters/{id}/conflicts/zero")
+    async def zero_conflict_route(request: Request, id: int):
+        return await _submit(
+            request,
+            f"meter-{id}-zero",
+            ZERO_FIELDS,
+            _zero_from,
+            lambda conn, interval: zero_garden_interval(conn, id, *interval),
+            meter_of=lambda conn: id,
+        )
+
+    @router.post("/utilities/readings/{id}/exchange")
+    async def reading_to_exchange_route(request: Request, id: int):
+        return await _submit(
+            request,
+            f"reading-{id}-exchange",
+            ("old_final",),
+            _old_final_from,
+            lambda conn, old_final: reading_to_exchange(conn, id, old_final),
+            meter_of=lambda conn: meter_of_reading(conn, id),
         )
 
     # Billing periods

@@ -78,9 +78,9 @@ and dark; the final check passes SPEC §11 and §12.
 | N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | DONE | |
 | N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 1 | 0 | DONE | |
 | N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
-| N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | RUNNING | fail C3 |
+| N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | VERIFYING | fail C3 |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
-| N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
+| N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
@@ -552,4 +552,23 @@ check: PASS 4/4
 verify: PASS
 
 ### N11 try 1 · 2026-10-16
+verify: PASS
+
+### N06 try 2 · 2026-10-16
+exec: DONE · 2022 passed
+- SPEC.md:263 Garden meters part gains the page rule (D10): no garden card, main card lists gardens, conflict alert, volumes
+- Only line 263 changed; API code and tests unchanged from try 1
+check: FAIL C4
+- C4 exit 1: Found 2 errors.
+
+### N08 try 1 · 2026-10-16
+exec: DONE · 2035 passed
+- Garden meter page: main link, open conflict cases with zero/reject/exchange, chart, no periods; zero and reading-to-exchange POST routes
+- Zero errors show at the top of the conflicts card; sonar.css rebuild is byte-identical (no new classes)
+
+### N06 try 2 · 2026-10-16
+check: PASS 2/2
+
+### N08 try 1 · 2026-10-16
+check: PASS 3/3
 verify: PASS

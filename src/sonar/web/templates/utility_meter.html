@@ -2,7 +2,8 @@
 {% from "components/card.html" import card %}
 {% from "components/badge.html" import badge %}
 {% from "components/amount.html" import amount, date %}
-{% from "components/utility_forms.html" import reading_form, exchange_form, period_form, delete_form %}
+{% from "components/utility_forms.html" import form_error, reading_form, exchange_form, period_form, delete_form, zero_form, reject_form, record_exchange_form %}
+{% from "components/charts.html" import utility_chart %}
 
 {% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
 {% set th = "py-2 pr-4 text-xs font-medium uppercase tracking-wide text-ink-muted last:pr-0" %}
@@ -23,7 +24,11 @@
     <h1 class="text-2xl font-semibold tracking-tight text-ink" data-field="name">{{ meter.name }}</h1>
     {{ badge(meter.kind, tone="accent", attrs={"data-field": "kind"}) }}
   </div>
+  {% if m.is_garden %}
+  <p class="mt-1 text-sm text-ink-muted">A garden meter on <a id="main-meter-link" href="/utilities/meters/{{ m.view.main_meter_id }}" class="font-medium text-accent underline">{{ m.main_name }}</a>. Readings and meter exchanges.</p>
+  {% else %}
   <p class="mt-1 text-sm text-ink-muted">Readings, meter exchanges and billing periods.</p>
+  {% endif %}
 </header>
 
 {% if error and error.form == "page" %}
@@ -31,6 +36,45 @@
 {% endif %}
 
 <div class="space-y-6" data-meter-id="{{ m.view.id }}">
+  {% if m.is_garden %}
+  {% call card(id=pre ~ "-conflicts-card") %}
+  <section>
+    <h2 class="{{ section_title }}">Readings above the main meter</h2>
+    {% set zero_err = error if error and error.form == pre ~ "-zero" else none %}
+    {% if zero_err %}<div class="mt-2">{{ form_error(zero_err) }}</div>{% endif %}
+    {% if m.open_cases %}
+    <p class="mt-2 text-sm text-ink-muted">The garden measured more than the main meter over these intervals. Zero an interval out, reject the reading that closes it, or record that reading as a meter exchange.</p>
+    <ul id="{{ pre }}-conflicts" class="mt-2 divide-y divide-line">
+      {% for case in m.open_cases %}
+      <li data-conflict data-start="{{ case.start_date.isoformat() }}" data-end="{{ case.end_date.isoformat() }}" class="py-3">
+        <p class="text-sm text-ink">{{ date(case.start_date) }} – {{ date(case.end_date) }}: <span data-field="excess" data-milli="{{ case.excess_milli }}" class="tabular-nums">{{ case.excess_milli | scaled(3) }}</span> {{ m.unit }} more than the main meter</p>
+        <div class="mt-2 flex flex-wrap items-start gap-2">
+          {{ zero_form("/utilities/meters/" ~ m.view.id ~ "/conflicts/zero", case.start_date, case.end_date) }}
+          {% if case.reading_id is not none %}
+          {{ reject_form("/utilities/readings/" ~ case.reading_id ~ "/delete", "Reject the reading") }}
+          {% set key = "reading-" ~ case.reading_id ~ "-exchange" %}
+          {{ record_exchange_form(key, "/utilities/readings/" ~ case.reading_id ~ "/exchange", error if error and error.form == key else none, m.unit) }}
+          {% else %}
+          {{ reject_form("/utilities/exchanges/" ~ case.exchange_id ~ "/delete", "Reject the exchange") }}
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p id="{{ pre }}-no-conflicts" class="mt-2 text-sm text-ink-muted">No reading is above the main meter.</p>
+    {% endif %}
+  </section>
+  {% endcall %}
+
+  {% call card(id=pre ~ "-chart-card") %}
+  <section>
+    <h2 class="{{ section_title }}">Usage per month</h2>
+    <div class="mt-2">{{ utility_chart(pre ~ "-chart", m.view.chart_months, m.usage_unit) }}</div>
+  </section>
+  {% endcall %}
+  {% endif %}
+
   {% call card(id=pre ~ "-history-card") %}
   <section>
     <h2 class="{{ section_title }}">Readings</h2>
@@ -42,7 +86,7 @@
             <th class="{{ th }}">Date</th>
             <th class="{{ th_num }}">Reading ({{ m.unit }})</th>
             <th class="{{ th_num }}">Usage ({{ m.unit }})</th>
-            <th class="{{ th_num }}">{{ m.usage_unit }} per day</th>
+            {% if not m.is_garden %}<th class="{{ th_num }}">{{ m.usage_unit }} per day</th>{% endif %}
             <th class="{{ th }}"><span class="sr-only">Manage</span></th>
           </tr>
         </thead>
@@ -55,7 +99,7 @@
             <td class="{{ td }}" data-field="date">{{ date(reading.reading_date) }}</td>
             <td class="{{ td_num }}" data-field="reading">{{ reading.value_milli | scaled(3) }}</td>
             <td class="{{ td_num }}" data-field="usage">{% if row.usage_milli is not none %}{{ row.usage_milli | scaled(3) }}{% endif %}</td>
-            <td class="{{ td_num }}" data-field="kwh_per_day">{% if row.kwh_per_day is not none %}{{ row.kwh_per_day }}{% endif %}</td>
+            {% if not m.is_garden %}<td class="{{ td_num }}" data-field="kwh_per_day">{% if row.kwh_per_day is not none %}{{ row.kwh_per_day }}{% endif %}</td>{% endif %}
             <td class="{{ td }}">
               <details{% if err %} open{% endif %}>
                 <summary class="{{ summary }}">Edit</summary>
@@ -106,6 +150,7 @@
     </details>
   </section>
 
+  {% if not m.is_garden %}
   <section class="mt-6">
     <h2 class="{{ section_title }}">Billing periods</h2>
     {% if m.view.periods %}
@@ -162,6 +207,22 @@
       <div class="{{ drawer }}">{{ period_form(key, "/utilities/meters/" ~ m.view.id ~ "/periods", err, m.new_period, meter.kind, m.usage_unit, category_options, "Add period") }}</div>
     </details>
   </section>
+  {% endif %}
   {% endcall %}
 </div>
+{% if m.is_garden %}
+<script data-utility-chart-memory>
+  // The checkboxes already work without this; it only remembers them per chart.
+  // Blocked storage leaves the default (off), so every access is guarded.
+  document.querySelectorAll("[data-utility-chart]").forEach(function (chart) {
+    chart.querySelectorAll("[data-toggle]").forEach(function (box) {
+      var key = "utility-chart:" + chart.id + ":" + box.dataset.toggle;
+      try { box.checked = localStorage.getItem(key) === "1"; } catch (e) {}
+      box.addEventListener("change", function () {
+        try { localStorage.setItem(key, box.checked ? "1" : "0"); } catch (e) {}
+      });
+    });
+  });
+</script>
+{% endif %}
 {% endblock %}

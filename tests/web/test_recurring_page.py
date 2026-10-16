@@ -621,8 +621,9 @@ def test_linked_payment_row_shows_the_advance_next_date_and_a_meter_badge(tmp_pa
     assert next_due.select_one("time")["datetime"] == "2026-12-15"
     badge = water.select_one('[data-field="advance-link"]')
     assert badge.select_one("a")["href"] == f"/utilities/meters/{meter_id}"
-    assert "Water" in text(badge)
-    assert badge.select_one("a")["title"]
+    assert text(badge) == "Dates from Water"
+    assert badge.select_one("a")["title"] == "15 Dec 2026"
+    assert "class=" not in text(water)
 
 
 def test_unlinked_payment_row_keeps_its_own_amount_and_next_due(tmp_path):

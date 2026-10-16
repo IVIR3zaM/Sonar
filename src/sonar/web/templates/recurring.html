@@ -73,7 +73,7 @@
             {% endif %}
             {% if row.link %}
             <div class="mt-1" data-field="advance-link">
-              <a href="/utilities/meters/{{ row.link.meter_id }}" title="{% for day in row.link.supplier.remaining %}{{ date(day) }}{% if not loop.last %}, {% endif %}{% endfor %}"
+              <a href="/utilities/meters/{{ row.link.meter_id }}" title="{% for day in row.link.supplier.remaining %}{{ day|date }}{% if not loop.last %}, {% endif %}{% endfor %}"
                  class="inline-flex">{{ badge("Dates from " ~ row.link.meter_name, tone="accent") }}</a>
             </div>
             {% endif %}

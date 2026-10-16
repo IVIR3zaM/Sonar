@@ -1,5 +1,5 @@
 # Garden water sub-meters
-status: WAITING
+status: RUNNING
 created: 2026-10-16 · updated: 2026-10-16
 goal: optional garden water meters whose usage is deducted from the main water meter's wastewater
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -18,9 +18,9 @@ pays them, so every forecast and the Fixed payments page show the supplier's dat
 
 In scope: a nullable link from a water meter to its main water meter; garden meters with readings, exchanges
 and a chart but no periods; per-day net wastewater m³ with the gardens summed; each meter projected from its
-own history; an optional net yearly garden fee on the main period with wastewater VAT; detection of intervals
-where garden usage beats main usage with three owner choices (zero it out, reject the reading, record it as
-an exchange); the Utilities water card, garden meter page, forms, API and the SPEC §13 Utilities bullet.
+own history; an optional net yearly garden fee on the main period with wastewater VAT; detection of runs of days
+where garden usage beats main usage, one case per run on the main meter (D22) with three owner choices (zero
+out the case, reject a garden's reading, record it as an exchange); the Utilities water card, garden meter page, forms, API and the SPEC §13 Utilities bullet.
 The advance link (D16): a schedule-mode period in force sets the due dates and amount of its category's
 recurring payment in the dashboard due list, the payday forecast, Fixed costs, Payoff and Fixed payments; the
 supplier's dates apply from the period's start through its settlement or last advance, the payment's own
@@ -68,6 +68,7 @@ and dark; the final check passes SPEC §11 and §12.
 - D19 Link display: Fixed payments row: Amount = the advance, Next due = the first remaining supplier date (none left: the cadence's next date after the span), a badge "Dates from <meter>" linking to `/utilities/meters/{id}` with the remaining dates as its title; Cadence and the edit, pause and resume forms stay the payment's own (they govern only outside the span); dashboard Fixed costs row: amount = the advance, next due as on Fixed payments. Utilities card and meter page (schedule period in force): "Paid as <payment>" linking to `/recurring#payment-{id}`, else "Forecast as <meter> advance" | confirmed
 - D20 API and SPEC: `/api/recurring` items add `advance_meter_id` (null when unlinked) and their `next_due` follows the link; the `/api/utilities` meter status adds `recurring_payment_id` (null); `/api/dashboard` keeps its shape; SPEC gains one new §13 bullet after the Utilities bullet stating D16-D19 and overriding its covered-in-window rule, line 263 itself untouched beyond N06 | confirmed
 - D21 Tier: the plan grows to 13 nodes, past M's 10; it stays M, since moving to the L layout now would relocate the briefs and logs of the running N02 and N03 | confirmed
+- D22 Conflict cases (gate feedback; amends D8, D9, D10, D12): no automatic blame, the owner decides. A case is one run of consecutive conflicting days (D8's day rule) on the main water meter, not one per garden; its excess stays the gardens' total over the main on those days; it shows once on the main water card and on the main meter page and is listed on each involved garden's page; it names every garden meter that used water on those days with its interval and m³; the owner picks, per involved garden, Reject that garden's closing reading or Record it as an exchange, or Zero out the whole case once; resolving the case one way clears it and the alert everywhere | confirmed
 
 ## Graph
 
@@ -81,11 +82,15 @@ and dark; the final check passes SPEC §11 and §12.
 | N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N06,N08,N13,N14,N16,N17 | -/- | 0 | 1 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 2 | 0 | DONE | |
+| N14 | plain-text badge title | exec | N13 | haiku/sonnet | 1 | 0 | DONE | |
+| N15 | conflict cases per main run | exec | N13 | opus/sonnet | 1 | 0 | RUNNING | |
+| N16 | garden reading form | exec | N15 | sonnet/sonnet | 0 | 0 | TODO | |
+| N17 | SPEC conflict part | exec | N15,N16 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -334,17 +339,22 @@ Done when:
 - C3 [visual] the dashboard Utilities card lists Water 191,72 € and Water 2 69,03 € and no Garden
 - C4 [visual] the Garden page shows the link to Water, readings, no exchanges, the chart in m³ and no periods
 - C5 [visual] after the loader adds garden "Garden 2" (main Water; readings 2026-09-01 0, 2026-10-01 30.000)
-  the Water card alerts one open case and the Garden 2 page shows it with Zero it out, Reject the reading and
-  Record as exchange; Zero it out removes the case and the alert
+  the Water card shows one alert (its box ends after its text) linking to the Water page, whose conflicts
+  card lists one case naming Garden and Garden 2, each with its interval and m³, with one Zero it out and per
+  garden Reject the reading and Record as exchange; the Garden and Garden 2 pages each list that case with a
+  link to it; Zero it out once removes the case from the Water page, the Water card and both garden pages
 - C6 [visual] the add-meter form offers "Main meter" (None, Water, Water 2) and the Water period form shows
   "Garden meter fee" 12,00; every checked page is readable at 375px in light and dark with nothing cut off
 - C7 [visual] /recurring: the Water payment's row shows 240,00 €, next due 15.12.2026 and "Dates from
   Water" linking to the Water page; the Water card and Water page show "Paid as <that payment>" linking
-  back to its row; the Water 2 card shows "Forecast as Water 2 advance"
+  back to its row; the Water 2 card shows "Forecast as Water 2 advance"; the badge's tooltip is the plain
+  remaining dates and no markup text shows in the row
 - C8 [visual] after the loader PUTs an extra advance date 2026-10-25 on Water's current period and
   2026-10-28 on Water 2's, the dashboard due list holds the Water payment on 25.10.2026 and "Water 2 advance"
   on 28.10.2026, each 240,00 €, and no "Water advance"; the Water payment's next due on /recurring reads
   25.10.2026
+- C9 [visual] the Garden 2 page's Add a reading form saves 2026-10-10 30.500 and returns to the Garden 2
+  page listing it
 
 ## N10 plan acceptance
 Do: Check the whole plan against verify, SPEC §11 and §12, the SPEC §13 Utilities bullet's garden part and
@@ -359,7 +369,7 @@ Done when:
 - C6 [review] SPEC §11 checklist holds and SPEC §12 UI acceptance holds for /utilities, both meter page
   kinds, /recurring and the dashboard card (base.html, component macros, no inline `<style>`, 400 inline errors keeping
   values, `eur` amounts, `money` prefills, usable without script)
-- C7 [review] the SPEC §13 Utilities bullet's "Garden meters:" part matches the code for D1-D12
+- C7 [review] the SPEC §13 Utilities bullet's "Garden meters:" part matches the code for D1-D12 as amended by D22
 - C8 [review] no tracked file holds a real name, IBAN or meter number; fixtures are invented
 - C9 [review] the advance-link bullet after the Utilities bullet matches the code for D16-D20; the old
   covered-in-window rule (cashflow/service.py `_recurring_categories_due`) is gone; no path forecasts a
@@ -470,6 +480,111 @@ Done when:
   one bullet after line 263 and it states every rule of D16-D20
 - C4 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n13.css" --minify && cmp "$TMPDIR/n13.css" src/sonar/web/static/sonar.css`
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N14 plain-text badge title
+Do: The Fixed payments advance-link badge puts the `date` macro's `<time>` HTML inside its link's `title`
+  (recurring.html:76), so markup text leaks into the visible row. Give the title the remaining dates as plain
+  text through the `date` filter (display.py:59, "15 Dec 2026"), joined by ", ". Nothing else changes.
+Context: D19 the badge "Dates from <meter>" `[data-field="advance-link"]` links to `/utilities/meters/{id}`
+  with the remaining supplier dates as its title. Pin: N12's row (tests/web/test_recurring_page.py:596-636,
+  TODAY 2026-09-23, dates 06-15, 09-15, 12-15) → title exactly "15 Dec 2026". No class changes, so sonar.css
+  stays byte-identical.
+Read: `src/sonar/web/templates/recurring.html`, `src/sonar/web/display.py:59`, `tests/web/test_recurring_page.py:580-640`
+Write: `src/sonar/web/templates/recurring.html`, `tests/web/test_recurring_page.py`
+Test first: the Water bill badge link's `title` equals "15 Dec 2026" and the row's text holds no `class=`.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_recurring_page.py`
+- C2 [review] the title is built with the `date` filter, never the `date` macro; the test asserts the exact
+  title and the badge text "Dates from Water"
+- C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n14.css" --minify && cmp "$TMPDIR/n14.css" src/sonar/web/static/sonar.css`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N15 conflict cases per main run
+Do: Rework garden conflicts per D22, pure part to pages: one case per run of consecutive conflicting days on a
+  main water meter, naming every garden that used water on those days, resolved on the main meter page. Also
+  close the card alert's div after its text (utilities.html:69-73 wraps the rest of the card). Rebuild sonar.css.
+Context: D8 day rule kept (garden.py:75). D22 `garden_conflicts(main, gardens)` (garden.py:56) returns
+  GardenConflict(start_date, end_date = day after the run's last day, excess_milli = the gardens' total over the
+  main on the run, rounded half up once, gardens: tuple[GardenShare]); GardenShare(meter_id, start_date,
+  end_date, used_milli): one per garden interval [start, end) of its continuous series holding run days with
+  usage, used = its m³ on those days. Service (service.py:33, :125-167) ConflictCase(main_meter_id, start_date,
+  end_date, excess_milli, zeroed, gardens) whose entries add the closing reading_id or exchange_id; a main's
+  view holds its cases, a garden's view those naming it. D9 amended: zeroing stores (main id, run start, run
+  end) in `utility_garden_zeroed`, no migration (old garden-keyed rows match no case); store.py:235 becomes
+  `zero_conflict(conn, main_meter_id, start, end)`, idempotent, a water meter that is not a garden (else
+  FieldError `meter`); figures keep the D4 clamp. D12 amended (api/utilities.py:165, :280): `garden_conflicts`
+  [{start_date, end_date, excess_milli, zeroed, gardens: [{meter_id, start_date, end_date, used_milli,
+  reading_id, exchange_id}]}] on the main and each named garden; POST `.../meters/{id}/conflicts/zero` takes
+  the main (a garden 400 `meter`). D10 amended: card alert `#{pre}-garden-conflicts` data-count = the main's
+  open cases, linking to `/utilities/meters/{main}#conflicts`; main page card `#conflicts`: per open case
+  `[data-conflict]` (data-start, data-end, `[data-field="excess"]`), one `[data-action="zero"]`, per entry
+  `[data-conflict-garden="{id}"]` (data-start, data-end, `[data-field="used"]`, name linking to the garden) with
+  `[data-action="reject"]` and, closing reading only, `[data-action="exchange"]`; a garden page lists its open
+  cases read-only with those hooks and `[data-field="resolve"]` to the main's `#conflicts`. Routes: zero
+  `/utilities/meters/{main}/conflicts/zero`; reject new POST `/utilities/meters/{main}/conflicts/reject`
+  (hidden `reading_id` or `exchange_id`, 404 unless the point is on a garden of {main}); record
+  `/utilities/readings/{id}/exchange`; all 303 to the main page, 400 re-render it with the form open, values
+  kept. Garden rows keep their own delete routes. Rewrite only this plan's conflict tests. Pins (main 03-01 0, 10-01 100.000; 2026): garden 03-01 0, 06-01 5.000, 10-01 65.000 → one case 06-01..10-01,
+  2991, entry 06-01..10-01 used 60000; A 06-01 0, 10-01 55.000 and B 06-01 0, 10-01 5.000 → one case 2991,
+  entries 55000 and 5000; 03-01 0, 04-01 20.000, 06-01 20.000, 07-01 40.000 → cases 03-01..04-01 5514 and
+  06-01..07-01 5981; 06-01 0, 08-01 40.000, 10-01 70.000 → one case 12991, entries 40000 and 30000. A and B
+  stored: one zero clears the main page, the card alert and both garden pages.
+Read: `src/sonar/utilities/garden.py`, `src/sonar/utilities/service.py`, `src/sonar/utilities/store.py:228-260`, `src/sonar/web/api/utilities.py`, `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/templates/utilities.html:60-80`, `src/sonar/web/templates/components/utility_forms.html:84-120`
+Write: `src/sonar/utilities/garden.py`, `src/sonar/utilities/service.py`, `src/sonar/utilities/store.py`, `src/sonar/web/api/utilities.py`, `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utilities.html`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/templates/components/utility_forms.html`, `src/sonar/web/static/sonar.css`, `tests/utilities/test_garden.py`, `tests/utilities/test_service.py`, `tests/utilities/test_store.py`, `tests/web/test_api_utilities.py`, `tests/web/test_utilities_page.py`, `tests/web/test_utility_meter_page.py`
+Test first: gardens A and B under the main give one GardenConflict with two GardenShares.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/utilities tests/web/test_api_utilities.py tests/web/test_utilities_page.py tests/web/test_utility_meter_page.py`
+- C2 [review] every pin is a test; zero on a garden refused; reject 404s for another main's point; the alert div holds only its text and links; hooks ids and data-*
+- C3 [cmd] `test -z "$(git diff 54ade8a -- tests/utilities/test_settlement.py tests/web/test_utilities_page.py | grep -E '^-[^-]')"`
+- C4 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n15.css" --minify && cmp "$TMPDIR/n15.css" src/sonar/web/static/sonar.css`
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N16 garden reading form
+Do: A garden meter has no /utilities card (D10), so nothing can add its readings. Give the garden meter page
+  the add-reading form, and make the add-reading route return to the garden page for a garden meter. Main and
+  other meter pages and every other meter's add-reading redirect stay as today. Rebuild sonar.css.
+Context: reuse `reading_form` (utility_forms.html:17) as the /utilities card does (utilities.html:153-157):
+  key `meter-{id}-add-reading`, action `/utilities/meters/{id}/readings`, defaults empty, `m.unit`, "Add
+  reading". `add_reading_route` (pages/utilities.py, `# Readings`) has no `meter_of`, so it redirects and
+  re-renders on /utilities; for a garden meter (store `_main_meter_id`, store.py:346, or the meter's
+  `main_meter_id`) it redirects 303 to `/utilities/meters/{id}` and a bad entry re-renders that page 400 with
+  the form open and the values kept (`_submit`, pages/utilities.py:486). Pins (garden on a water main):
+  readings 2026-03-01 0 → the page has `#meter-{id}-add-reading`; POST 2026-06-01 5.000 → 303 to the garden
+  page and the row listed; POST 2026-07-01 4.000 → 400 on the garden page, form open, entries kept; POST on the
+  main water meter → 303 to /utilities as today; the main meter page has no new form.
+Read: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utility_meter.html`,
+  `src/sonar/web/templates/utilities.html:150-158`, `tests/web/test_utility_meter_page.py:1-140`, `tests/html.py`
+Write: `src/sonar/web/pages/utilities.py`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_utility_meter_page.py`
+Test first: the garden page has a form `#meter-{id}-add-reading` posting to `/utilities/meters/{id}/readings`.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_utility_meter_page.py tests/web/test_utilities_page.py`
+- C2 [review] every pin is a test; hooks are ids and data-*; no inline `<style>`; the existing add-reading
+  tests for non-garden meters are unchanged
+- C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n16.css" --minify && cmp "$TMPDIR/n16.css" src/sonar/web/static/sonar.css`
+- C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
+## N17 SPEC conflict part
+Do: Bring the "Garden meters:" part of the Utilities bullet (SPEC.md:263) in line with D22 and N16, in its
+  terse style; change no other SPEC line.
+Context: replace its conflict, resolution, page and API wording: D22 a case is one run of consecutive days
+  (a day the main measured and the gardens together measured more) on the main water meter, with the gardens'
+  total excess over the main on those days; it names every garden that used water then, with its interval
+  and m³; it shows once as an alert on the main water card and on the main meter page, where the owner picks
+  per garden Reject its closing reading or Record it as an exchange (old final entered; a dropping series is a
+  400), or Zero out the whole case once; each involved garden's page lists it with a link; zeroing only clears
+  the case, the figures always use the D4 clamp (today's text wrongly says a zeroed case counts as no garden
+  usage); the garden page has the add-reading form. API: `garden_conflicts` [{start_date, end_date,
+  excess_milli, zeroed, gardens: [{meter_id, start_date, end_date, used_milli, reading_id, exchange_id}]}] on
+  the main and each named garden; POST `/api/utilities/meters/{id}/conflicts/zero` takes the main meter;
+  rejecting uses the reading or exchange DELETE. Check each statement against the code (N15, N16).
+Read: `SPEC.md:263`, `src/sonar/utilities/garden.py`, `src/sonar/web/api/utilities.py`, `src/sonar/web/templates/utility_meter.html`
+Write: `SPEC.md`
+Test first: -
+Done when:
+- C1 [cmd] `test "$(git diff --numstat HEAD -- SPEC.md | cut -f1,2)" = "$(printf '1\t1')"`
+- C2 [review] the garden part states every D22 rule, the D12 API as amended and the garden add-reading
+  form, matches the code, and no longer says a zeroed case counts as no garden usage
+- C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## Log
 
@@ -595,4 +710,26 @@ exec: DONE · 2047 passed
 - fixed C2: restored the original model import line in test_utilities_page.py (tests only added)
 - Charge now reached via 'from sonar.utilities import model as utility_model' to keep ruff isort clean
 check: PASS 4/4
+verify: PASS
+
+### N09 try 1 · 2026-10-16
+human: 1) /recurring advance-link badge: the date macro output (<time> HTML) is placed inside the a title attribute, so visible text shows: 15 Dec 2026" class="inline-flex"> ; use plain text for the title. 2) no UI to add a garden reading: Add reading form exists only on /utilities cards and garden meters have no card; add the add-reading form to the garden meter page. 3) one conflicting day opens a case on every garden meter used that day (Garden 2025-12-31..2026-10-16 and Garden 2 2026-09-01..2026-10-01 both with excess 16.287), so Zero it out on Garden 2 leaves the Water alert up; open the case only on the garden meter(s) whose own interval causes the excess, so resolving it clears the alert. 4) with an open case, #meter-N-garden-conflicts role=alert div on the Water card wraps the whole rest of the card (unclosed markup); close it after the alert text.
+
+### N09 replan 1 · 2026-10-16
+plan: ASK D22
+- gate: four failures; three are plain fixes (badge title holds date-macro HTML, no add-reading form on the garden page, unclosed conflict alert div on the Water card)
+- the fourth changes confirmed D8 (which garden a conflicting day blames), so D22 is proposed; fix nodes are written once it is answered
+plan: REPLANNED +N14,N15,N16,N17
+- cause: gate try 1 failed four checks; D22 confirmed (one conflict case per run of days on the main meter, owner decides, zero once clears it everywhere)
+- N14 plain-text badge title; N15 conflict cases per main run end to end, incl. the unclosed card alert div; N16 add-reading form on the garden page; N17 SPEC garden part per D22
+- N09 deps gain N14,N16,N17; C5 rewritten for D22, C7 checks the badge tooltip, new C9 checks the garden add-reading form; N10 C7 cites D22
+
+### N14 try 1 · 2026-10-16
+exec: DONE · 2047 passed (full suite), 18 recurring page tests
+- Fixed-payments advance-link title now uses the date filter (plain text, comma-joined) instead of the date macro; test asserts exact title, badge text and no markup in row
+- Kept sonar.css byte-identical; no class changes
+exec: DONE · 2047 passed (full suite), 18 recurring page tests
+- Fixed-payments advance-link title now uses the date filter (plain text, comma-joined) instead of the date macro; test asserts exact title, badge text and no markup in row
+- Kept sonar.css byte-identical; no class changes
+check: PASS 3/3
 verify: PASS

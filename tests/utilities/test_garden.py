@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sonar.utilities.garden import (
     GardenConflict,
+    GardenShare,
     garden_conflicts,
     garden_cycle_months,
     garden_usage,
@@ -86,38 +87,79 @@ def test_a_garden_with_no_readings_adds_nothing():
 # --- garden_conflicts --------------------------------------------------------
 
 MAIN = series_of((date(2026, 3, 1), 0), (date(2026, 10, 1), 100_000))
+JUNE, OCTOBER = date(2026, 6, 1), date(2026, 10, 1)
 
 
-def test_garden_over_the_main_is_one_case_for_its_interval():
+def test_two_gardens_together_over_the_main_are_one_case_naming_both():
+    first = series_of((JUNE, 0), (OCTOBER, 55_000))
+    second = series_of((JUNE, 0), (OCTOBER, 5_000))
+    assert garden_conflicts(MAIN, {1: first}) == []
+    assert garden_conflicts(MAIN, {2: second}) == []
+    assert garden_conflicts(MAIN, {1: first, 2: second}) == [
+        GardenConflict(
+            JUNE,
+            OCTOBER,
+            2991,
+            (GardenShare(1, JUNE, OCTOBER, 55_000), GardenShare(2, JUNE, OCTOBER, 5_000)),
+        )
+    ]
+
+
+def test_one_garden_over_the_main_is_one_case_for_its_run():
+    garden = series_of((date(2026, 3, 1), 0), (JUNE, 5_000), (OCTOBER, 65_000))
+    assert garden_conflicts(MAIN, {7: garden}) == [
+        GardenConflict(JUNE, OCTOBER, 2991, (GardenShare(7, JUNE, OCTOBER, 60_000),))
+    ]
+
+
+def test_two_separate_runs_are_two_cases():
     garden = series_of(
-        (date(2026, 3, 1), 0), (date(2026, 6, 1), 5_000), (date(2026, 10, 1), 65_000)
+        (date(2026, 3, 1), 0),
+        (date(2026, 4, 1), 20_000),
+        (JUNE, 20_000),
+        (date(2026, 7, 1), 40_000),
     )
     assert garden_conflicts(MAIN, {7: garden}) == [
-        GardenConflict(7, date(2026, 6, 1), date(2026, 10, 1), 2991)
+        GardenConflict(
+            date(2026, 3, 1),
+            date(2026, 4, 1),
+            5514,
+            (GardenShare(7, date(2026, 3, 1), date(2026, 4, 1), 20_000),),
+        ),
+        GardenConflict(
+            JUNE,
+            date(2026, 7, 1),
+            5981,
+            (GardenShare(7, JUNE, date(2026, 7, 1), 20_000),),
+        ),
+    ]
+
+
+def test_one_run_over_two_garden_intervals_is_one_case_with_an_entry_each():
+    garden = series_of((JUNE, 0), (date(2026, 8, 1), 40_000), (OCTOBER, 70_000))
+    assert garden_conflicts(MAIN, {7: garden}) == [
+        GardenConflict(
+            JUNE,
+            OCTOBER,
+            12_991,
+            (
+                GardenShare(7, JUNE, date(2026, 8, 1), 40_000),
+                GardenShare(7, date(2026, 8, 1), OCTOBER, 30_000),
+            ),
+        )
     ]
 
 
 def test_an_interval_with_no_conflicting_day_is_no_case():
-    garden = series_of((date(2026, 3, 1), 0), (date(2026, 6, 1), 5_000))
+    garden = series_of((date(2026, 3, 1), 0), (JUNE, 5_000))
     assert garden_conflicts(MAIN, {7: garden}) == []
 
 
-def test_two_gardens_together_over_the_main_are_one_case_each():
-    first = series_of((date(2026, 6, 1), 0), (date(2026, 10, 1), 55_000))
-    second = series_of((date(2026, 6, 1), 0), (date(2026, 10, 1), 5_000))
-    assert garden_conflicts(MAIN, {1: first}) == []
-    assert garden_conflicts(MAIN, {2: second}) == []
-    assert garden_conflicts(MAIN, {1: first, 2: second}) == [
-        GardenConflict(1, date(2026, 6, 1), date(2026, 10, 1), 2991),
-        GardenConflict(2, date(2026, 6, 1), date(2026, 10, 1), 2991),
-    ]
-
-
-def test_a_garden_that_used_nothing_in_the_interval_is_no_case():
-    over = series_of((date(2026, 6, 1), 5_000), (date(2026, 10, 1), 65_000))
-    idle = series_of((date(2026, 6, 1), 1_000), (date(2026, 10, 1), 1_000))
+def test_a_garden_that_used_nothing_on_the_run_is_not_named():
+    over = series_of((JUNE, 5_000), (OCTOBER, 65_000))
+    idle = series_of((JUNE, 1_000), (OCTOBER, 1_000))
     assert garden_conflicts(MAIN, {1: over, 2: idle}) == [
-        GardenConflict(1, date(2026, 6, 1), date(2026, 10, 1), 2991)
+        GardenConflict(JUNE, OCTOBER, 2991, (GardenShare(1, JUNE, OCTOBER, 60_000),))
     ]
 
 

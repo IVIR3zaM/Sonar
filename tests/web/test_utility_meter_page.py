@@ -1010,41 +1010,84 @@ def test_start_new_period_copies_the_garden_fee(client, db_path):
     assert _input(form, "input[name=start_date]") == "2027-01-01"
 
 
-# Garden meter page (SPEC §13 Utilities: garden conflicts)
+# Garden conflicts (SPEC §13 Utilities: D22), resolved on the main meter page
+
+MARCH, APRIL, JUNE, JULY, AUGUST, OCTOBER = (
+    date(2026, 3, 1),
+    date(2026, 4, 1),
+    date(2026, 6, 1),
+    date(2026, 7, 1),
+    date(2026, 8, 1),
+    date(2026, 10, 1),
+)
+
+
+def _add_readings(db_path, meter: int, points) -> None:
+    for day, milli in points:
+        _store(db_path, lambda conn, d=day, v=milli: add_reading(conn, meter, Reading(d, v)))
+
+
+def _main_with_gardens(db_path, gardens: dict[str, list]) -> tuple[int, dict[str, int]]:
+    """A main at 100 m³ from March to October and the named gardens with their readings."""
+    main = _water_meter(db_path)
+    _add_readings(db_path, main, [(MARCH, 0), (OCTOBER, 100_000)])
+    ids = {}
+    for name, points in gardens.items():
+        ids[name] = _store(db_path, lambda conn, n=name: add_meter(conn, Meter(n, "water", main)))
+        _add_readings(db_path, ids[name], points)
+    return main, ids
 
 
 def _garden_pair(db_path, closing_exchange: bool = False) -> tuple[int, int]:
     """A main at 100 m³ and a garden at 65 m³: one case 2026-06-01 to 2026-10-01, 2.991 m³ over."""
-    main = _water_meter(db_path)
-    for day, milli in ((date(2026, 3, 1), 0), (date(2026, 10, 1), 100_000)):
-        _store(db_path, lambda conn, d=day, v=milli: add_reading(conn, main, Reading(d, v)))
-    garden = _store(db_path, lambda conn: add_meter(conn, Meter("Garden", "water", main)))
-    readings = [(date(2026, 3, 1), 0), (date(2026, 6, 1), 5_000)]
+    points = [(MARCH, 0), (JUNE, 5_000)]
     if not closing_exchange:
-        readings.append((date(2026, 10, 1), 65_000))
-    for day, milli in readings:
-        _store(db_path, lambda conn, d=day, v=milli: add_reading(conn, garden, Reading(d, v)))
+        points.append((OCTOBER, 65_000))
+    main, ids = _main_with_gardens(db_path, {"Garden": points})
+    garden = ids["Garden"]
     if closing_exchange:
-        exchange = Exchange(date(2026, 10, 1), 65_000, 0)
+        exchange = Exchange(OCTOBER, 65_000, 0)
         _store(db_path, lambda conn: add_exchange(conn, garden, exchange))
     return main, garden
 
 
 def _closing_reading_id(db_path, garden: int) -> int:
     readings = _store(db_path, lambda conn: list_readings(conn, garden))
-    return next(r.id for r in readings if r.item.reading_date == date(2026, 10, 1))
+    return next(r.id for r in readings if r.item.reading_date == OCTOBER)
 
 
-def test_the_garden_page_lists_its_open_case_with_the_three_choices(client, db_path):
-    _, garden = _garden_pair(db_path)
+def _cases(page) -> list[tuple[str, str, str]]:
+    return [
+        (
+            case["data-start"],
+            case["data-end"],
+            case.select_one('[data-field="excess"]')["data-milli"],
+        )
+        for case in page.select("[data-conflict]")
+    ]
+
+
+def _entries(case) -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            entry["data-conflict-garden"],
+            entry["data-start"],
+            entry["data-end"],
+            entry.select_one('[data-field="used"]')["data-milli"],
+        )
+        for entry in case.select("[data-conflict-garden]")
+    ]
+
+
+def test_the_main_page_lists_the_case_with_zero_and_the_gardens_choices(client, db_path):
+    main, garden = _garden_pair(db_path)
     reading = _closing_reading_id(db_path, garden)
 
-    cases = _page(client, garden).select("[data-conflict]")
+    page = _page(client, main)
 
-    assert len(cases) == 1
-    case = cases[0]
-    assert (case["data-start"], case["data-end"]) == ("2026-06-01", "2026-10-01")
-    assert case.select_one('[data-field="excess"]')["data-milli"] == "2991"
+    assert page.select_one("#conflicts") is not None
+    [case] = page.select("#conflicts [data-conflict]")
+    assert _cases(page) == [("2026-06-01", "2026-10-01", "2991")]
     assert text(case.select_one('[data-field="excess"]')) == "2.991"
     assert [form["data-action"] for form in case.select("form[data-action]")] == [
         "zero",
@@ -1052,15 +1095,81 @@ def test_the_garden_page_lists_its_open_case_with_the_three_choices(client, db_p
         "exchange",
     ]
     assert case.select_one('[data-action="zero"]')["action"] == (
-        f"/utilities/meters/{garden}/conflicts/zero"
+        f"/utilities/meters/{main}/conflicts/zero"
     )
     assert _input(case, '[data-action="zero"] input[name=start_date]') == "2026-06-01"
     assert _input(case, '[data-action="zero"] input[name=end_date]') == "2026-10-01"
-    assert case.select_one('[data-action="reject"]')["action"] == (
-        f"/utilities/readings/{reading}/delete"
+    assert _entries(case) == [(str(garden), "2026-06-01", "2026-10-01", "60000")]
+    entry = case.select_one(f'[data-conflict-garden="{garden}"]')
+    assert text(entry.select_one('[data-field="used"]')) == "60.000"
+    assert entry.select_one('[data-field="garden"]')["href"] == f"/utilities/meters/{garden}"
+    assert text(entry.select_one('[data-field="garden"]')) == "Garden"
+    assert entry.select_one('[data-action="reject"]')["action"] == (
+        f"/utilities/meters/{main}/conflicts/reject"
     )
-    assert case.select_one('[data-action="exchange"]')["action"] == (
+    assert _input(entry, '[data-action="reject"] input[name=reading_id]') == str(reading)
+    assert entry.select_one('[data-action="exchange"]')["action"] == (
         f"/utilities/readings/{reading}/exchange"
+    )
+
+
+def test_two_gardens_over_the_main_are_one_case_naming_both(client, db_path):
+    main, ids = _main_with_gardens(
+        db_path, {"A": [(JUNE, 0), (OCTOBER, 55_000)], "B": [(JUNE, 0), (OCTOBER, 5_000)]}
+    )
+
+    [case] = _page(client, main).select("[data-conflict]")
+
+    assert case.select_one('[data-field="excess"]')["data-milli"] == "2991"
+    assert _entries(case) == [
+        (str(ids["A"]), "2026-06-01", "2026-10-01", "55000"),
+        (str(ids["B"]), "2026-06-01", "2026-10-01", "5000"),
+    ]
+    assert len(case.select('[data-action="zero"]')) == 1
+
+
+def test_two_separate_runs_are_two_cases(client, db_path):
+    main, _ = _main_with_gardens(
+        db_path, {"Garden": [(MARCH, 0), (APRIL, 20_000), (JUNE, 20_000), (JULY, 40_000)]}
+    )
+
+    assert _cases(_page(client, main)) == [
+        ("2026-03-01", "2026-04-01", "5514"),
+        ("2026-06-01", "2026-07-01", "5981"),
+    ]
+
+
+def test_one_run_over_two_garden_intervals_is_one_case_with_an_entry_each(client, db_path):
+    main, ids = _main_with_gardens(
+        db_path, {"Garden": [(JUNE, 0), (AUGUST, 40_000), (OCTOBER, 70_000)]}
+    )
+    garden = str(ids["Garden"])
+
+    [case] = _page(client, main).select("[data-conflict]")
+
+    assert case.select_one('[data-field="excess"]')["data-milli"] == "12991"
+    assert _entries(case) == [
+        (garden, "2026-06-01", "2026-08-01", "40000"),
+        (garden, "2026-08-01", "2026-10-01", "30000"),
+    ]
+
+
+def test_the_garden_page_lists_its_cases_read_only_and_links_the_main(client, db_path):
+    main, ids = _main_with_gardens(
+        db_path, {"A": [(JUNE, 0), (OCTOBER, 55_000)], "B": [(JUNE, 0), (OCTOBER, 5_000)]}
+    )
+
+    page = _page(client, ids["B"])
+
+    [case] = page.select("[data-conflict]")
+    assert _cases(page) == [("2026-06-01", "2026-10-01", "2991")]
+    assert _entries(case) == [
+        (str(ids["A"]), "2026-06-01", "2026-10-01", "55000"),
+        (str(ids["B"]), "2026-06-01", "2026-10-01", "5000"),
+    ]
+    assert case.select("form[data-action]") == []
+    assert case.select_one('[data-field="resolve"]')["href"] == (
+        f"/utilities/meters/{main}#conflicts"
     )
 
 
@@ -1079,42 +1188,68 @@ def test_the_garden_page_links_its_main_and_has_no_periods(client, db_path):
 
 
 def test_a_garden_below_its_main_lists_no_case(client, db_path):
-    main = _water_meter(db_path)
-    _store(db_path, lambda conn: add_reading(conn, main, Reading(date(2026, 3, 1), 0)))
-    _store(db_path, lambda conn: add_reading(conn, main, Reading(date(2026, 10, 1), 100_000)))
-    garden = _store(db_path, lambda conn: add_meter(conn, Meter("Garden", "water", main)))
-    _store(db_path, lambda conn: add_reading(conn, garden, Reading(date(2026, 3, 1), 0)))
-    _store(db_path, lambda conn: add_reading(conn, garden, Reading(date(2026, 10, 1), 20_000)))
+    main, ids = _main_with_gardens(db_path, {"Garden": [(MARCH, 0), (OCTOBER, 20_000)]})
 
+    assert _page(client, main).select_one("[data-conflict]") is None
+    assert _page(client, ids["Garden"]).select_one("[data-conflict]") is None
+
+
+def test_zero_it_out_on_the_main_resolves_the_case(client, db_path):
+    main, garden = _garden_pair(db_path)
+
+    response = client.post(
+        f"/utilities/meters/{main}/conflicts/zero",
+        data={"start_date": "2026-06-01", "end_date": "2026-10-01"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/utilities/meters/{main}"
+    assert _store(db_path, lambda conn: list_zeroed(conn, main)) == [(JUNE, OCTOBER)]
+    assert _page(client, main).select_one("[data-conflict]") is None
     assert _page(client, garden).select_one("[data-conflict]") is None
 
 
-def test_zero_it_out_resolves_the_case(client, db_path):
-    _, garden = _garden_pair(db_path)
+def test_one_zero_clears_the_main_page_the_card_alert_and_both_garden_pages(client, db_path):
+    main, ids = _main_with_gardens(
+        db_path, {"A": [(JUNE, 0), (OCTOBER, 55_000)], "B": [(JUNE, 0), (OCTOBER, 5_000)]}
+    )
+    alert = f"#meter-{main}-garden-conflicts"
+    assert soup(client.get("/utilities")).select_one(alert)["data-count"] == "1"
+
+    client.post(
+        f"/utilities/meters/{main}/conflicts/zero",
+        data={"start_date": "2026-06-01", "end_date": "2026-10-01"},
+    )
+
+    assert soup(client.get("/utilities")).select_one(alert) is None
+    for meter in (main, ids["A"], ids["B"]):
+        assert _page(client, meter).select_one("[data-conflict]") is None
+
+
+def test_zeroing_on_a_garden_is_refused_with_a_400(client, db_path):
+    main, garden = _garden_pair(db_path)
 
     response = client.post(
         f"/utilities/meters/{garden}/conflicts/zero",
         data={"start_date": "2026-06-01", "end_date": "2026-10-01"},
     )
 
-    assert response.status_code == 303
-    assert response.headers["location"] == f"/utilities/meters/{garden}"
-    assert _store(db_path, lambda conn: list_zeroed(conn, garden)) == [
-        (date(2026, 6, 1), date(2026, 10, 1))
-    ]
-    assert _page(client, garden).select_one("[data-conflict]") is None
+    assert "main water meter" in _error(response)
+    assert _store(db_path, lambda conn: list_zeroed(conn, main)) == []
+    assert _store(db_path, lambda conn: list_zeroed(conn, garden)) == []
 
 
-def test_a_bad_zero_date_is_a_400_on_the_garden_page(client, db_path):
-    _, garden = _garden_pair(db_path)
+def test_a_bad_zero_date_is_a_400_on_the_main_page(client, db_path):
+    main, _ = _garden_pair(db_path)
 
     response = client.post(
-        f"/utilities/meters/{garden}/conflicts/zero",
+        f"/utilities/meters/{main}/conflicts/zero",
         data={"start_date": "soon", "end_date": "2026-10-01"},
     )
 
     assert "Start" in _error(response)
-    assert _store(db_path, lambda conn: list_zeroed(conn, garden)) == []
+    assert soup(response).select_one("#conflicts #form-error") is not None
+    assert _store(db_path, lambda conn: list_zeroed(conn, main)) == []
 
 
 def test_zeroing_a_meter_that_does_not_exist_is_a_404(client):
@@ -1126,49 +1261,78 @@ def test_zeroing_a_meter_that_does_not_exist_is_a_404(client):
     assert response.status_code == 404
 
 
-def test_reject_the_reading_posts_to_the_delete_route(client, db_path):
-    _, garden = _garden_pair(db_path)
-    case = _page(client, garden).select_one("[data-conflict]")
+def test_reject_the_reading_deletes_it_and_returns_to_the_main(client, db_path):
+    main, garden = _garden_pair(db_path)
+    case = _page(client, main).select_one("[data-conflict]")
+    form = case.select_one('[data-action="reject"]')
 
-    response = client.post(case.select_one('[data-action="reject"]')["action"])
+    response = client.post(form["action"], data={"reading_id": _input(form, "input")})
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/utilities/meters/{garden}"
-    assert _store(
-        db_path, lambda conn: [r.item.value_milli for r in list_readings(conn, garden)]
-    ) == [
-        0,
-        5_000,
+    assert response.headers["location"] == f"/utilities/meters/{main}"
+    values = _store(db_path, lambda conn: [r.item.value_milli for r in list_readings(conn, garden)])
+    assert values == [0, 5_000]
+    assert _page(client, main).select_one("[data-conflict]") is None
+
+
+def test_reject_is_a_404_for_a_point_not_on_a_garden_of_the_main(client, db_path):
+    main, garden = _garden_pair(db_path)
+    other = _store(db_path, lambda conn: add_meter(conn, Meter("Other", "water")))
+    other_garden = _store(
+        db_path, lambda conn: add_meter(conn, Meter("Other garden", "water", other))
+    )
+    _add_readings(db_path, other_garden, [(MARCH, 0)])
+    foreign = _store(db_path, lambda conn: list_readings(conn, other_garden))[0].id
+    own = _store(db_path, lambda conn: list_readings(conn, main))[0].id
+    reject = f"/utilities/meters/{main}/conflicts/reject"
+
+    responses = [
+        client.post(reject, data={"reading_id": str(foreign)}),
+        client.post(reject, data={"reading_id": str(own)}),
+        client.post(reject, data={"reading_id": "9999"}),
+        client.post(reject, data={"reading_id": "lots"}),
+        client.post(reject, data={}),
+        client.post(
+            f"/utilities/meters/{other}/conflicts/reject",
+            data={"reading_id": str(_closing_reading_id(db_path, garden))},
+        ),
     ]
-    assert _page(client, garden).select_one("[data-conflict]") is None
+
+    assert [r.status_code for r in responses] == [404] * 6
+    assert len(_store(db_path, lambda conn: list_readings(conn, other_garden))) == 1
+    assert len(_store(db_path, lambda conn: list_readings(conn, main))) == 2
+    assert len(_store(db_path, lambda conn: list_readings(conn, garden))) == 3
 
 
 def test_record_as_exchange_turns_the_closing_reading_into_an_exchange(client, db_path):
-    _, garden = _garden_pair(db_path)
+    main, garden = _garden_pair(db_path)
     reading = _closing_reading_id(db_path, garden)
 
     response = client.post(f"/utilities/readings/{reading}/exchange", data={"old_final": "5.000"})
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/utilities/meters/{garden}"
+    assert response.headers["location"] == f"/utilities/meters/{main}"
     exchanges = _store(db_path, lambda conn: list_exchanges(conn, garden))
-    assert [e.item for e in exchanges] == [Exchange(date(2026, 10, 1), 5_000, 65_000)]
+    assert [e.item for e in exchanges] == [Exchange(OCTOBER, 5_000, 65_000)]
+    assert _page(client, main).select_one("[data-conflict]") is None
     page = _page(client, garden)
-    assert page.select_one("[data-conflict]") is None
     assert [row["data-exchange-id"] for row in page.select("[data-exchange-id]")] == [
         str(exchanges[0].id)
     ]
     assert page.select_one(f'[data-reading-id="{reading}"]') is None
 
 
-def test_an_old_final_below_the_previous_reading_is_a_400_with_the_form_open(client, db_path):
-    _, garden = _garden_pair(db_path)
+def test_an_old_final_below_the_previous_reading_is_a_400_on_the_main_with_the_form_open(
+    client, db_path
+):
+    main, garden = _garden_pair(db_path)
     reading = _closing_reading_id(db_path, garden)
 
     response = client.post(f"/utilities/readings/{reading}/exchange", data={"old_final": "4.000"})
 
     assert "drops" in _error(response)
     page = soup(response)
+    assert page.select_one(f"[data-meter-id='{main}']") is not None
     form = page.select_one(f"#reading-{reading}-exchange")
     assert form.find_parent("details").has_attr("open")
     assert _input(form, "input[name=old_final]") == "4.000"
@@ -1186,30 +1350,52 @@ def test_an_unreadable_old_final_is_a_400_that_keeps_the_entry(client, db_path):
     assert _input(soup(response), f"#reading-{reading}-exchange input[name=old_final]") == "lots"
 
 
+def test_a_reading_of_a_plain_meter_recorded_as_exchange_returns_to_its_own_page(client, db_path):
+    meter = _water_meter(db_path)
+    _add_readings(db_path, meter, [(MARCH, 0), (OCTOBER, 10_000)])
+    reading = _closing_reading_id(db_path, meter)
+
+    response = client.post(f"/utilities/readings/{reading}/exchange", data={"old_final": "5.000"})
+
+    assert response.headers["location"] == f"/utilities/meters/{meter}"
+
+
 def test_a_case_closed_by_an_exchange_offers_only_zero_and_reject(client, db_path):
-    _, garden = _garden_pair(db_path, closing_exchange=True)
+    main, garden = _garden_pair(db_path, closing_exchange=True)
     exchange = _store(db_path, lambda conn: list_exchanges(conn, garden))[0]
 
-    case = _page(client, garden).select_one("[data-conflict]")
+    case = _page(client, main).select_one("[data-conflict]")
 
     assert case["data-end"] == "2026-10-01"
     assert [form["data-action"] for form in case.select("form[data-action]")] == ["zero", "reject"]
-    assert case.select_one('[data-action="reject"]')["action"] == (
-        f"/utilities/exchanges/{exchange.id}/delete"
-    )
+    form = case.select_one('[data-action="reject"]')
+    assert _input(form, "input[name=exchange_id]") == str(exchange.id)
+    assert form.select_one("input[name=reading_id]") is None
 
 
 def test_rejecting_the_closing_exchange_resolves_the_case(client, db_path):
-    _, garden = _garden_pair(db_path, closing_exchange=True)
+    main, garden = _garden_pair(db_path, closing_exchange=True)
     exchange = _store(db_path, lambda conn: list_exchanges(conn, garden))[0]
 
-    response = client.post(f"/utilities/exchanges/{exchange.id}/delete")
+    response = client.post(
+        f"/utilities/meters/{main}/conflicts/reject", data={"exchange_id": str(exchange.id)}
+    )
+
+    assert response.headers["location"] == f"/utilities/meters/{main}"
+    assert _store(db_path, lambda conn: list_exchanges(conn, garden)) == []
+    assert _page(client, main).select_one("[data-conflict]") is None
+
+
+def test_a_garden_row_keeps_its_own_delete_route(client, db_path):
+    _, garden = _garden_pair(db_path)
+    reading = _closing_reading_id(db_path, garden)
+
+    response = client.post(f"/utilities/readings/{reading}/delete")
 
     assert response.headers["location"] == f"/utilities/meters/{garden}"
-    assert _page(client, garden).select_one("[data-conflict]") is None
 
 
-def test_the_main_meter_page_keeps_its_periods_and_shows_no_garden_parts(client, db_path):
+def test_the_main_meter_page_keeps_its_periods_and_shows_no_garden_chart(client, db_path):
     main, _ = _garden_pair(db_path)
     _store(db_path, lambda conn: add_period(conn, main, _water_period()))
 
@@ -1218,8 +1404,13 @@ def test_the_main_meter_page_keeps_its_periods_and_shows_no_garden_parts(client,
     assert page.select_one("[data-period-id]") is not None
     assert page.select_one(f"#meter-{main}-new-period") is not None
     assert page.select_one("#main-meter-link") is None
-    assert page.select_one("[data-conflict]") is None
     assert page.select_one(f"#meter-{main}-chart, #meter-{main}-chart-empty") is None
+
+
+def test_a_meter_without_gardens_has_no_conflicts_card(client, db_path):
+    meter = _water_meter(db_path)
+
+    assert _page(client, meter).select_one("#conflicts") is None
 
 
 # Advance link on the period in force (D19)

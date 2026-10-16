@@ -23,11 +23,23 @@ from sonar.utilities.usage import MILLI, Series, daily_usage
 
 
 @dataclass(frozen=True)
-class GardenConflict:
+class GardenShare:
+    """One garden interval that used water on a conflict's days."""
+
     meter_id: int
     start_date: date
-    end_date: date  # the interval's closing reading, exclusive
-    excess_milli: int  # garden m³ over the main meter's on the interval's days
+    end_date: date  # the interval's closing reading or exchange, exclusive
+    used_milli: int  # the garden's m³ on the conflict's days in this interval
+
+
+@dataclass(frozen=True)
+class GardenConflict:
+    """A run of consecutive days on which the gardens together measured more than the main."""
+
+    start_date: date
+    end_date: date  # the day after the run's last day
+    excess_milli: int  # the gardens' total over the main's on the run
+    gardens: tuple[GardenShare, ...]
 
 
 def garden_usage(periods: Sequence[BillingPeriod], usages: Iterable[DailyUsage]) -> DailyUsage:
@@ -54,22 +66,50 @@ def _measured_and_projected(periods: Sequence[BillingPeriod], usage: DailyUsage)
 
 
 def garden_conflicts(main: Series, gardens: Mapping[int, Series]) -> list[GardenConflict]:
-    """Garden intervals holding a day where the gardens together measured more than the main.
+    """One case per run of conflicting days, since no single garden is to blame for it."""
+    usages = {meter_id: daily_usage(series) for meter_id, series in gardens.items()}
+    excess = _excess_by_day(daily_usage(main), list(usages.values()))
+    return [
+        GardenConflict(
+            run[0],
+            run[-1] + timedelta(days=1),
+            _milli(excess[day] for day in run),
+            tuple(_shares(set(run), gardens, usages)),
+        )
+        for run in _runs(sorted(excess))
+    ]
 
-    Only a garden that used water in the interval is a case; its excess is the gardens'
-    total over the main's on those days, since no single garden is to blame.
-    """
-    excess = _excess_by_day(daily_usage(main), [daily_usage(series) for series in gardens.values()])
-    conflicts = []
+
+def _runs(days: list[date]) -> Iterator[list[date]]:
+    """Sorted days split into runs of consecutive days."""
+    run: list[date] = []
+    for day in days:
+        if run and day - run[-1] != timedelta(days=1):
+            yield run
+            run = []
+        run.append(day)
+    if run:
+        yield run
+
+
+def _shares(
+    run: set[date], gardens: Mapping[int, Series], usages: Mapping[int, DailyUsage]
+) -> Iterator[GardenShare]:
+    """Every garden interval that used water on the run's days, with its m³ on them."""
     for meter_id, series in gardens.items():
-        for (start, start_value), (end, end_value) in zip(series, series[1:], strict=False):
-            if end_value <= start_value:
-                continue
-            over = [excess[day] for day in _days_between(start, end) if day in excess]
-            if over:
-                total = sum(over, start=Fraction(0))
-                conflicts.append(GardenConflict(meter_id, start, end, round_half_up(total * MILLI)))
-    return conflicts
+        for (start, _), (end, _) in zip(series, series[1:], strict=False):
+            used = [
+                usages[meter_id].get(day, Fraction(0))
+                for day in _days_between(start, end)
+                if day in run
+            ]
+            if any(units > 0 for units in used):
+                yield GardenShare(meter_id, start, end, _milli(used))
+
+
+def _milli(units: Iterable[Fraction]) -> int:
+    """m³ to milli-m³, rounded half up once over the sum."""
+    return round_half_up(sum(units, start=Fraction(0)) * MILLI)
 
 
 def _excess_by_day(main: DailyUsage, gardens: list[DailyUsage]) -> DailyUsage:

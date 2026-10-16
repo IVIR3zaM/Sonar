@@ -649,51 +649,62 @@ def _conflict(client: TestClient) -> tuple[int, dict[str, int]]:
 
 
 def test_a_conflict_is_listed_on_the_main_and_the_garden(client):
-    _, ids = _conflict(client)
+    garden_id, ids = _conflict(client)
     meters = _meters(client)
 
     expected = {
         "start_date": "2026-01-01",
         "end_date": "2026-01-11",
         "excess_milli": 3_000,
-        "reading_id": ids["2026-01-11"],
-        "exchange_id": None,
         "zeroed": False,
+        "gardens": [
+            {
+                "meter_id": garden_id,
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-11",
+                "used_milli": 5_000,
+                "reading_id": ids["2026-01-11"],
+                "exchange_id": None,
+            }
+        ],
     }
     assert meters["Water"]["garden_conflicts"] == [expected]
     assert meters["Garden"]["garden_conflicts"] == meters["Water"]["garden_conflicts"]
 
 
-def test_the_zero_action_marks_the_case_zeroed(client):
-    garden_id, _ = _conflict(client)
+def test_the_zero_action_on_the_main_marks_the_case_zeroed(client):
+    _conflict(client)
+    main_id = _meters(client)["Water"]["id"]
 
     response = client.post(
-        f"/api/utilities/meters/{garden_id}/conflicts/zero",
+        f"/api/utilities/meters/{main_id}/conflicts/zero",
         json={"start_date": "2026-01-01", "end_date": "2026-01-11"},
     )
 
     assert response.status_code == 200
-    assert response.json()["id"] == garden_id
+    assert response.json()["id"] == main_id
     assert [c["zeroed"] for c in response.json()["garden_conflicts"]] == [True]
-    assert [c["zeroed"] for c in _meters(client)["Water"]["garden_conflicts"]] == [True]
+    assert [c["zeroed"] for c in _meters(client)["Garden"]["garden_conflicts"]] == [True]
 
 
-def test_the_zero_action_on_a_main_meter_is_a_400_and_on_an_unknown_one_a_404(client):
+def test_the_zero_action_on_a_garden_is_a_400_and_on_an_unknown_meter_a_404(client):
     garden_id, _ = _conflict(client)
     main_id = _meters(client)["Water"]["id"]
     body = {"start_date": "2026-01-01", "end_date": "2026-01-11"}
 
-    on_main = client.post(f"/api/utilities/meters/{main_id}/conflicts/zero", json=body)
+    on_garden = client.post(f"/api/utilities/meters/{garden_id}/conflicts/zero", json=body)
     unknown = client.post("/api/utilities/meters/99/conflicts/zero", json=body)
     bad_date = client.post(
-        f"/api/utilities/meters/{garden_id}/conflicts/zero",
+        f"/api/utilities/meters/{main_id}/conflicts/zero",
         json={"start_date": "soon", "end_date": "2026-01-11"},
     )
 
-    assert on_main.status_code == 400
+    assert on_garden.status_code == 400
+    assert on_garden.json()["field"] == "meter"
     assert unknown.status_code == 404
     assert bad_date.status_code == 400
     assert bad_date.json()["field"] == "start_date"
+    assert [c["zeroed"] for c in _meters(client)["Water"]["garden_conflicts"]] == [False]
 
 
 def test_the_exchange_action_swaps_a_reading_for_an_exchange(client):

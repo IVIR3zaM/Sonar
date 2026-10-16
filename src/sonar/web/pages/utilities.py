@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -40,7 +40,7 @@ from sonar.utilities.store import (
     update_exchange,
     update_period,
     update_reading,
-    zero_garden_interval,
+    zero_conflict,
 )
 from sonar.utilities.usage import continuous_series, daily_usage
 from sonar.web import forms
@@ -49,6 +49,7 @@ METER_FIELDS = ("name", "kind", "main_meter_id")
 READING_FIELDS = ("date", "value")
 EXCHANGE_FIELDS = ("date", "old_final", "new_start")
 ZERO_FIELDS = ("start_date", "end_date")
+REJECT_FIELDS = ("reading_id", "exchange_id")
 PERIOD_FIELDS = (
     "start_date",
     "settlement_date",
@@ -87,7 +88,6 @@ class ReadingRow:
 class GardenLink:
     id: int
     name: str
-    open_cases: int  # conflicts not zeroed yet
 
 
 @dataclass(frozen=True)
@@ -103,10 +103,11 @@ class MeterCard:
     gardens: tuple[GardenLink, ...] = ()  # a main meter's garden meters
     main_name: str | None = None  # a garden meter's main meter
     advance_link: AdvanceLink | None = None  # the payment that pays its scheduled advances
+    names: dict[int, str] = field(default_factory=dict)  # every meter's, for a case's gardens
 
     @property
     def open_conflicts(self) -> int:
-        return sum(garden.open_cases for garden in self.gardens)
+        return len(self.open_cases)
 
     @property
     def is_garden(self) -> bool:
@@ -355,13 +356,8 @@ def _last_settlement(
 
 
 def _gardens_of(view: MeterView, views: list[MeterView]) -> tuple[GardenLink, ...]:
-    by_id = {other.id: other for other in views}
-    links = []
-    for garden_id in view.garden_ids:
-        garden = by_id[garden_id]
-        open_cases = sum(1 for case in garden.conflicts if not case.zeroed)
-        links.append(GardenLink(garden_id, garden.meter.name, open_cases))
-    return tuple(links)
+    names = {other.id: other.meter.name for other in views}
+    return tuple(GardenLink(garden_id, names[garden_id]) for garden_id in view.garden_ids)
 
 
 def _card(
@@ -386,7 +382,42 @@ def _card(
         gardens=_gardens_of(view, views),
         main_name=main.meter.name if main else None,
         advance_link=next((link for link in links.values() if link.meter_id == view.id), None),
+        names={other.id: other.meter.name for other in views},
     )
+
+
+def _main_page_of(conn: sqlite3.Connection, meter_id: int) -> int:
+    """A garden's points are resolved on its main meter's page; other meters keep their own."""
+    return _main_of(conn, meter_id) or meter_id
+
+
+def _main_of(conn: sqlite3.Connection, meter_id: int) -> int | None:
+    """The main meter of a garden meter; None for any other meter."""
+    return next(stored.item.main_meter_id for stored in list_meters(conn) if stored.id == meter_id)
+
+
+def _point_id(text: str) -> int:
+    """A posted reading or exchange id; anything else names no record."""
+    try:
+        return int(text)
+    except ValueError:
+        raise UtilityNotFound(text) from None
+
+
+def _reject_point(conn: sqlite3.Connection, main_id: int, values: dict[str, str]) -> None:
+    """Delete a case's closing reading or exchange, only when it is on a garden of `main_id`."""
+    if values["reading_id"]:
+        point_id, meter_of, delete = (
+            _point_id(values["reading_id"]),
+            meter_of_reading,
+            delete_reading,
+        )
+    else:
+        point_id = _point_id(values["exchange_id"])
+        meter_of, delete = meter_of_exchange, delete_exchange
+    if _main_of(conn, meter_of(conn, point_id)) != main_id:
+        raise UtilityNotFound(point_id)
+    delete(conn, point_id)
 
 
 def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Templates) -> APIRouter:
@@ -634,7 +665,18 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             f"meter-{id}-zero",
             ZERO_FIELDS,
             _zero_from,
-            lambda conn, interval: zero_garden_interval(conn, id, *interval),
+            lambda conn, interval: zero_conflict(conn, id, *interval),
+            meter_of=lambda conn: id,
+        )
+
+    @router.post("/utilities/meters/{id}/conflicts/reject")
+    async def reject_conflict_route(request: Request, id: int):
+        return await _submit(
+            request,
+            f"meter-{id}-reject",
+            REJECT_FIELDS,
+            lambda values: values,
+            lambda conn, values: _reject_point(conn, id, values),
             meter_of=lambda conn: id,
         )
 
@@ -646,7 +688,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             ("old_final",),
             _old_final_from,
             lambda conn, old_final: reading_to_exchange(conn, id, old_final),
-            meter_of=lambda conn: meter_of_reading(conn, id),
+            meter_of=lambda conn: _main_page_of(conn, meter_of_reading(conn, id)),
         )
 
     # Billing periods

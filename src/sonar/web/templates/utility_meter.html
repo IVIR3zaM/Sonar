@@ -36,37 +36,58 @@
 {% endif %}
 
 <div class="space-y-6" data-meter-id="{{ m.view.id }}">
-  {% if m.is_garden %}
-  {% call card(id=pre ~ "-conflicts-card") %}
+  {% if m.is_garden or m.view.garden_ids %}
+  {% set main_id = m.view.main_meter_id if m.is_garden else m.view.id %}
+  {% call card(id="conflicts") %}
   <section>
-    <h2 class="{{ section_title }}">Readings above the main meter</h2>
-    {% set zero_err = error if error and error.form == pre ~ "-zero" else none %}
-    {% if zero_err %}<div class="mt-2">{{ form_error(zero_err) }}</div>{% endif %}
+    <h2 class="{{ section_title }}">Garden readings above the main meter</h2>
+    {% set conflict_err = error if error and error.form in (pre ~ "-zero", pre ~ "-reject") else none %}
+    {% if conflict_err %}<div class="mt-2">{{ form_error(conflict_err) }}</div>{% endif %}
     {% if m.open_cases %}
-    <p class="mt-2 text-sm text-ink-muted">The garden measured more than the main meter over these intervals. Zero an interval out, reject the reading that closes it, or record that reading as a meter exchange.</p>
+    {% if m.is_garden %}
+    <p class="mt-2 text-sm text-ink-muted">The garden meters measured more than the main meter on these days. Resolve them on <a href="/utilities/meters/{{ main_id }}#conflicts" class="font-medium text-accent underline">{{ m.main_name }}</a>.</p>
+    {% else %}
+    <p class="mt-2 text-sm text-ink-muted">The garden meters measured more than this meter on these days. Zero the days out, or reject or re-record a garden reading that closes them.</p>
+    {% endif %}
     <ul id="{{ pre }}-conflicts" class="mt-2 divide-y divide-line">
       {% for case in m.open_cases %}
       <li data-conflict data-start="{{ case.start_date.isoformat() }}" data-end="{{ case.end_date.isoformat() }}" class="py-3">
         <p class="text-sm text-ink">{{ date(case.start_date) }} – {{ date(case.end_date) }}: <span data-field="excess" data-milli="{{ case.excess_milli }}" class="tabular-nums">{{ case.excess_milli | scaled(3) }}</span> {{ m.unit }} more than the main meter</p>
-        <div class="mt-2 flex flex-wrap items-start gap-2">
-          {{ zero_form("/utilities/meters/" ~ m.view.id ~ "/conflicts/zero", case.start_date, case.end_date) }}
-          {% if case.reading_id is not none %}
-          {{ reject_form("/utilities/readings/" ~ case.reading_id ~ "/delete", "Reject the reading") }}
-          {% set key = "reading-" ~ case.reading_id ~ "-exchange" %}
-          {{ record_exchange_form(key, "/utilities/readings/" ~ case.reading_id ~ "/exchange", error if error and error.form == key else none, m.unit) }}
-          {% else %}
-          {{ reject_form("/utilities/exchanges/" ~ case.exchange_id ~ "/delete", "Reject the exchange") }}
-          {% endif %}
-        </div>
+        {% if m.is_garden %}
+        <a data-field="resolve" href="/utilities/meters/{{ main_id }}#conflicts" class="mt-1 inline-flex text-sm font-medium text-accent underline">Resolve on {{ m.main_name }}</a>
+        {% else %}
+        <div class="mt-2">{{ zero_form("/utilities/meters/" ~ main_id ~ "/conflicts/zero", case.start_date, case.end_date) }}</div>
+        {% endif %}
+        <ul class="mt-2 space-y-2 border-l border-line pl-3">
+          {% for entry in case.gardens %}
+          <li data-conflict-garden="{{ entry.meter_id }}" data-start="{{ entry.start_date.isoformat() }}" data-end="{{ entry.end_date.isoformat() }}">
+            <p class="text-sm text-ink"><a href="/utilities/meters/{{ entry.meter_id }}" data-field="garden" class="font-medium text-accent underline">{{ m.names[entry.meter_id] }}</a>, {{ date(entry.start_date) }} – {{ date(entry.end_date) }}: <span data-field="used" data-milli="{{ entry.used_milli }}" class="tabular-nums">{{ entry.used_milli | scaled(3) }}</span> {{ m.unit }} used</p>
+            {% if not m.is_garden %}
+            <div class="mt-1 flex flex-wrap items-start gap-2">
+              {% set reject = "/utilities/meters/" ~ main_id ~ "/conflicts/reject" %}
+              {% if entry.reading_id is not none %}
+              {{ reject_form(reject, "reading_id", entry.reading_id, "Reject the reading") }}
+              {% set key = "reading-" ~ entry.reading_id ~ "-exchange" %}
+              {{ record_exchange_form(key, "/utilities/readings/" ~ entry.reading_id ~ "/exchange", error if error and error.form == key else none, m.unit) }}
+              {% else %}
+              {{ reject_form(reject, "exchange_id", entry.exchange_id, "Reject the exchange") }}
+              {% endif %}
+            </div>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
       </li>
       {% endfor %}
     </ul>
     {% else %}
-    <p id="{{ pre }}-no-conflicts" class="mt-2 text-sm text-ink-muted">No reading is above the main meter.</p>
+    <p id="{{ pre }}-no-conflicts" class="mt-2 text-sm text-ink-muted">No garden reading is above the main meter.</p>
     {% endif %}
   </section>
   {% endcall %}
+  {% endif %}
 
+  {% if m.is_garden %}
   {% call card(id=pre ~ "-chart-card") %}
   <section>
     <h2 class="{{ section_title }}">Usage per month</h2>

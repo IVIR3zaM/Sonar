@@ -84,7 +84,7 @@
 {% endmacro %}
 
 {#- The three ways out of a garden conflict. Each form is a plain post that
-    redirects back to the garden page. #}
+    redirects back to the main meter's page. #}
 {% macro zero_form(action, start, end) %}
 <form method="post" action="{{ action }}" data-action="zero">
   <input type="hidden" name="start_date" value="{{ start.isoformat() }}">
@@ -93,8 +93,10 @@
 </form>
 {% endmacro %}
 
-{% macro reject_form(action, label) %}
+{#- `point` is "reading_id" or "exchange_id": the closing point to delete. #}
+{% macro reject_form(action, point, point_id, label) %}
 <form method="post" action="{{ action }}" data-action="reject">
+  <input type="hidden" name="{{ point }}" value="{{ point_id }}">
   {{ button(label, variant="danger", size="sm") }}
 </form>
 {% endmacro %}

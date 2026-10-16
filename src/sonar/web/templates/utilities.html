@@ -68,9 +68,8 @@
   </p>
   {% if m.open_conflicts %}
   <div id="{{ pre }}-garden-conflicts" data-count="{{ m.open_conflicts }}" role="alert" class="mb-4 rounded-control border border-negative/30 bg-negative-soft px-3 py-2 text-sm text-negative">
-    {{ m.open_conflicts }} garden {{ "reading interval" if m.open_conflicts == 1 else "reading intervals" }} measured more than the main meter. Resolve
-    {% for garden in m.gardens if garden.open_cases %}<a href="/utilities/meters/{{ garden.id }}" class="font-medium underline">{{ garden.name }}</a>{{ ", " if not loop.last }}{% endfor %}.
-  </p>
+    {{ m.open_conflicts }} garden {{ "conflict" if m.open_conflicts == 1 else "conflicts" }}: the garden meters measured more than the main meter. <a href="/utilities/meters/{{ m.view.id }}#conflicts" class="font-medium underline">Resolve</a>
+  </div>
   {% endif %}
   {% endif %}
   {% if status %}

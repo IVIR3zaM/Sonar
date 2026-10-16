@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sonar.categorization.store import transactions_with_category
-from sonar.utilities.garden import garden_conflicts, garden_cycle_months, garden_usage
+from sonar.utilities.garden import (
+    GardenShare,
+    garden_conflicts,
+    garden_cycle_months,
+    garden_usage,
+)
 from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.utilities.settlement import (
     Booking,
@@ -30,16 +35,27 @@ from sonar.utilities.usage import Series, continuous_series, daily_usage
 
 
 @dataclass(frozen=True)
-class ConflictCase:
-    """A garden interval that measured more than the main meter, for the owner to resolve."""
+class ConflictEntry:
+    """A garden interval named in a case, with the point that closes it."""
 
     meter_id: int
     start_date: date
     end_date: date  # the interval's closing reading or exchange, exclusive
-    excess_milli: int
+    used_milli: int  # the garden's m³ on the case's days
     reading_id: int | None  # the closing point is a reading ...
     exchange_id: int | None  # ... or an exchange
+
+
+@dataclass(frozen=True)
+class ConflictCase:
+    """A run of days the gardens measured more than their main meter, for the owner to resolve."""
+
+    main_meter_id: int
+    start_date: date
+    end_date: date  # the day after the run's last day
+    excess_milli: int
     zeroed: bool
+    gardens: tuple[ConflictEntry, ...]
 
 
 @dataclass(frozen=True)
@@ -53,7 +69,7 @@ class MeterView:
     chart_months: list[ChartMonth]  # the previous and the current cycle
     main_meter_id: int | None  # set on a garden meter
     garden_ids: tuple[int, ...]  # the garden meters of a main meter
-    conflicts: tuple[ConflictCase, ...]  # a main meter's gardens' cases, or a garden's own
+    conflicts: tuple[ConflictCase, ...]  # a main meter's cases, or those naming a garden
 
 
 def load_utilities(conn: sqlite3.Connection, today: date) -> list[MeterView]:
@@ -76,7 +92,7 @@ def _meter_view(
     billing = [period.item for period in periods]
     usage = _usage(readings, exchanges)
     main_id = stored.item.main_meter_id
-    garden_ids = tuple(other.id for other in meters if other.item.main_meter_id == stored.id)
+    garden_ids = _garden_ids(meters, stored.id)
     garden = _garden_usage(conn, garden_ids, billing)
     in_force = current_period(billing, today)
     if main_id is None:
@@ -85,7 +101,11 @@ def _meter_view(
     else:
         main_periods = [period.item for period in list_periods(conn, main_id)]
         chart = garden_cycle_months(main_periods, usage, today)
-        cases = _conflict_cases(conn, main_id, (stored.id,))
+        cases = [
+            case
+            for case in _conflict_cases(conn, main_id, _garden_ids(meters, main_id))
+            if any(entry.meter_id == stored.id for entry in case.gardens)
+        ]
     return MeterView(
         id=stored.id,
         meter=stored.item,
@@ -122,48 +142,50 @@ def _garden_usage(
     return garden_usage(periods, [daily_usage(points) for points in series])
 
 
+def _garden_ids(meters: list[Stored[Meter]], main_id: int) -> tuple[int, ...]:
+    return tuple(other.id for other in meters if other.item.main_meter_id == main_id)
+
+
 def _conflict_cases(
     conn: sqlite3.Connection, main_id: int, garden_ids: tuple[int, ...]
 ) -> list[ConflictCase]:
-    """The cases of `garden_ids` against the main meter; all the gardens count in the excess."""
     if not garden_ids:
         return []
-    all_gardens = tuple(m.id for m in list_meters(conn) if m.item.main_meter_id == main_id)
     main = continuous_series(
         [r.item for r in list_readings(conn, main_id)],
         [e.item for e in list_exchanges(conn, main_id)],
     )
-    series = _garden_series(conn, all_gardens)
+    zeroed = set(list_zeroed(conn, main_id))
     return [
-        _conflict_case(conn, conflict)
-        for conflict in garden_conflicts(main, series)
-        if conflict.meter_id in garden_ids
+        ConflictCase(
+            main_id,
+            conflict.start_date,
+            conflict.end_date,
+            conflict.excess_milli,
+            (conflict.start_date, conflict.end_date) in zeroed,
+            tuple(_conflict_entry(conn, share) for share in conflict.gardens),
+        )
+        for conflict in garden_conflicts(main, _garden_series(conn, garden_ids))
     ]
 
 
-def _conflict_case(conn: sqlite3.Connection, conflict) -> ConflictCase:
-    garden_id = conflict.meter_id
+def _conflict_entry(conn: sqlite3.Connection, share: GardenShare) -> ConflictEntry:
+    closing = share.end_date
     reading_id = next(
-        (r.id for r in list_readings(conn, garden_id) if r.item.reading_date == conflict.end_date),
+        (r.id for r in list_readings(conn, share.meter_id) if r.item.reading_date == closing),
         None,
     )
     exchange_id = next(
-        (
-            e.id
-            for e in list_exchanges(conn, garden_id)
-            if e.item.exchange_date == conflict.end_date
-        ),
+        (e.id for e in list_exchanges(conn, share.meter_id) if e.item.exchange_date == closing),
         None,
     )
-    zeroed = (conflict.start_date, conflict.end_date) in list_zeroed(conn, garden_id)
-    return ConflictCase(
-        garden_id,
-        conflict.start_date,
-        conflict.end_date,
-        conflict.excess_milli,
+    return ConflictEntry(
+        share.meter_id,
+        share.start_date,
+        share.end_date,
+        share.used_milli,
         reading_id,
         exchange_id,
-        zeroed,
     )
 
 

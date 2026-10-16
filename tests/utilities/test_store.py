@@ -32,7 +32,7 @@ from sonar.utilities.store import (
     update_exchange,
     update_period,
     update_reading,
-    zero_garden_interval,
+    zero_conflict,
 )
 
 TABLES = (
@@ -485,17 +485,17 @@ def test_a_period_is_refused_on_a_garden_meter(conn):
     assert [p.id for p in list_periods(conn, garden)] == [period]  # the row seeded by hand
 
 
-def test_a_main_meter_with_gardens_cannot_be_deleted_and_a_garden_takes_its_zeroed_rows(conn):
+def test_a_main_meter_with_gardens_cannot_be_deleted_and_then_takes_its_zeroed_rows(conn):
     main = _water(conn)
     garden = _water(conn, "Garden", main)
-    zero_garden_interval(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
+    zero_conflict(conn, main, date(2026, 1, 1), date(2026, 2, 1))
 
     with pytest.raises(MeterNotEmpty):
         delete_meter(conn, main)
     delete_meter(conn, garden)
+    delete_meter(conn, main)
 
     assert conn.execute("SELECT COUNT(*) FROM utility_garden_zeroed").fetchone() == (0,)
-    delete_meter(conn, main)
     assert list_meters(conn) == []
 
 
@@ -524,26 +524,29 @@ def test_the_garden_fee_round_trips_through_add_update_and_list(conn, fee):
     assert list_periods(conn, water)[0].item.garden_fee_cents == fee
 
 
-def test_zeroing_is_idempotent_listed_sorted_and_garden_only(conn):
+def test_zeroing_is_idempotent_listed_sorted_and_main_only(conn):
     main = _water(conn)
     garden = _water(conn, "Garden", main)
+    gas = _gas(conn)
 
-    zero_garden_interval(conn, garden, date(2026, 3, 1), date(2026, 4, 1))
-    zero_garden_interval(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
-    zero_garden_interval(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
-    with pytest.raises(FieldError) as not_garden:
-        zero_garden_interval(conn, main, date(2026, 1, 1), date(2026, 2, 1))
+    zero_conflict(conn, main, date(2026, 3, 1), date(2026, 4, 1))
+    zero_conflict(conn, main, date(2026, 1, 1), date(2026, 2, 1))
+    zero_conflict(conn, main, date(2026, 1, 1), date(2026, 2, 1))
+    with pytest.raises(FieldError) as on_garden:
+        zero_conflict(conn, garden, date(2026, 1, 1), date(2026, 2, 1))
+    with pytest.raises(FieldError) as on_gas:
+        zero_conflict(conn, gas, date(2026, 1, 1), date(2026, 2, 1))
     with pytest.raises(UtilityNotFound):
-        zero_garden_interval(conn, 99, date(2026, 1, 1), date(2026, 2, 1))
+        zero_conflict(conn, 99, date(2026, 1, 1), date(2026, 2, 1))
     with pytest.raises(UtilityNotFound):
         list_zeroed(conn, 99)
 
-    assert not_garden.value.field == "meter"
-    assert list_zeroed(conn, garden) == [
+    assert on_garden.value.field == on_gas.value.field == "meter"
+    assert list_zeroed(conn, main) == [
         (date(2026, 1, 1), date(2026, 2, 1)),
         (date(2026, 3, 1), date(2026, 4, 1)),
     ]
-    assert list_zeroed(conn, main) == []
+    assert list_zeroed(conn, garden) == list_zeroed(conn, gas) == []
 
 
 def test_a_reading_becomes_an_exchange_and_the_series_holds(conn):

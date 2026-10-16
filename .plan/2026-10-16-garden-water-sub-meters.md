@@ -88,7 +88,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 2 | 0 | DONE | |
 | N14 | plain-text badge title | exec | N13 | haiku/sonnet | 1 | 0 | DONE | |
-| N15 | conflict cases per main run | exec | N13 | opus/sonnet | 1 | 0 | RUNNING | |
+| N15 | conflict cases per main run | exec | N13 | opus/sonnet | 1 | 0 | DONE | |
 | N16 | garden reading form | exec | N15 | sonnet/sonnet | 0 | 0 | TODO | |
 | N17 | SPEC conflict part | exec | N15,N16 | sonnet/sonnet | 0 | 0 | TODO | |
 
@@ -732,4 +732,12 @@ exec: DONE · 2047 passed (full suite), 18 recurring page tests
 - Fixed-payments advance-link title now uses the date filter (plain text, comma-joined) instead of the date macro; test asserts exact title, badge text and no markup in row
 - Kept sonar.css byte-identical; no class changes
 check: PASS 3/3
+verify: PASS
+
+### N15 try 1 · 2026-10-16
+exec: DONE · 2059 passed
+- garden_conflicts returns one GardenConflict per run of conflicting days with GardenShares; service ConflictCase/ConflictEntry keyed by the main; zero_conflict on the main; API gardens list; main page #conflicts card with zero, reject (new /conflicts/reject route) and exchange; garden page read-only with resolve link; card alert div closed, links to main #conflicts
+- reject 404s for a non-numeric, missing, own-main or foreign point; record-exchange redirects to the main for a garden reading, else its own meter; card #conflicts shown on a main only when it has gardens
+- MeterCard gains names map; GardenLink drops open_cases; sonar.css rebuilt
+check: PASS 4/4
 verify: PASS

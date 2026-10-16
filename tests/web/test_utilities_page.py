@@ -20,7 +20,7 @@ from sonar.utilities.store import (
     add_reading,
     list_meters,
     list_readings,
-    zero_garden_interval,
+    zero_conflict,
 )
 from sonar.web.app import create_app
 from tests.html import cents, soup, text
@@ -828,20 +828,21 @@ def conflict_setup(tmp_path):
         yield client, path, main, garden
 
 
-def test_an_open_case_raises_the_conflict_alert_linking_the_garden_page(conflict_setup):
-    client, _, main, garden = conflict_setup
+def test_an_open_case_raises_the_conflict_alert_linking_the_main_pages_conflicts(conflict_setup):
+    client, _, main, _ = conflict_setup
 
     alert = _page(client).select_one(f"#meter-{main}-garden-conflicts")
 
     assert alert["data-count"] == "1"
-    assert alert.select_one("a")["href"] == f"/utilities/meters/{garden}"
+    assert [a["href"] for a in alert.select("a")] == [f"/utilities/meters/{main}#conflicts"]
+    assert [child.name for child in alert.find_all(True)] == ["a"]  # only its text and link
 
 
 def test_a_zeroed_case_no_longer_counts_in_the_alert(conflict_setup):
-    client, path, main, garden = conflict_setup
+    client, path, main, _ = conflict_setup
     _store(
         path,
-        lambda conn: zero_garden_interval(conn, garden, date(2025, 12, 31), date(2026, 10, 16)),
+        lambda conn: zero_conflict(conn, main, date(2025, 12, 31), date(2026, 10, 16)),
     )
 
     assert _page(client).select_one(f"#meter-{main}-garden-conflicts") is None

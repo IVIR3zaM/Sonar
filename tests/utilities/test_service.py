@@ -12,6 +12,7 @@ from sonar.utilities.garden import garden_cycle_months
 from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.utilities.service import (
     ConflictCase,
+    ConflictEntry,
     load_utilities,
     meter_cashflows,
     settlement_summaries,
@@ -21,7 +22,7 @@ from sonar.utilities.store import (
     add_meter,
     add_period,
     add_reading,
-    zero_garden_interval,
+    zero_conflict,
 )
 from sonar.utilities.usage import continuous_series, daily_usage
 from tests.utilities.test_settlement import (
@@ -359,6 +360,9 @@ def test_a_garden_below_the_main_has_no_case(conn):
     assert all(view.conflicts == () for view in load_utilities(conn, WATER_TODAY))
 
 
+RUN = (date(2025, 12, 31), date(2026, 10, 16))  # the garden's last interval, all over the main
+
+
 def test_a_case_closed_by_a_reading_carries_its_reading_id(conn):
     main_id = _water_pin_meter(conn)
     garden_id = _garden_meter(conn, main_id, GARDEN_READINGS[:2])
@@ -366,11 +370,10 @@ def test_a_case_closed_by_a_reading_carries_its_reading_id(conn):
 
     views = {view.meter.name: view for view in load_utilities(conn, WATER_TODAY)}
 
-    expected = ConflictCase(
-        garden_id, date(2025, 12, 31), date(2026, 10, 16), 17_600, closing, None, False
-    )
-    assert views["Garden"].conflicts == (expected,)
+    entry = ConflictEntry(garden_id, *RUN, 178_600, closing, None)
+    expected = ConflictCase(main_id, *RUN, 17_600, False, (entry,))
     assert views["Water"].conflicts == (expected,)
+    assert views["Garden"].conflicts == (expected,)
 
 
 def test_a_case_closed_by_an_exchange_carries_its_exchange_id(conn):
@@ -380,34 +383,40 @@ def test_a_case_closed_by_an_exchange_carries_its_exchange_id(conn):
 
     [case] = {v.meter.name: v for v in load_utilities(conn, WATER_TODAY)}["Garden"].conflicts
 
-    assert (case.reading_id, case.exchange_id, case.zeroed) == (None, swap, False)
+    [entry] = case.gardens
+    assert (entry.reading_id, entry.exchange_id, case.zeroed) == (None, swap, False)
 
 
-def test_a_zeroed_interval_reads_zeroed(conn):
+def test_a_zeroed_run_reads_zeroed_on_the_main_and_the_garden(conn):
     main_id = _water_pin_meter(conn)
     garden_id = _garden_meter(conn, main_id, GARDEN_READINGS[:2])
     add_reading(conn, garden_id, Reading(*CONFLICT_READING))
-    zero_garden_interval(conn, garden_id, date(2025, 12, 31), date(2026, 10, 16))
+    zero_conflict(conn, main_id, *RUN)
 
-    [case] = {v.meter.name: v for v in load_utilities(conn, WATER_TODAY)}["Water"].conflicts
+    views = {v.meter.name: v for v in load_utilities(conn, WATER_TODAY)}
 
-    assert case.zeroed is True
+    assert [case.zeroed for case in views["Water"].conflicts] == [True]
+    assert [case.zeroed for case in views["Garden"].conflicts] == [True]
 
 
-def test_a_main_view_holds_the_cases_of_all_its_gardens_and_a_garden_only_its_own(conn):
+def test_a_main_holds_one_case_naming_its_gardens_and_each_named_garden_holds_it(conn):
     main_id = _water_pin_meter(conn)
     first = _garden_meter(conn, main_id, GARDEN_READINGS[:2])
     add_reading(conn, first, Reading(*CONFLICT_READING))
     second = add_meter(conn, Meter("Orchard", "water", main_id))
+    idle = add_meter(conn, Meter("Shed", "water", main_id))
     for day, value in GARDEN_READINGS[:2]:
         add_reading(conn, second, Reading(day, value))
+        add_reading(conn, idle, Reading(day, 1_000))
     add_reading(conn, second, Reading(*CONFLICT_READING))
+    add_reading(conn, idle, Reading(CONFLICT_READING[0], 1_000))
 
     views = {view.meter.name: view for view in load_utilities(conn, WATER_TODAY)}
 
-    assert {case.meter_id for case in views["Water"].conflicts} == {first, second}
-    assert [case.meter_id for case in views["Garden"].conflicts] == [first]
-    assert [case.meter_id for case in views["Orchard"].conflicts] == [second]
+    [case] = views["Water"].conflicts
+    assert [entry.meter_id for entry in case.gardens] == [first, second]
+    assert views["Garden"].conflicts == views["Orchard"].conflicts == (case,)
+    assert views["Shed"].conflicts == ()
 
 
 def test_gas_and_electricity_views_are_unchanged_beside_a_garden(conn):

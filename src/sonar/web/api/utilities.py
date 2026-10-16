@@ -14,7 +14,7 @@ from pydantic import StrictInt, StrictStr
 from sonar.cashflow.service import AdvanceLink, advance_links
 from sonar.db import connect
 from sonar.utilities.model import BillingPeriod, Charge, Exchange, FieldError, Meter, Reading
-from sonar.utilities.service import ConflictCase, MeterView, load_utilities
+from sonar.utilities.service import ConflictCase, ConflictEntry, MeterView, load_utilities
 from sonar.utilities.store import (
     MeterNotEmpty,
     Stored,
@@ -36,7 +36,7 @@ from sonar.utilities.store import (
     update_exchange,
     update_period,
     update_reading,
-    zero_garden_interval,
+    zero_conflict,
 )
 from sonar.web.api._common import _jsonable, _parse_body, _StrictModel
 
@@ -167,9 +167,19 @@ def _conflict_item(case: ConflictCase) -> dict:
         "start_date": case.start_date.isoformat(),
         "end_date": case.end_date.isoformat(),
         "excess_milli": case.excess_milli,
-        "reading_id": case.reading_id,
-        "exchange_id": case.exchange_id,
         "zeroed": case.zeroed,
+        "gardens": [_conflict_entry_item(entry) for entry in case.gardens],
+    }
+
+
+def _conflict_entry_item(entry: ConflictEntry) -> dict:
+    return {
+        "meter_id": entry.meter_id,
+        "start_date": entry.start_date.isoformat(),
+        "end_date": entry.end_date.isoformat(),
+        "used_milli": entry.used_milli,
+        "reading_id": entry.reading_id,
+        "exchange_id": entry.exchange_id,
     }
 
 
@@ -278,7 +288,7 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         return respond(action)
 
     @router.post("/utilities/meters/{id}/conflicts/zero")
-    async def zero_conflict(request: Request, id: int) -> JSONResponse:
+    async def zero_conflict_route(request: Request, id: int) -> JSONResponse:
         body = await _parse_body(request, ZeroIn)
         if isinstance(body, JSONResponse):
             return body
@@ -286,7 +296,7 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         def action(conn: sqlite3.Connection) -> dict:
             start = _day(body.start_date, "start_date")
             end = _day(body.end_date, "end_date")
-            zero_garden_interval(conn, id, start, end)
+            zero_conflict(conn, id, start, end)
             return meter_item(conn, id)
 
         return respond(action)

@@ -229,18 +229,18 @@ def reading_to_exchange(conn: sqlite3.Connection, reading_id: int, old_final_mil
     return cursor.lastrowid
 
 
-# Garden conflicts: intervals of a garden meter zeroed against its main meter.
+# Garden conflicts: runs of days zeroed on a main water meter.
 
 
-def zero_garden_interval(conn: sqlite3.Connection, meter_id: int, start: date, end: date) -> None:
+def zero_conflict(conn: sqlite3.Connection, main_meter_id: int, start: date, end: date) -> None:
     with conn:
-        _meter_kind(conn, meter_id)
-        if _main_meter_id(conn, meter_id) is None:
-            raise FieldError("meter", "only a garden meter has zeroed intervals")
+        kind = _meter_kind(conn, main_meter_id)
+        if kind != "water" or _main_meter_id(conn, main_meter_id) is not None:
+            raise FieldError("meter", "only a main water meter has garden conflicts")
         conn.execute(
             "INSERT OR IGNORE INTO utility_garden_zeroed (meter_id, start_date, end_date) "
             "VALUES (?, ?, ?)",
-            (meter_id, start.isoformat(), end.isoformat()),
+            (main_meter_id, start.isoformat(), end.isoformat()),
         )
 
 

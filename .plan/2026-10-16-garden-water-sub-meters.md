@@ -1,5 +1,5 @@
 # Garden water sub-meters
-status: WAITING
+status: RUNNING
 created: 2026-10-16 · updated: 2026-10-16
 goal: optional garden water meters whose usage is deducted from the main water meter's wastewater
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -82,7 +82,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
-| N09 | visual check | gate | N06,N08,N13,N14,N16,N17 | -/- | 0 | 1 | TODO | |
+| N09 | visual check | gate | N06,N08,N13,N14,N16,N17 | -/- | 0 | 1 | DONE | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |

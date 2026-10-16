@@ -1,5 +1,5 @@
 # Garden water sub-meters
-status: RUNNING
+status: DONE
 created: 2026-10-16 · updated: 2026-10-16
 goal: optional garden water meters whose usage is deducted from the main water meter's wastewater
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -83,7 +83,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 1 | 0 | DONE | |
 | N09 | visual check | gate | N06,N08,N13,N14,N16,N17 | -/- | 0 | 1 | DONE | |
-| N10 | plan acceptance | check | N18 | -/sonnet | 0 | 1 | TODO | |
+| N10 | plan acceptance | check | N18 | -/sonnet | 1 | 1 | DONE | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 2 | 0 | DONE | |
@@ -795,4 +795,8 @@ exec: DONE · tests: 2065 passed
 - test_garden.py: new test with 12000-cent garden fee expects Sep 2026 (3, 1107, False); failed on old code with 2107
 - Choice: fee dropped in the garden chart helper only, main period's fee left unchanged
 check: PASS 3/3
+verify: PASS
+
+### N10 try 1 · 2026-10-16
+check: PASS 5/5
 verify: PASS

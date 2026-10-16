@@ -1,5 +1,5 @@
 # Garden water sub-meters
-status: RUNNING
+status: WAITING
 created: 2026-10-16 · updated: 2026-10-16
 goal: optional garden water meters whose usage is deducted from the main water meter's wastewater
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -90,7 +90,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N14 | plain-text badge title | exec | N13 | haiku/sonnet | 1 | 0 | DONE | |
 | N15 | conflict cases per main run | exec | N13 | opus/sonnet | 1 | 0 | DONE | |
 | N16 | garden reading form | exec | N15 | sonnet/sonnet | 1 | 0 | DONE | |
-| N17 | SPEC conflict part | exec | N15,N16 | sonnet/sonnet | 0 | 0 | TODO | |
+| N17 | SPEC conflict part | exec | N15,N16 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -747,4 +747,11 @@ exec: DONE · 2064 passed
 - garden meter page has the add-reading form in a details drawer; add_reading_route returns to the garden page (303 / 400 with form open) via _garden_page_of
 - sonar.css rebuilt, unchanged (no new classes); 5 pin tests added
 check: PASS 3/3
+verify: PASS
+
+### N17 try 1 · 2026-10-16
+exec: DONE · 2064 passed
+- SPEC.md:263 garden part rewritten: D22 case rules, zero or reject or record-as-exchange, zeroed only clears, page lists and garden add-reading form, garden_conflicts shape, zero POST on the main meter
+- Said figures use the never-below-0 rule instead of naming D4
+check: PASS 2/2
 verify: PASS

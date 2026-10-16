@@ -1,5 +1,5 @@
 # Utilities with water meters
-status: WAITING
+status: RUNNING
 created: 2026-10-16 · updated: 2026-10-16
 goal: Energy becomes Utilities and gains water meters with drinking and wastewater charges, a per-period advance mode (flexible or supplier schedule) and a settlement debit date, shown on /utilities and the dashboard and counted once in the payday forecast.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -48,7 +48,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | utilities API | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
 | N08 | meter page period form | exec | N06 | sonnet/sonnet | 1 | 1 | DONE | |
-| N09 | visual check | gate | N07,N12 | -/- | 0 | 1 | TODO | |
+| N09 | visual check | gate | N07,N12 | -/- | 0 | 1 | DONE | |
 | N10 | plan acceptance | check | N02,N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | utilities page cards | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
 | N12 | meter period list formatting | exec | N11 | sonnet/sonnet | 1 | 0 | DONE | |

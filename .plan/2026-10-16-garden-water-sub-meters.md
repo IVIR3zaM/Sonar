@@ -77,7 +77,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N02 | garden link, fee and conflict storage | exec | N01 | sonnet/sonnet | 1 | 1 | DONE | |
 | N03 | garden usage and conflicts | exec | N01 | opus/sonnet | 2 | 0 | DONE | |
 | N04 | net wastewater and garden fee | exec | N02,N03 | opus/sonnet | 1 | 0 | DONE | |
-| N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 0 | 0 | TODO | |
+| N05 | utilities service with gardens | exec | N04 | sonnet/sonnet | 1 | 0 | DONE | |
 | N06 | utilities API and SPEC | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N07 | utilities page and forms | exec | N05 | sonnet/sonnet | 0 | 0 | TODO | |
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
@@ -513,4 +513,11 @@ exec: DONE · 1963 passed
 - garden fee follows the period's garden_fee_cents on every day with usage, independent of the garden argument; gas/electricity _day_costs ignore garden
 - 9 tests appended to test_settlement.py covering every pin, the garden > main day, month_figures and cycle_months netting
 check: PASS 3/3
+verify: PASS
+
+### N05 try 1 · 2026-10-16
+exec: DONE · 1974 passed
+- load_utilities nets main water meters by their garden meters; MeterView gains main_meter_id, garden_ids, conflicts; ConflictCase added; garden chart and cases; ended-period projection nets garden
+- zeroed intervals only flag ConflictCase.zeroed; garden usage fed to costing is not zeroed (brief did not say)
+check: PASS 2/2
 verify: PASS

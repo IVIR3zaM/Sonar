@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sonar.categorization.store import transactions_with_category
+from sonar.utilities.garden import garden_conflicts, garden_cycle_months, garden_usage
 from sonar.utilities.model import BillingPeriod, Exchange, Meter, Reading
 from sonar.utilities.settlement import (
     Booking,
@@ -23,8 +24,22 @@ from sonar.utilities.store import (
     list_meters,
     list_periods,
     list_readings,
+    list_zeroed,
 )
-from sonar.utilities.usage import continuous_series, daily_usage
+from sonar.utilities.usage import Series, continuous_series, daily_usage
+
+
+@dataclass(frozen=True)
+class ConflictCase:
+    """A garden interval that measured more than the main meter, for the owner to resolve."""
+
+    meter_id: int
+    start_date: date
+    end_date: date  # the interval's closing reading or exchange, exclusive
+    excess_milli: int
+    reading_id: int | None  # the closing point is a reading ...
+    exchange_id: int | None  # ... or an exchange
+    zeroed: bool
 
 
 @dataclass(frozen=True)
@@ -36,16 +51,21 @@ class MeterView:
     readings: list[Stored[Reading]]
     status: MeterStatus | None  # None without a period in force today
     chart_months: list[ChartMonth]  # the previous and the current cycle
+    main_meter_id: int | None  # set on a garden meter
+    garden_ids: tuple[int, ...]  # the garden meters of a main meter
+    conflicts: tuple[ConflictCase, ...]  # a main meter's gardens' cases, or a garden's own
 
 
 def load_utilities(conn: sqlite3.Connection, today: date) -> list[MeterView]:
     transactions = transactions_with_category(conn)
-    return [_meter_view(conn, stored, transactions, today) for stored in list_meters(conn)]
+    meters = list_meters(conn)
+    return [_meter_view(conn, stored, meters, transactions, today) for stored in meters]
 
 
 def _meter_view(
     conn: sqlite3.Connection,
     stored: Stored[Meter],
+    meters: list[Stored[Meter]],
     transactions: list,
     today: date,
 ) -> MeterView:
@@ -55,15 +75,95 @@ def _meter_view(
     kind = stored.item.kind
     billing = [period.item for period in periods]
     usage = _usage(readings, exchanges)
+    main_id = stored.item.main_meter_id
+    garden_ids = tuple(other.id for other in meters if other.item.main_meter_id == stored.id)
+    garden = _garden_usage(conn, garden_ids, billing)
     in_force = current_period(billing, today)
+    if main_id is None:
+        chart = cycle_months(kind, billing, usage, today, garden=garden)
+        cases = _conflict_cases(conn, stored.id, garden_ids)
+    else:
+        main_periods = [period.item for period in list_periods(conn, main_id)]
+        chart = garden_cycle_months(main_periods, usage, today)
+        cases = _conflict_cases(conn, main_id, (stored.id,))
     return MeterView(
         id=stored.id,
         meter=stored.item,
         periods=periods,
         exchanges=exchanges,
         readings=readings,
-        status=meter_status(kind, billing, usage, _bookings(transactions, in_force), today),
-        chart_months=cycle_months(kind, billing, usage, today),
+        status=meter_status(
+            kind, billing, usage, _bookings(transactions, in_force), today, garden=garden
+        ),
+        chart_months=chart,
+        main_meter_id=main_id,
+        garden_ids=garden_ids,
+        conflicts=tuple(cases),
+    )
+
+
+def _garden_series(conn: sqlite3.Connection, garden_ids: tuple[int, ...]) -> dict[int, Series]:
+    return {
+        garden_id: continuous_series(
+            [r.item for r in list_readings(conn, garden_id)],
+            [e.item for e in list_exchanges(conn, garden_id)],
+        )
+        for garden_id in garden_ids
+    }
+
+
+def _garden_usage(
+    conn: sqlite3.Connection, garden_ids: tuple[int, ...], periods: list[BillingPeriod]
+) -> DailyUsage | None:
+    """The gardens' m³ per day behind a main meter; None for a meter without garden meters."""
+    if not garden_ids:
+        return None
+    series = _garden_series(conn, garden_ids).values()
+    return garden_usage(periods, [daily_usage(points) for points in series])
+
+
+def _conflict_cases(
+    conn: sqlite3.Connection, main_id: int, garden_ids: tuple[int, ...]
+) -> list[ConflictCase]:
+    """The cases of `garden_ids` against the main meter; all the gardens count in the excess."""
+    if not garden_ids:
+        return []
+    all_gardens = tuple(m.id for m in list_meters(conn) if m.item.main_meter_id == main_id)
+    main = continuous_series(
+        [r.item for r in list_readings(conn, main_id)],
+        [e.item for e in list_exchanges(conn, main_id)],
+    )
+    series = _garden_series(conn, all_gardens)
+    return [
+        _conflict_case(conn, conflict)
+        for conflict in garden_conflicts(main, series)
+        if conflict.meter_id in garden_ids
+    ]
+
+
+def _conflict_case(conn: sqlite3.Connection, conflict) -> ConflictCase:
+    garden_id = conflict.meter_id
+    reading_id = next(
+        (r.id for r in list_readings(conn, garden_id) if r.item.reading_date == conflict.end_date),
+        None,
+    )
+    exchange_id = next(
+        (
+            e.id
+            for e in list_exchanges(conn, garden_id)
+            if e.item.exchange_date == conflict.end_date
+        ),
+        None,
+    )
+    zeroed = (conflict.start_date, conflict.end_date) in list_zeroed(conn, garden_id)
+    return ConflictCase(
+        garden_id,
+        conflict.start_date,
+        conflict.end_date,
+        conflict.excess_milli,
+        reading_id,
+        exchange_id,
+        zeroed,
     )
 
 
@@ -141,7 +241,8 @@ def meter_cashflows(conn: sqlite3.Connection, today: date) -> list[MeterCashflow
     for view in load_utilities(conn, today):
         periods = [p.item for p in view.periods]
         current = current_period(periods, today)
-        ended = _ended_settlement(view, periods, transactions, today)
+        garden = _garden_usage(conn, view.garden_ids, periods)
+        ended = _ended_settlement(view, periods, transactions, garden, today)
         if current is None and ended is None:
             continue
         schedule = view.status.remaining_advance_dates if view.status else ()
@@ -159,7 +260,11 @@ def meter_cashflows(conn: sqlite3.Connection, today: date) -> list[MeterCashflow
 
 
 def _ended_settlement(
-    view: MeterView, periods: list[BillingPeriod], transactions: list, today: date
+    view: MeterView,
+    periods: list[BillingPeriod],
+    transactions: list,
+    garden: DailyUsage | None,
+    today: date,
 ) -> tuple[date, int] | None:
     """Debit date and signed amount of the latest period ended before `today`.
 
@@ -178,6 +283,7 @@ def _ended_settlement(
             usage,
             _bookings(transactions, period),
             period.settlement_date,
+            garden=garden,
         )
         cents = None if status is None else status.settlement_cents
     if cents is None:

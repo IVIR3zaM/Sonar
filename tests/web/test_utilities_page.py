@@ -20,6 +20,11 @@ from sonar.utilities.store import (
 from sonar.web.app import create_app
 from tests.html import cents, soup, text
 from tests.seed import seed
+from tests.utilities.test_settlement import (
+    WATER_BOOKINGS,
+    WATER_TODAY,
+    water_periods,
+)
 
 TODAY = date(2026, 1, 11)
 CATEGORIES = """
@@ -603,3 +608,102 @@ def test_toggle_memory_script_keeps_the_chart_toggles_in_local_storage(client, d
         False,
         False,
     ]
+
+
+# Water, schedule and flexible cards (D6, D7, D11)
+
+
+@pytest.fixture
+def water_client(tmp_path):
+    path = tmp_path / "water.db"
+    seed(path, CATEGORIES + '\n[[category]]\nname = "Water"\ntype = "fixed"\n')
+    meter = _store(path, lambda conn: add_meter(conn, Meter("Water", "water")))
+    for period in water_periods():
+        _store(path, lambda conn, p=period: add_period(conn, meter, p))
+    for day, value in (
+        (date(2025, 5, 31), 238_000),
+        (date(2025, 12, 31), 355_000),
+        (date(2026, 10, 16), 516_000),
+    ):
+        _store(path, lambda conn, d=day, v=value: add_reading(conn, meter, Reading(d, v)))
+    with TestClient(create_app(path, today=lambda: WATER_TODAY)) as client:
+        # Booked after startup, which re-applies the rules and would clear the category.
+        for booked, amount in WATER_BOOKINGS:
+            _insert_debit(path, booked.isoformat(), amount, "Water")
+        yield client, meter
+
+
+def _hook_cents(card, selector: str) -> int:
+    return cents(card.select_one(selector))
+
+
+def test_the_water_card_shows_each_charge_and_the_totals(water_client):
+    client, meter = water_client
+    card = _page(client).select_one(f"#meter-{meter}")
+
+    for name, so_far, projected in (
+        ("drinking", 22_615, 28_608),
+        ("wastewater", 66_791, 84_489),
+    ):
+        block = card.select_one(f'[data-charge="{name}"]')
+        assert _hook_cents(block, '[data-field="cost_so_far"]') == so_far
+        assert _hook_cents(block, '[data-field="projected_cost"]') == projected
+    assert text(card.select_one('[data-charge="drinking"]')).startswith("Drinking water")
+    assert text(card.select_one('[data-charge="wastewater"]')).startswith("Wastewater")
+    assert _hook_cents(card, f"#meter-{meter}-cost-so-far") == 89_406
+    assert _hook_cents(card, f"#meter-{meter}-projected-cost") == 113_097
+    assert _hook_cents(card, f"#meter-{meter}-paid") == 96_000
+
+
+def test_the_water_card_shows_the_schedule_and_the_settlement_dates(water_client):
+    client, meter = water_client
+    card = _page(client).select_one(f"#meter-{meter}")
+
+    remaining = card.select_one(f"#meter-{meter}-remaining-advances")
+    assert cents(remaining) == 24_000
+    assert text(card.select_one(f'#meter-{meter} [data-field="remaining_count"]')) == "1"
+    assert card.select_one(f"#meter-{meter}-next-advance")["datetime"] == "2026-12-15"
+    settlement = card.select_one(f"#meter-{meter}-settlement")
+    assert cents(settlement) == 6_903
+    assert settlement["data-kind"] == "refund"
+    assert card.select_one(f"#meter-{meter}-settlement-date")["datetime"] == "2026-12-31"
+    assert card.select_one(f"#meter-{meter}-debit-date")["datetime"] == "2027-02-24"
+    assert cents(card.select_one(f"#meter-{meter}-worst-case")) == 6_903
+    assert text(card.select_one(f"#meter-{meter}-set-by-supplier")) == "Set by the supplier"
+    assert card.select_one(f"#meter-{meter}-suggested-advance") is None
+
+
+def test_the_water_chart_says_m3(water_client):
+    client, meter = water_client
+    chart = _page(client).select_one(f"#meter-{meter}-chart")
+
+    assert chart is not None
+    assert "m³" in text(chart.select_one("svg title"))
+    assert "kWh" not in text(chart)
+
+
+def test_a_flexible_card_keeps_the_suggested_advance_and_adds_the_remaining_advances(
+    client, db_path
+):
+    meter = _with_readings(db_path, expected_usage=3_650)
+    card = _page(client).select_one(f"#meter-{meter}")
+
+    assert cents(card.select_one(f"#meter-{meter}-suggested-advance")) > 0
+    assert cents(card.select_one(f"#meter-{meter}-remaining-advances")) > 0
+    assert int(text(card.select_one('[data-field="remaining_count"]'))) == 11
+    assert card.select_one(f"#meter-{meter}-debit-date")["datetime"] == "2026-12-31"
+    assert card.select_one(f"#meter-{meter}-projected-cost") is not None
+    assert card.select_one(f"#meter-{meter}-next-advance") is None
+    assert card.select_one(f"#meter-{meter}-set-by-supplier") is None
+    assert card.select_one("[data-charge]") is None
+    assert "kWh" in text(card.select_one(f"#meter-{meter}-chart"))
+
+
+def test_add_a_meter_offers_water_and_creates_one(client, db_path):
+    options = _page(client).select("#add-meter select[name=kind] option")
+    assert [option["value"] for option in options] == ["gas", "electricity", "water"]
+
+    response = client.post("/utilities/meters", data={"name": "Flat water", "kind": "water"})
+
+    assert response.status_code == 303
+    assert _store(db_path, list_meters)[0].item == Meter("Flat water", "water")

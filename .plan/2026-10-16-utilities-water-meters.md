@@ -1,5 +1,5 @@
 # Utilities with water meters
-status: RUNNING
+status: WAITING
 created: 2026-10-16 · updated: 2026-10-16
 goal: Energy becomes Utilities and gains water meters with drinking and wastewater charges, a per-period advance mode (flexible or supplier schedule) and a settlement debit date, shown on /utilities and the dashboard and counted once in the payday forecast.
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -50,7 +50,7 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N08 | meter page period form | exec | N06 | sonnet/sonnet | 1 | 1 | DONE | |
 | N09 | visual check | gate | N07,N11 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N02,N09 | -/sonnet | 0 | 0 | TODO | |
-| N11 | utilities page cards | exec | N08 | sonnet/sonnet | 0 | 0 | TODO | |
+| N11 | utilities page cards | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -481,5 +481,12 @@ exec: DONE · 1914 passed
 - Period form, list and Start new period cover water charges, advance mode/dates and debit days; usage_unit (m³/kWh) on header, label and list; new FIELD_HINTS dates and DOMAIN_ERROR_HINTS sentences; css rebuilt
 - Period kind looked up via list_meters by the resolved meter id; mode, dates and debit days are required form fields (blank mode is a 400), existing tests' NEW_PERIOD gained them
 - Flexible period list shows '–' for advance dates; advance_mode hook shows the raw value
+check: PASS 3/3
+verify: PASS
+
+### N11 try 1 · 2026-10-16
+exec: DONE · 1920 passed
+- utilities cards: projected cost, remaining advances, debit date, per-charge water blocks, next advance and set-by-supplier on schedules
+- utility_chart takes a unit (m³ for water); add meter offers water; css rebuild unchanged
 check: PASS 3/3
 verify: PASS

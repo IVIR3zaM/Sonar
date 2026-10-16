@@ -660,3 +660,16 @@ def test_utility_chart_without_two_current_months_has_no_current_only_view(rende
 
     assert soup.select_one("[data-view=current]") is None
     assert len(soup.select("[data-view=all] rect")) == 3
+
+
+def test_utility_chart_names_its_unit_in_the_summary_and_bar_titles(render):
+    figures = [chart_month(0), chart_month(1)]
+
+    water = render("utility_chart", 'utility_chart("c", figures, "m³")', figures=figures)
+    default = render("utility_chart", 'utility_chart("c", figures)', figures=figures)
+
+    assert "usage in m³ and cost" in water.select_one("svg title").get_text()
+    assert "m³" in water.select_one('[data-series="usage"] rect title').get_text()
+    assert "kWh" not in water.get_text()
+    assert "usage in kWh and cost" in default.select_one("svg title").get_text()
+    assert "kWh" in default.select_one('[data-series="usage"] rect title').get_text()

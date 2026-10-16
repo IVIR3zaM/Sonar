@@ -174,13 +174,13 @@
 
 {#- months: ChartMonth list (month, kwh, cost_cents, cycle, projected), oldest
     first: the previous billing cycle, then the current one, its projected
-    months last; the last 24 are drawn. Usage (kWh) and cost (€) have no common
+    months last; the last 24 are drawn. Usage (kWh or m³, by `unit`) and cost (€) have no common
     unit, so each series is scaled to its own peak; the trends fit the measured
     months only. Value labels and trend lines are in the markup but invisible
     until the checkboxes beside the chart are checked, which the group-has
     variants read without any script. Small screens see the current cycle only
     when it has at least two months to draw. #}
-{% macro utility_chart(id, months) %}
+{% macro utility_chart(id, months, unit="kWh") %}
 {%- set months = months[-24:] -%}
 {%- if months|length < 2 %}
 <p id="{{ id }}-empty" data-utility-chart-empty class="text-sm text-ink-muted">Not enough full months yet for a chart. It needs readings that cover at least two whole calendar months.</p>
@@ -194,17 +194,17 @@
     <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="values" class="accent-accent">Show values</label>
     <label class="inline-flex cursor-pointer items-center gap-1.5"><input type="checkbox" data-toggle="trend" class="accent-accent">Show trend</label>
   </div>
-  <div data-view="all" class="{{ 'hidden sm:block' if narrow }}">{{ _utility_svg(months) }}</div>
+  <div data-view="all" class="{{ 'hidden sm:block' if narrow }}">{{ _utility_svg(months, unit) }}</div>
   {%- if narrow %}
-  <div data-view="current" class="sm:hidden">{{ _utility_svg(current) }}</div>
+  <div data-view="current" class="sm:hidden">{{ _utility_svg(current, unit) }}</div>
   {%- endif %}
   <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
     {%- if has_previous %}
-    <li data-legend="previous" class="{{ 'hidden sm:inline-flex' if narrow else 'inline-flex' }} items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500/40 dark:bg-sky-400/40" aria-hidden="true"></span>Previous cycle (kWh)</li>
+    <li data-legend="previous" class="{{ 'hidden sm:inline-flex' if narrow else 'inline-flex' }} items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500/40 dark:bg-sky-400/40" aria-hidden="true"></span>Previous cycle ({{ unit }})</li>
     {%- endif %}
-    <li data-legend="current" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500 dark:bg-sky-400" aria-hidden="true"></span>Current cycle (kWh)</li>
+    <li data-legend="current" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-sky-500 dark:bg-sky-400" aria-hidden="true"></span>Current cycle ({{ unit }})</li>
     {%- if has_projected %}
-    <li data-legend="projected" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm border border-dashed border-sky-500 bg-sky-500/10 dark:border-sky-400" aria-hidden="true"></span>Projected (kWh)</li>
+    <li data-legend="projected" class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm border border-dashed border-sky-500 bg-sky-500/10 dark:border-sky-400" aria-hidden="true"></span>Projected ({{ unit }})</li>
     {%- endif %}
     <li data-legend="cost" class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3 bg-amber-500 dark:bg-amber-400" aria-hidden="true"></span>Cost (€)</li>
     {%- if has_projected %}
@@ -217,7 +217,7 @@
 
 {#- One view of utility_chart: columns per month, the cost line solid over the
     measured months and dashed over the projected ones. #}
-{% macro _utility_svg(months) %}
+{% macro _utility_svg(months, unit) %}
 {%- set slot = 28 -%}
 {%- set height = 100 -%}
 {%- set top = 14 -%}
@@ -228,7 +228,7 @@
 {%- set measured = months|rejectattr("projected")|list|length -%}
 {%- set heights = charts.columns(kwh, height) -%}
 {%- set cost_points = charts.own_scale_points(costs, slot, height) -%}
-{%- set summary = "Monthly usage in kWh and cost in euro, " ~ charts.month_label(months[0].month) ~ " to " ~ charts.month_label(months[-1].month) -%}
+{%- set summary = "Monthly usage in " ~ unit ~ " and cost in euro, " ~ charts.month_label(months[0].month) ~ " to " ~ charts.month_label(months[-1].month) -%}
 {%- if measured < months|length %}{% set summary = summary ~ ", projected from " ~ charts.month_label(months[measured].month) %}{% endif -%}
 {%- set show_values = "invisible group-has-[[data-toggle=values]:checked]/utility:visible" -%}
 {%- set show_trend = "invisible group-has-[[data-toggle=trend]:checked]/utility:visible" -%}
@@ -248,7 +248,7 @@
       <rect x="{{ loop.index0 * slot + 5 }}" y="{{ height - heights[loop.index0] }}" width="{{ slot - 10 }}" height="{{ heights[loop.index0] }}"
             data-kwh="{{ f.kwh }}" data-cycle="{{ f.cycle }}" data-projected="{{ 'true' if f.projected else 'false' }}"
             {% if f.projected %}stroke-width="1" stroke-dasharray="3 2" {% endif %}class="{{ look }}">
-        <title>{{ charts.month_label(f.month) }}: {{ f.kwh }} kWh{{ " projected" if f.projected }}</title>
+        <title>{{ charts.month_label(f.month) }}: {{ f.kwh }} {{ unit }}{{ " projected" if f.projected }}</title>
       </rect>
       {%- endfor %}
     </g>

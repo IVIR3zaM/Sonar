@@ -11,7 +11,8 @@
 
 {% set section_title = "text-xs font-semibold uppercase tracking-wide text-ink-muted" %}
 {% set drawer = "mt-2 rounded-control border border-line bg-surface-muted/50 p-3" %}
-{% set kind_options = [("gas", "Gas"), ("electricity", "Electricity")] %}
+{% set charge_labels = {"drinking": "Drinking water", "wastewater": "Wastewater"} %}
+{% set kind_options = [("gas", "Gas"), ("electricity", "Electricity"), ("water", "Water")] %}
 
 
 {#- A projected settlement is worded by its sign: a refund or a back-payment. #}
@@ -23,7 +24,7 @@
 {% block content %}
 <header class="mb-6">
   <h1 class="text-2xl font-semibold tracking-tight text-ink">Utilities</h1>
-  <p class="mt-1 text-sm text-ink-muted">Gas and electricity meters, what the current billing period costs, and the settlement ahead.</p>
+  <p class="mt-1 text-sm text-ink-muted">Gas, electricity and water meters, what the current billing period costs, and the settlement ahead.</p>
 </header>
 
 {% if error and error.form == "page" %}
@@ -55,16 +56,35 @@
     {{ stat("Paid so far", value=amount(status.paid_cents, colored=false, id=pre ~ "-paid"), hint="paid since " ~ date(status.paid_since, id=pre ~ "-paid-since")) }}
     {% if status.cost_so_far_cents is not none %}
     {{ stat("Cost so far", value=amount(status.cost_so_far_cents, colored=false, id=pre ~ "-cost-so-far"), hint="as of " ~ date(status.as_of)) }}
+    {{ stat("Projected cost", value=amount(status.projected_cost_cents, colored=false, id=pre ~ "-projected-cost"), hint="by the end of the period") }}
     {{ stat("Left", value=amount(status.left_cents, id=pre ~ "-left"), hint="paid minus cost so far") }}
-    {{ stat("Projected refund" if status.settlement_cents >= 0 else "Projected back-payment", value=outcome(status.settlement_cents, pre ~ "-settlement"), hint=("on " ~ date(m.current.settlement_date, id=pre ~ "-settlement-date"))) }}
+    {{ stat("Projected refund" if status.settlement_cents >= 0 else "Projected back-payment", value=outcome(status.settlement_cents, pre ~ "-settlement"), hint=("settles " ~ date(m.current.settlement_date, id=pre ~ "-settlement-date") ~ ", debited " ~ date(status.debit_date, id=pre ~ "-debit-date"))) }}
     {{ stat("Worst case refund" if status.worst_settlement_cents >= 0 else "Worst case back-payment", value=outcome(status.worst_settlement_cents, pre ~ "-worst-case"), hint="at the highest of seasonal, expected and last year's usage") }}
-    {% if status.suggested_advance_cents is not none %}
-    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint=("per advance for the next " ~ status.remaining_advance_count ~ (" advance" if status.remaining_advance_count == 1 else " advances") ~ ", about the same at settlement on " ~ date(m.current.settlement_date)) if status.remaining_advance_count else ("no advance left, about this at settlement on " ~ date(m.current.settlement_date))) }}
-    {% else %}
-    {{ stat("Suggested advance", value="–", hint="no advance left in this period") }}
+    {% set remaining = status.remaining_advance_count %}
+    {{ stat("Remaining advances", value=amount(status.remaining_advances_cents, colored=false, id=pre ~ "-remaining-advances"), hint=("<span data-field=\"remaining_count\">" ~ remaining ~ "</span>" ~ (" advance" if remaining == 1 else " advances") ~ " left in this period") | safe) }}
+    {% if status.advance_mode == "schedule" %}
+    {% if status.remaining_advance_dates %}
+    {{ stat("Next advance", value=date(status.remaining_advance_dates[0], id=pre ~ "-next-advance"), hint="from the supplier's schedule") }}
+    {% endif %}
+    {{ stat("Advance", value=("<span id=\"" ~ pre ~ "-set-by-supplier\">Set by the supplier</span>") | safe) }}
+    {% elif status.suggested_advance_cents is not none %}
+    {{ stat("Suggested advance", value=amount(status.suggested_advance_cents, colored=false, id=pre ~ "-suggested-advance"), hint=("per advance for the next " ~ remaining ~ (" advance" if remaining == 1 else " advances") ~ ", about the same at settlement on " ~ date(m.current.settlement_date)) if remaining else ("no advance left, about this at settlement on " ~ date(m.current.settlement_date))) }}
     {% endif %}
     {% endif %}
   </dl>
+  {% if status.charges %}
+  <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+    {% for charge in status.charges %}
+    <div data-charge="{{ charge.name }}" class="rounded-control border border-line bg-surface-muted/50 p-3">
+      <h3 class="{{ section_title }}">{{ charge_labels[charge.name] }}</h3>
+      <dl class="mt-2 grid grid-cols-2 gap-3">
+        {{ stat("Cost so far", value=amount(charge.cost_so_far_cents, colored=false, attrs={"data-field": "cost_so_far"})) }}
+        {{ stat("Projected", value=amount(charge.projected_cost_cents, colored=false, attrs={"data-field": "projected_cost"})) }}
+      </dl>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if m.last_settlement %}
   {% set settled_cents, settled_on = m.last_settlement %}
   <p id="{{ pre }}-last-settlement" data-kind="{{ 'refund' if settled_cents >= 0 else 'back-payment' }}" class="mt-3 text-sm text-ink-muted">Last settlement: {{ "refund" if settled_cents >= 0 else "back-payment" }} {{ amount(settled_cents | abs, colored=false) }} on {{ date(settled_on) }}</p>
@@ -80,7 +100,7 @@
 
   <section class="mt-6">
     <h3 class="{{ section_title }}">Usage and cost per month</h3>
-    <div class="mt-2">{{ utility_chart(pre ~ "-chart", m.view.chart_months) }}</div>
+    <div class="mt-2">{{ utility_chart(pre ~ "-chart", m.view.chart_months, m.usage_unit) }}</div>
   </section>
 
 
@@ -109,7 +129,7 @@
   {% set key = "add-meter" %}
   {% set err = error if error and error.form == key else none %}
   {% set v = err.fields if err else {"name": "", "kind": "gas"} %}
-  {% call card(title="Add a meter", subtitle="One per gas or electricity meter.", id="add-meter-card") %}
+  {% call card(title="Add a meter", subtitle="One per gas, electricity or water meter.", id="add-meter-card") %}
   <form id="add-meter" method="post" action="/utilities/meters" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     {{ form_error(err) }}
     {{ field("name", "Name", value=v.name, id="add-meter-name", required=true, attrs={"placeholder": "e.g. Flat gas"}) }}

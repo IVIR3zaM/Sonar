@@ -43,6 +43,19 @@ def eur(cents: int) -> str:
     return f"{sign}{grouped},{remainder:02d}{_NBSP}€"
 
 
+def decimal(value: int, places: int) -> str:
+    """Format an integer scaled by 10**places as "1.234,5678", trimming trailing
+    zeros down to two decimals ("114,00"); a places of 0 has no decimals.
+    """
+    whole, fraction = divmod(abs(value), 10**places)
+    sign = _MINUS if value < 0 else ""
+    grouped = f"{whole:,}".replace(",", ".")
+    if places == 0:
+        return f"{sign}{grouped}"
+    digits = f"{fraction:0{places}d}".rstrip("0").ljust(2, "0")
+    return f"{sign}{grouped},{digits}"
+
+
 def display_date(d: date) -> str:
     """Format a date as "24 Sep 2026" using the fixed English month table."""
     return f"{d.day} {_MONTHS[d.month - 1]} {d.year}"

@@ -426,6 +426,40 @@ def test_a_gas_period_takes_the_state_factor_and_calorific_value(client, db_path
     assert (period.state_factor_e4, period.calorific_value_e4) == (9_500, 110_000)
 
 
+def test_a_flexible_gas_period_row_reads_like_the_rest_of_the_app(client, db_path):
+    meter = _gas_meter(db_path)
+    period = _period(
+        unit_price_micro=93_800,
+        state_factor_e4=9_653,
+        calorific_value_e4=115_000,
+        settlement_debit_days=1,
+    )
+    _store(db_path, lambda conn: add_period(conn, meter, period))
+
+    row = _page(client, meter).select_one(f"#meter-{meter}-periods [data-row]")
+
+    assert text(row.select_one('[data-field="unit_price"]')) == "9,38 ct/kWh"
+    assert text(row.select_one('[data-field="state_factor"]')) == "0,9653"
+    assert text(row.select_one('[data-field="calorific_value"]')) == "11,50 kWh/m³"
+    mode = row.select_one('[data-field="advance_mode"]')
+    assert (text(mode), mode["data-mode"]) == ("Flexible", "flexible")
+    dates = row.select_one('[data-field="advance_dates"]')
+    assert text(dates) == "–"
+    assert dates.select_one("time") is None
+    debit = row.select_one('[data-field="settlement_debit_days"]')
+    assert (text(debit), debit["data-days"]) == ("1 day after settlement", "1")
+
+
+def test_a_period_debited_on_the_settlement_date_says_so(client, db_path):
+    meter = _electricity_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _period(settlement_debit_days=0)))
+
+    row = _page(client, meter).select_one(f"#meter-{meter}-periods [data-row]")
+
+    debit = row.select_one('[data-field="settlement_debit_days"]')
+    assert (text(debit), debit["data-days"]) == ("On the settlement date", "0")
+
+
 def test_an_electricity_period_form_has_no_gas_fields(client, db_path):
     meter = _electricity_meter(db_path)
     page = _page(client, meter)
@@ -718,17 +752,26 @@ def test_a_water_period_is_created_listed_and_edited(client, db_path):
     assert stored.item == _water_period()
     page = _page(client, meter)
     row = page.select_one(f"#meter-{meter}-periods [data-row]")
-    assert text(row.select_one('[data-field="advance_mode"]')) == "schedule"
-    assert text(row.select_one('[data-field="advance_dates"]')) == (
-        "2026-04-15 2026-06-15 2026-08-15 2026-10-15 2026-12-15"
-    )
-    assert text(row.select_one('[data-field="settlement_debit_days"]')) == "55"
+    mode = row.select_one('[data-field="advance_mode"]')
+    assert text(mode) == "Supplier schedule"
+    assert mode["data-mode"] == "schedule"
+    dates = row.select_one('[data-field="advance_dates"]')
+    assert [t["datetime"] for t in dates.select("time")] == [
+        "2026-04-15",
+        "2026-06-15",
+        "2026-08-15",
+        "2026-10-15",
+        "2026-12-15",
+    ]
+    debit = row.select_one('[data-field="settlement_debit_days"]')
+    assert text(debit) == "55 days after settlement"
+    assert debit["data-days"] == "55"
     drinking = row.select_one('[data-charge="drinking"]')
-    assert text(drinking.select_one('[data-field="price"]')) == "114.0000 ct/m³"
+    assert text(drinking.select_one('[data-field="price"]')) == "114,00 ct/m³"
     assert cents(drinking.select_one('[data-field="base_fee"]')) == 3_600
     assert text(drinking.select_one('[data-field="vat"]')) == "7 %"
     wastewater = row.select_one('[data-charge="wastewater"]')
-    assert text(wastewater.select_one('[data-field="price"]')) == "369.0000 ct/m³"
+    assert text(wastewater.select_one('[data-field="price"]')) == "369,00 ct/m³"
     assert cents(wastewater.select_one('[data-field="base_fee"]')) == 9_600
     assert text(wastewater.select_one('[data-field="vat"]')) == "0 %"
     assert row.select_one('[data-field="unit_price"]') is None
@@ -834,9 +877,14 @@ def test_a_gas_and_an_electricity_period_take_mode_dates_and_debit_days(client, 
     assert form.select_one("[data-charge]") is None
     assert form.select_one("input[name=drinking_price]") is None
     row = _page(client, meter).select_one(f"#meter-{meter}-periods [data-row]")
-    assert text(row.select_one('[data-field="advance_mode"]')) == "schedule"
-    assert text(row.select_one('[data-field="advance_dates"]')) == "2027-02-15 2027-03-15"
-    assert text(row.select_one('[data-field="settlement_debit_days"]')) == "30"
+    mode = row.select_one('[data-field="advance_mode"]')
+    assert text(mode) == "Supplier schedule"
+    assert mode["data-mode"] == "schedule"
+    dates = row.select_one('[data-field="advance_dates"]')
+    assert [t["datetime"] for t in dates.select("time")] == ["2027-02-15", "2027-03-15"]
+    debit = row.select_one('[data-field="settlement_debit_days"]')
+    assert text(debit) == "30 days after settlement"
+    assert debit["data-days"] == "30"
 
 
 def test_the_new_period_form_defaults_to_flexible_and_zero_debit_days(client, db_path):

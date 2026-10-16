@@ -48,9 +48,10 @@ Definition of done: verify passes; the SPEC §13 Utilities bullet states the ren
 | N06 | forecast and dashboard card | exec | N05 | sonnet/sonnet | 1 | 0 | DONE | |
 | N07 | utilities API | exec | N05 | sonnet/sonnet | 2 | 0 | DONE | |
 | N08 | meter page period form | exec | N06 | sonnet/sonnet | 1 | 1 | DONE | |
-| N09 | visual check | gate | N07,N11 | -/- | 0 | 0 | TODO | |
+| N09 | visual check | gate | N07,N12 | -/- | 0 | 1 | TODO | |
 | N10 | plan acceptance | check | N02,N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | utilities page cards | exec | N08 | sonnet/sonnet | 1 | 0 | DONE | |
+| N12 | meter period list formatting | exec | N11 | sonnet/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -342,6 +343,38 @@ Done when:
 - C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n11.css" --minify && cmp "$TMPDIR/n11.css" src/sonar/web/static/sonar.css`
 - C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
+## N12 meter period list formatting
+Do: The meter page's period list (`utility_meter.html:117-146`) reads like the rest of the app. Scheduled
+  advance dates use the `date` macro, one per date, and never break inside a date at 375px. Prices and gas
+  factors use the German number format. Advances says "Flexible" or "Supplier schedule". Settlement debited
+  says "55 days after settlement". Rebuild css.
+Context: Owner's gate feedback. Add a display filter `decimal(value, places)` in `web/display.py` (next to
+  `eur` `:36`), registered in `web/app.py:78`. It formats an integer scaled by 10**places with "." thousands and
+  "," decimals, trimming trailing zeros down to at least 2 decimals (none when places is 0). Use it for the
+  water price (`:125`), unit price (`:133`), state factor (`:136`) and calorific value (`:137`). Pins: 1 140 000 µ€
+  at 4 places → "114,00", 93 800 → "9,38", 9 653 e4 → "0,9653", 115 000 e4 → "11,50", 123 456 → "12,3456",
+  1 234 567 → "123,4567", 12 345 678 → "1.234,5678". Form prefills keep `scaled` (they must round-trip).
+  Advances (`:139`): text "Flexible" / "Supplier schedule", raw value in `data-mode` on the `data-field`
+  element. Dates (`:141`): each through `date` (`components/amount.html:16`, already `whitespace-nowrap`),
+  joined by ", ", and "–" when none; the cell spans the full row (`col-span-2 sm:col-span-3`) so five dates
+  wrap between dates only. Debit days (`:143`): 0 → "On the settlement date", 1 → "1 day after settlement",
+  n → "n days after settlement"; raw number in `data-days`. Update the existing list assertions
+  (`tests/web/test_utility_meter_page.py:721-735`, `:837-839`) to the new text and hooks: dates via each
+  `time["datetime"]`, mode via `data-mode`, days via `data-days`. Page tests use `tests/html.py` hooks.
+Read: `src/sonar/web/display.py`, `src/sonar/web/app.py`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/templates/components/amount.html`, `tests/web/test_display.py`, `tests/web/test_utility_meter_page.py`, `tests/html.py`
+Write: `src/sonar/web/display.py`, `src/sonar/web/app.py`, `src/sonar/web/templates/utility_meter.html`, `src/sonar/web/static/sonar.css`, `tests/web/test_display.py`, `tests/web/test_utility_meter_page.py`
+Test first: `decimal` pins above in `tests/web/test_display.py`; the D7 water period row shows price
+  "114,00 ct/m³" and "369,00 ct/m³", Advances "Supplier schedule" with `data-mode="schedule"`, five `time`
+  elements 2026-04-15..2026-12-15, and "55 days after settlement" with `data-days="55"`.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_display.py tests/web/test_utility_meter_page.py`
+- C2 [review] every price and gas factor in the period list uses `decimal`; no form prefill changed
+- C3 [review] a flexible gas row says "Flexible", shows "–" for dates, "9,38 ct/kWh"-style prices and its
+  debit-days text; 0 and 1 debit days read "On the settlement date" and "1 day after settlement"
+- C4 [review] the dates cell spans the row and each date is one nowrap `time`
+- C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/n12.css" --minify && cmp "$TMPDIR/n12.css" src/sonar/web/static/sonar.css`
+- C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N09 visual check
 Do: gate, pre-authorized (D12). Start the app per config `visual_recipe` on a temp DB, set balance 2026-10-16
   and salary day 1, run the D12 scratchpad loader (categories, synthetic CSV, rules, Water and Gas meters
@@ -353,11 +386,14 @@ Done when:
   (projected total 1.130,97 €), paid 720,00 €, 2 advances left (480,00 €, next 25.10.2026), refund 69,03 €
   debited 24.02.2027 and "Set by the supplier"; its chart and readings say m³
 - C3 [visual] the Gas card still shows its suggested advance, worst case and kWh chart
-- C4 [visual] the Water meter page lists both periods with charges, mode, scheduled dates and debit days; the
-  period form shows the water charge groups and keeps entered values on an invalid VAT
+- C4 [visual] the Water meter page lists both periods with charges ("114,00 ct/m³"), "Supplier schedule",
+  scheduled dates in the app date format ("25 Apr 2026") and "55 days after settlement"; the Gas period list
+  says "Flexible" and "9,38 ct/kWh"; the period form shows the water charge groups and keeps entered values
+  on an invalid VAT
 - C5 [visual] the dashboard Utilities card lists Water and Gas with debit dates; the due list holds exactly one
   water advance item around 25.10.2026 and "Gas settlement" 45,00 € on 25.10.2026
-- C6 [visual] nothing wraps badly, clips or scrolls sideways at 375px, in light and dark
+- C6 [visual] nothing wraps badly, clips or scrolls sideways at 375px, in light and dark; no scheduled date
+  breaks across lines
 
 ## N10 plan acceptance
 Do: Check the whole plan against verify, SPEC §11 and §12 and the new SPEC §13 Utilities bullet.
@@ -488,5 +524,21 @@ verify: PASS
 exec: DONE · 1920 passed
 - utilities cards: projected cost, remaining advances, debit date, per-charge water blocks, next advance and set-by-supplier on schedules
 - utility_chart takes a unit (m³ for water); add meter offers water; css rebuild unchanged
+check: PASS 3/3
+verify: PASS
+
+### N09 try 1 · 2026-10-16
+human: meter page period list: scheduled advance dates shown as ISO and break mid-date at 375px (2026- / 06-25), show them with the app date filter and no mid-date breaks; prices show 114.0000 ct/m3, use the de number format like other prices; Advances shows raw schedule/flexible, show Flexible / Supplier schedule; Settlement debited shows bare 55, show 55 days after settlement
+
+### N09 replan 1 · 2026-10-16
+plan: REPLANNED +N12
+- cause: owner at gate: period list shows ISO dates that break at 375px, 114.0000 ct prices, raw mode value, bare debit days
+- N12 adds a decimal display filter, date-macro scheduled dates, Flexible/Supplier schedule label and days-after-settlement text
+- N09 now depends on N07,N12; C4 and C6 check the new list formatting and no mid-date breaks
+
+### N12 try 1 · 2026-10-16
+exec: DONE · 1925 passed
+- decimal filter in display.py, registered in app.py; period list uses it for prices, state factor, calorific value
+- Advances/dates/debit-days text with data-mode/data-days hooks; dates cell spans the row, each date via date macro; css rebuild unchanged
 check: PASS 3/3
 verify: PASS

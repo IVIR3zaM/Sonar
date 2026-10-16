@@ -122,7 +122,7 @@
           <div data-charge="{{ name }}" class="col-span-2 sm:col-span-3">
             <p class="text-xs font-medium text-ink">{{ "Drinking water" if name == "drinking" else "Wastewater" }}</p>
             <dl class="grid grid-cols-3 gap-x-4">
-              <div><dt class="text-xs text-ink-muted">Price (net)</dt><dd data-field="price" class="tabular-nums">{{ charge.unit_price_micro | scaled(4) }} ct/m³</dd></div>
+              <div><dt class="text-xs text-ink-muted">Price (net)</dt><dd data-field="price" class="tabular-nums">{{ charge.unit_price_micro | decimal(4) }} ct/m³</dd></div>
               <div><dt class="text-xs text-ink-muted">Base fee per year (net)</dt><dd data-field="base_fee">{{ amount(charge.base_fee_cents, colored=false) }}</dd></div>
               <div><dt class="text-xs text-ink-muted">VAT</dt><dd data-field="vat" class="tabular-nums">{{ charge.vat_percent }} %</dd></div>
             </dl>
@@ -130,17 +130,17 @@
           {% endfor %}
           {% else %}
           <div><dt class="text-xs text-ink-muted">Base fee per month</dt><dd data-field="base_fee">{{ amount(period.base_fee_cents, colored=false) }}</dd></div>
-          <div><dt class="text-xs text-ink-muted">Unit price</dt><dd data-field="unit_price" class="tabular-nums">{{ period.unit_price_micro | scaled(4) }} ct/kWh</dd></div>
+          <div><dt class="text-xs text-ink-muted">Unit price</dt><dd data-field="unit_price" class="tabular-nums">{{ period.unit_price_micro | decimal(4) }} ct/kWh</dd></div>
           {% endif %}
           {% if meter.kind == "gas" %}
-          <div><dt class="text-xs text-ink-muted">State factor</dt><dd data-field="state_factor" class="tabular-nums">{{ period.state_factor_e4 | scaled(4) }}</dd></div>
-          <div><dt class="text-xs text-ink-muted">Calorific value</dt><dd data-field="calorific_value" class="tabular-nums">{{ period.calorific_value_e4 | scaled(4) }} kWh/m³</dd></div>
+          <div><dt class="text-xs text-ink-muted">State factor</dt><dd data-field="state_factor" class="tabular-nums">{{ period.state_factor_e4 | decimal(4) }}</dd></div>
+          <div><dt class="text-xs text-ink-muted">Calorific value</dt><dd data-field="calorific_value" class="tabular-nums">{{ period.calorific_value_e4 | decimal(4) }} kWh/m³</dd></div>
           {% endif %}
-          <div><dt class="text-xs text-ink-muted">Advances</dt><dd data-field="advance_mode">{{ period.advance_mode }}</dd></div>
+          <div><dt class="text-xs text-ink-muted">Advances</dt><dd data-field="advance_mode" data-mode="{{ period.advance_mode }}">{{ "Flexible" if period.advance_mode == "flexible" else "Supplier schedule" }}</dd></div>
           <div><dt class="text-xs text-ink-muted">{{ "Advance per month" if period.advance_mode == "flexible" else "Advance per date" }}</dt><dd data-field="advance">{{ amount(period.advance_cents, colored=false) }}</dd></div>
-          <div><dt class="text-xs text-ink-muted">Scheduled advance dates</dt><dd data-field="advance_dates" class="tabular-nums">{% if period.advance_dates %}{{ period.advance_dates | map("string") | join(" ") }}{% else %}–{% endif %}</dd></div>
+          <div class="col-span-2 sm:col-span-3"><dt class="text-xs text-ink-muted">Scheduled advance dates</dt><dd data-field="advance_dates" class="tabular-nums">{% for due in period.advance_dates %}{{ date(due) }}{% if not loop.last %}, {% endif %}{% else %}–{% endfor %}</dd></div>
           <div><dt class="text-xs text-ink-muted">Expected usage per year</dt><dd data-field="expected_usage" class="tabular-nums">{{ period.expected_usage }} {{ m.usage_unit }}</dd></div>
-          <div><dt class="text-xs text-ink-muted">Settlement debited</dt><dd data-field="settlement_debit_days" class="tabular-nums">{{ period.settlement_debit_days }}</dd></div>
+          <div><dt class="text-xs text-ink-muted">Settlement debited</dt><dd data-field="settlement_debit_days" data-days="{{ period.settlement_debit_days }}">{% if period.settlement_debit_days == 0 %}On the settlement date{% elif period.settlement_debit_days == 1 %}1 day after settlement{% else %}{{ period.settlement_debit_days }} days after settlement{% endif %}</dd></div>
           <div><dt class="text-xs text-ink-muted">Settled amount</dt><dd data-field="settled">{% if period.settled_cents is not none %}{{ amount(period.settled_cents) }}{% else %}–{% endif %}</dd></div>
           <div><dt class="text-xs text-ink-muted">Category</dt><dd data-field="category">{{ period.category or "–" }}</dd></div>
         </dl>

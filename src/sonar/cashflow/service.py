@@ -14,7 +14,7 @@ from typing import Literal
 
 from sonar.cashflow import forecast, income, lights_on, payday
 from sonar.cashflow.balance import BalanceEntry
-from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection
+from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection, SupplierDates
 from sonar.cashflow.income import ExpectedIncome
 from sonar.cashflow.lights_on import LightsOnForecast
 from sonar.cashflow.monthly import (
@@ -99,7 +99,9 @@ def load_payoff(conn: sqlite3.Connection, today: date) -> Payoff:
     estimate_date = today if balance is None else balance.as_of
     txs = [tx for tx, _ in transactions_with_category(conn)]
     views = debt_overview(conn, estimate_date)
-    rows = forecast.fixed_costs(_fixed_sources(conn, views, txs), estimate_date).rows
+    payments = list_payments(conn)
+    links = _advance_links(payments, views, meter_cashflows(conn, estimate_date))
+    rows = forecast.fixed_costs(_fixed_sources(payments, views, txs, links), estimate_date).rows
     now_min, now_max = forecast.fixed_range(rows)
     open_views = [view for view in views if not view.status.paid_off]
     ladder = payoff_ladder([_ladder_debt(view) for view in open_views], now_min, now_max)
@@ -137,7 +139,10 @@ def load_dashboard(
     estimate_date = today if balance is None else balance.as_of
     rows = transactions_with_category(conn)
     views = debt_overview(conn, estimate_date)
-    sources = _fixed_sources(conn, views, [tx for tx, _ in rows])
+    payments = list_payments(conn)
+    cashflows = meter_cashflows(conn, estimate_date)
+    links = _advance_links(payments, views, cashflows)
+    sources = _fixed_sources(payments, views, [tx for tx, _ in rows], links)
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
     utilities = settlement_summaries(conn, estimate_date)
     board = Dashboard(
@@ -178,9 +183,8 @@ def load_dashboard(
     start = estimate_date + timedelta(days=1)
     end = next_payday - timedelta(days=1)
     window_days = (end - start).days + 1
-    cashflows = meter_cashflows(conn, estimate_date)
     settlements = _settlements(utilities, cashflows, start, end)
-    covered = _recurring_categories_due(conn, views, start, end)
+    linked_meters = {link.meter_id for link in links.values()}
     due = (
         forecast.fixed_due(sources, start, end)
         + [
@@ -188,7 +192,7 @@ def load_dashboard(
             for item in settlements
             if item.amount_cents < 0
         ]
-        + _advances(cashflows, covered, start, end)
+        + _advances(cashflows, linked_meters, start, end)
     )
     due_total = sum(item.amount_cents for item in due)
     inflows = _inflows(rows, category_types, settings.salary_day, estimate_date, start, end) + [
@@ -321,30 +325,83 @@ def _settlements(
 
 
 def _advances(
-    cashflows: list[MeterCashflow], covered: set[str], start: date, end: date
+    cashflows: list[MeterCashflow], linked_meters: set[int], start: date, end: date
 ) -> list[DueItem]:
-    """A schedule's advances in [start, end], unless a recurring payment covers the category."""
+    """A schedule's advances in [start, end], unless a recurring payment is linked to it."""
     return [
         DueItem(f"{flow.meter_name} advance", day, flow.advance_cents)
         for flow in cashflows
-        if flow.advance_cents > 0 and flow.category not in covered
+        if flow.advance_cents > 0 and flow.meter_id not in linked_meters
         for day in flow.advance_dates
         if start <= day <= end
     ]
 
 
-def _recurring_categories_due(
-    conn: sqlite3.Connection, views: list[DebtView], start: date, end: date
-) -> set[str]:
-    """Categories with a recurring payment, not linked to a debt, due in [start, end]."""
-    linked_ids = _linked_payment_ids(views)
-    return {
-        payment.category
-        for payment in list_payments(conn)
-        if payment.category is not None
-        and payment.id not in linked_ids
-        and forecast.fixed_due((_recurring_source(payment),), start, end)
+@dataclass(frozen=True)
+class AdvanceLink:
+    """A recurring payment that pays a meter's scheduled advances (SPEC §13 Utilities)."""
+
+    payment_id: int
+    payment_name: str
+    meter_id: int
+    meter_name: str
+    supplier: SupplierDates
+
+
+def advance_links(conn: sqlite3.Connection, today: date) -> dict[int, AdvanceLink]:
+    """Payment id to its link, derived on each load from the schedules in force on `today`."""
+    return _advance_links(
+        list_payments(conn), debt_overview(conn, today), meter_cashflows(conn, today)
+    )
+
+
+def _advance_links(
+    payments: list[RecurringPayment], views: list[DebtView], cashflows: list[MeterCashflow]
+) -> dict[int, AdvanceLink]:
+    """A schedule period in force links to an active payment of its category.
+
+    A payment linked to a debt is the debt's money (SPEC §7), so it never takes advances.
+    """
+    debt_paid = _linked_payment_ids(views)
+    candidates = {
+        payment.id: payment
+        for payment in payments
+        if payment.category is not None and payment.id not in debt_paid
     }
+    schedules = {
+        flow.meter_id: flow
+        for flow in cashflows
+        if flow.period is not None
+        and flow.period.advance_mode == "schedule"
+        and flow.period.category is not None
+    }
+    pairs = forecast.pair_advances(
+        [(payment.id, payment.category) for payment in candidates.values()],
+        [(flow.meter_id, flow.category) for flow in schedules.values()],
+    )
+    return {
+        payment_id: AdvanceLink(
+            payment_id=payment_id,
+            payment_name=candidates[payment_id].name,
+            meter_id=meter_id,
+            meter_name=schedules[meter_id].meter_name,
+            supplier=_supplier(schedules[meter_id]),
+        )
+        for payment_id, meter_id in pairs.items()
+    }
+
+
+def _supplier(flow: MeterCashflow) -> SupplierDates:
+    period = flow.period
+    assert period is not None  # only a period in force links
+    return SupplierDates(
+        start=period.start_date,
+        end=max(period.settlement_date, *period.advance_dates),
+        dates=period.advance_dates,
+        # Already filtered by the meter's bookings, so no last_paid filter applies.
+        remaining=flow.advance_dates,
+        amount_cents=period.advance_cents,
+    )
 
 
 def _inflows(
@@ -368,17 +425,21 @@ def _inflows(
 
 
 def _fixed_sources(
-    conn: sqlite3.Connection, views: list[DebtView], txs: list[ParsedTransaction]
+    payments: list[RecurringPayment],
+    views: list[DebtView],
+    txs: list[ParsedTransaction],
+    links: dict[int, AdvanceLink],
 ) -> tuple[FixedSource, ...]:
     """Recurring payments plus debt schedules, with each real payment counted once.
 
     A recurring payment linked to a debt is the same money (SPEC §7), and the
-    debt's own schedule knows its end and final rate, so the debt wins.
+    debt's own schedule knows its end and final rate, so the debt wins. A
+    payment linked to a meter's schedule follows the schedule's dates.
     """
     linked_ids = _linked_payment_ids(views)
     recurring = [
-        _recurring_source(payment)
-        for payment in list_payments(conn)
+        _recurring_source(payment, links.get(payment.id))
+        for payment in payments
         if payment.id not in linked_ids
     ]
     # A paid-off debt's schedule is empty, which is how it drops out (SPEC §7).
@@ -390,8 +451,9 @@ def _linked_payment_ids(views: list[DebtView]) -> set[int]:
     return {payment.id for view in views for payment in view.linked_payments}
 
 
-def _recurring_source(payment: RecurringPayment) -> FixedSource:
-    return FixedSource(payment.name, payment.periods, payment.last_paid_date)
+def _recurring_source(payment: RecurringPayment, link: AdvanceLink | None) -> FixedSource:
+    supplier = None if link is None else link.supplier
+    return FixedSource(payment.name, payment.periods, payment.last_paid_date, supplier)
 
 
 def _debt_source(view: DebtView, txs: list[ParsedTransaction]) -> FixedSource:

@@ -226,8 +226,10 @@ def settlement_summaries(conn: sqlite3.Connection, today: date) -> list[Settleme
 class MeterCashflow:
     """What a meter still moves at the bank beyond the current settlement (SPEC §13 Utilities)."""
 
+    meter_id: int
     meter_name: str
-    category: str | None  # of the period in force; recurring payments in it cover the advances
+    period: BillingPeriod | None  # the one in force
+    category: str | None  # of the period in force; a recurring payment in it can take the advances
     advance_cents: int
     advance_dates: tuple[date, ...]  # a schedule's unpaid dates after `today`; flexible has none
     ended_debit_date: date | None
@@ -248,7 +250,9 @@ def meter_cashflows(conn: sqlite3.Connection, today: date) -> list[MeterCashflow
         schedule = view.status.remaining_advance_dates if view.status else ()
         flows.append(
             MeterCashflow(
+                meter_id=view.id,
                 meter_name=view.meter.name,
+                period=current,
                 category=current.category if current else None,
                 advance_cents=current.advance_cents if current else 0,
                 advance_dates=schedule,

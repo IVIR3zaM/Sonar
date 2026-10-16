@@ -83,7 +83,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N08 | garden meter page and conflict flow | exec | N07 | sonnet/sonnet | 0 | 0 | TODO | |
 | N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
-| N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | VERIFYING | |
+| N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
 | N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 0 | 0 | TODO | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 0 | 0 | TODO | |
 

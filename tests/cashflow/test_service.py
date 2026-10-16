@@ -1017,16 +1017,23 @@ def test_a_paid_scheduled_advance_is_not_due_again(conn: sqlite3.Connection) -> 
     assert board.due == []
 
 
-def test_a_recurring_payment_of_the_category_covers_the_scheduled_advances(
+def _water_bill(conn: sqlite3.Connection, day: int = 18) -> int:
+    return add_manual(
+        conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 25_000, 1, day)
+    )
+
+
+def test_a_linked_recurring_payment_is_due_on_the_schedules_dates(
     conn: sqlite3.Connection,
 ) -> None:
     _configured(conn, 100_000)
     _water_meter(conn, _schedule_period(date(2026, 9, 15)))
-    add_manual(conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 24_000, 1, 18))
+    _water_bill(conn)
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
-    assert board.due == [DueItem("Water bill", date(2026, 9, 18), 24_000)]
+    assert board.due == [DueItem("Water bill", date(2026, 9, 15), 24_000)]
+    assert board.expected_cents == 76_000
 
 
 def test_a_recurring_payment_of_another_category_does_not_cover_the_advances(
@@ -1041,16 +1048,97 @@ def test_a_recurring_payment_of_another_category_does_not_cover_the_advances(
     assert sorted(item.name for item in board.due) == ["Rent", "Water advance"]
 
 
-def test_a_recurring_payment_outside_the_window_does_not_cover_the_advances(
+def test_a_linked_recurring_payment_due_after_the_window_still_takes_the_schedule(
     conn: sqlite3.Connection,
 ) -> None:
     _configured(conn, 100_000)
     _water_meter(conn, _schedule_period(date(2026, 9, 15)))
-    add_manual(conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 24_000, 1, 28))
+    _water_bill(conn, day=28)
 
     board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
 
-    assert board.due == [DueItem("Water advance", date(2026, 9, 15), 24_000)]
+    assert board.due == [DueItem("Water bill", date(2026, 9, 15), 24_000)]
+    assert board.expected_cents == 76_000
+
+
+def test_a_linked_recurring_payment_skips_a_paid_scheduled_date(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    _water_bill(conn)
+    _insert_tx(conn, "2026-09-09", -24_000, category="Water")
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert board.due == []
+
+
+def test_a_payment_linked_to_a_debt_leaves_the_advances_to_the_meter(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    for month in range(1, 9):
+        _insert_tx(conn, f"2026-{month:02d}-15", -10_000, mandate_ref="M-1")
+    _insert_detected(conn, "mandate:/M-1", "Sofa rate", day=15, amount_cents=10_000)
+    conn.execute("UPDATE recurring_payments SET category = 'Water'")
+    add_debt(conn, _installment("Sofa", "M-1"))
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert sorted(item.name for item in board.due) == ["Sofa", "Water advance"]
+
+
+def test_one_payment_links_to_the_first_of_two_meters_in_its_category(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    second = add_meter(conn, Meter("Water 2", "water"))
+    add_period(conn, second, _schedule_period(date(2026, 9, 15)))
+    _water_bill(conn)
+
+    board = load_dashboard(conn, CATEGORY_TYPES, TODAY)
+
+    assert sorted(item.name for item in board.due) == ["Water 2 advance", "Water bill"]
+
+
+def test_a_linked_fixed_cost_row_shows_the_advance_and_the_schedules_next_date(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 6, 15), date(2026, 9, 15), date(2026, 12, 15)))
+    _water_bill(conn)
+
+    costs = load_dashboard(conn, CATEGORY_TYPES, TODAY).fixed_costs
+
+    [row] = costs.rows
+    assert (row.name, row.amount_cents, row.next_due) == ("Water bill", 24_000, date(2026, 9, 15))
+    assert (row.day, row.interval_months) == (18, 1)
+    # Sep 2026 .. Aug 2027: 09-15 and 12-15 at 240, then 8 own months at 250.
+    assert costs.monthly_equivalent_cents == 20_667
+
+
+def test_a_linked_payment_is_forecast_on_the_schedule_in_the_pay_cycles(
+    conn: sqlite3.Connection,
+) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    _water_bill(conn)
+
+    cycles = load_dashboard(conn, CATEGORY_TYPES, TODAY).fixed_costs.cycles
+
+    [current] = [cycle for cycle in cycles if cycle.kind == "current"]
+    assert current.forecast_cents == 24_000
+
+
+def test_payoff_takes_a_linked_payment_at_its_advance(conn: sqlite3.Connection) -> None:
+    _configured(conn, 100_000)
+    _water_meter(conn, _schedule_period(date(2026, 9, 15)))
+    _water_bill(conn)
+
+    payoff = load_payoff(conn, TODAY)
+
+    assert (payoff.before_min_cents, payoff.before_max_cents) == (24_000, 24_000)
 
 
 def test_a_flexible_meter_adds_no_advance_item(conn: sqlite3.Connection) -> None:

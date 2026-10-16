@@ -8,10 +8,13 @@ from sonar.cashflow.forecast import (
     FixedCostRow,
     FixedSource,
     Projection,
+    SupplierDates,
     cycle_costs,
     fixed_costs,
     fixed_due,
     fixed_range,
+    next_due,
+    pair_advances,
     project,
     traffic_light,
 )
@@ -80,6 +83,79 @@ def test_fixed_costs_omits_a_source_that_ended_before_today():
 
     assert costs.rows == ()
     assert costs.monthly_equivalent_cents == 0
+
+
+# --- a recurring payment linked to a utility schedule (D16-D19) ----------------
+
+
+def _water_bill(
+    remaining: tuple[date, ...] = (date(2026, 9, 15), date(2026, 12, 15)),
+    last_paid: date | None = None,
+) -> FixedSource:
+    # Monthly on the 18th at 250 on its own; the meter's schedule rules 2026 at 240.
+    supplier = SupplierDates(
+        start=date(2026, 1, 1),
+        end=date(2026, 12, 31),
+        dates=(date(2026, 6, 15), date(2026, 9, 15), date(2026, 12, 15)),
+        remaining=remaining,
+        amount_cents=24000,
+    )
+    periods = (SchedulePeriod(date(2026, 1, 1), None, 25000, 1, 18),)
+    return FixedSource("Water bill", periods, last_paid, supplier)
+
+
+def test_a_linked_source_is_due_on_its_suppliers_remaining_dates_inside_the_span():
+    due = fixed_due((_water_bill(),), date(2026, 9, 11), date(2026, 12, 31))
+
+    assert due == [
+        DueItem("Water bill", date(2026, 9, 15), 24000),
+        DueItem("Water bill", date(2026, 12, 15), 24000),
+    ]
+
+
+def test_a_linked_source_takes_no_last_paid_filter_on_the_suppliers_dates():
+    source = _water_bill(remaining=(date(2026, 9, 15),), last_paid=date(2026, 9, 12))
+
+    assert fixed_due((source,), date(2026, 9, 11), date(2026, 9, 30)) == [
+        DueItem("Water bill", date(2026, 9, 15), 24000)
+    ]
+
+
+def test_a_linked_source_follows_its_own_periods_outside_the_span():
+    due = fixed_due((_water_bill(remaining=()),), date(2026, 12, 1), date(2027, 2, 28))
+
+    assert due == [
+        DueItem("Water bill", date(2027, 1, 18), 25000),
+        DueItem("Water bill", date(2027, 2, 18), 25000),
+    ]
+
+
+def test_a_linked_row_shows_the_advance_and_the_first_remaining_date():
+    costs = fixed_costs((_water_bill(),), date(2026, 9, 10))
+
+    assert costs.rows == (FixedCostRow("Water bill", 18, 1, 24000, date(2026, 9, 15)),)
+    # Sep 2026 .. Aug 2027: 2 scheduled dates at 240 and 8 own months at 250.
+    # (48000 + 200000) / 12 = 20666.67
+    assert costs.monthly_equivalent_cents == 20667
+
+
+def test_a_linked_row_without_remaining_dates_is_next_due_after_the_span():
+    assert next_due(_water_bill(remaining=()), date(2026, 9, 10)) == date(2027, 1, 18)
+
+
+def test_next_due_of_an_unlinked_source_follows_its_periods():
+    assert next_due(_water(), date(2026, 9, 23)) == date(2026, 11, 15)
+
+
+def test_pair_advances_pairs_one_to_one_per_category_in_id_order():
+    payments = [(7, "Water"), (3, "Water"), (5, "Gas")]
+    schedules = [(2, "Water"), (9, "Electricity")]
+
+    assert pair_advances(payments, schedules) == {3: 2}
+
+
+def test_pair_advances_leaves_extra_schedules_unpaired():
+    assert pair_advances([(4, "Water")], [(8, "Water"), (1, "Water")]) == {4: 1}
 
 
 def test_fixed_range_takes_the_minimum_from_monthly_rows_and_the_maximum_from_all():

@@ -226,6 +226,23 @@ def test_meter_cashflows_give_the_schedule_and_the_ended_settled_amount(conn):
     assert (flow.ended_debit_date, flow.ended_settlement_cents) == (date(2025, 12, 31), -35_330)
 
 
+def test_meter_cashflows_carry_the_meter_id_and_the_period_in_force(conn):
+    meter_id = _water_pin_meter(conn)
+
+    [flow] = meter_cashflows(conn, WATER_TODAY)
+
+    assert (flow.meter_id, flow.period) == (meter_id, water_periods()[1])
+
+
+def test_meter_cashflows_of_only_an_ended_period_have_no_period_in_force(conn):
+    previous, _ = water_periods()
+    _water_pin_meter(conn, [previous])
+
+    [flow] = meter_cashflows(conn, WATER_TODAY)
+
+    assert flow.period is None
+
+
 def test_meter_cashflows_project_an_ended_period_without_a_settled_amount(conn):
     previous, current = water_periods()
     _water_pin_meter(conn, [replace(previous, settled_cents=None), current])

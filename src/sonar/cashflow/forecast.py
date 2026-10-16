@@ -15,7 +15,7 @@ from sonar.cashflow.payday import Cycle
 from sonar.categorization import groups
 from sonar.recurring import schedule
 from sonar.recurring.detect import Row
-from sonar.recurring.schedule import SchedulePeriod
+from sonar.recurring.schedule import Occurrence, SchedulePeriod
 
 # The monthly equivalent averages the plan over a year, so yearly payments count.
 EQUIVALENT_MONTHS = 12
@@ -24,10 +24,23 @@ FORECAST_CYCLES = 6
 
 
 @dataclass(frozen=True)
+class SupplierDates:
+    """A utility schedule a recurring payment follows inside [start, end] (SPEC §13 Utilities)."""
+
+    start: date
+    end: date
+    dates: tuple[date, ...]  # every scheduled date of the span
+    remaining: tuple[date, ...]  # the unpaid ones after the estimate date
+    amount_cents: int
+
+
+@dataclass(frozen=True)
 class FixedSource:
     name: str
     periods: tuple[SchedulePeriod, ...]
     last_paid_date: date | None
+    # Set when the payment is linked to a meter's schedule: it rules the span.
+    supplier: SupplierDates | None = None
 
 
 @dataclass(frozen=True)
@@ -76,18 +89,36 @@ class FixedCosts:
 
 def fixed_due(sources: tuple[FixedSource, ...], start: date, end: date) -> list[DueItem]:
     """Fixed payments still expected within [start, end]."""
-    items = []
-    for source in sources:
-        for occurrence in schedule.occurrences(source.periods, start, end):
-            # A payment booked a few days early or late is already in the
-            # balance; same rule as schedule.next_due_date.
-            if (
-                source.last_paid_date is not None
-                and occurrence.due_date <= source.last_paid_date + schedule.TOLERANCE
-            ):
-                continue
-            items.append(DueItem(source.name, occurrence.due_date, occurrence.amount_cents))
+    items = [
+        DueItem(source.name, occurrence.due_date, occurrence.amount_cents)
+        for source in sources
+        for occurrence in _still_due(source, start, end)
+    ]
     return sorted(items, key=lambda item: (item.due_date, item.name))
+
+
+def next_due(source: FixedSource, today: date) -> date | None:
+    """A linked source's first remaining date, else its own cadence's next after the span."""
+    supplier = source.supplier
+    if supplier is None:
+        return schedule.next_due_date(source.periods, source.last_paid_date, today)
+    upcoming = min((day for day in supplier.remaining if day >= today), default=None)
+    if upcoming is not None:
+        return upcoming
+    after_span = max(today, supplier.end + timedelta(days=1))
+    return schedule.next_due_date(source.periods, source.last_paid_date, after_span)
+
+
+def pair_advances(
+    payments: Sequence[tuple[int, str]], schedules: Sequence[tuple[int, str]]
+) -> dict[int, int]:
+    """Payment id to schedule id, one-to-one per category in id order; the rest stay unpaired."""
+    pairs: dict[int, int] = {}
+    for category in {category for _, category in schedules}:
+        payment_ids = sorted(key for key, other in payments if other == category)
+        schedule_ids = sorted(key for key, other in schedules if other == category)
+        pairs.update(zip(payment_ids, schedule_ids, strict=False))
+    return pairs
 
 
 def cycle_costs(
@@ -189,22 +220,59 @@ def _year_total(sources: tuple[FixedSource, ...], today: date) -> int:
     # No last_paid filter: this averages the plan, so a payment already made
     # this month still belongs to this month.
     return sum(
-        occurrence.amount_cents
-        for source in sources
-        for occurrence in schedule.occurrences(source.periods, first, end)
+        occurrence.amount_cents for source in sources for occurrence in _planned(source, first, end)
     )
+
+
+def _planned(source: FixedSource, start: date, end: date) -> list[Occurrence]:
+    """Every occurrence in [start, end]: the supplier's dates in its span, own periods outside."""
+    own = _own_occurrences(source, start, end)
+    if source.supplier is None:
+        return own
+    return own + _supplier_occurrences(source.supplier, source.supplier.dates, start, end)
+
+
+def _still_due(source: FixedSource, start: date, end: date) -> list[Occurrence]:
+    # A payment booked a few days early or late is already in the balance;
+    # same rule as schedule.next_due_date.
+    last_paid = source.last_paid_date
+    own = [
+        occurrence
+        for occurrence in _own_occurrences(source, start, end)
+        if last_paid is None or occurrence.due_date > last_paid + schedule.TOLERANCE
+    ]
+    if source.supplier is None:
+        return own
+    # The supplier's remaining dates are already filtered by the meter's bookings.
+    return own + _supplier_occurrences(source.supplier, source.supplier.remaining, start, end)
+
+
+def _own_occurrences(source: FixedSource, start: date, end: date) -> list[Occurrence]:
+    found = schedule.occurrences(source.periods, start, end)
+    supplier = source.supplier
+    if supplier is None:
+        return found
+    return [o for o in found if not supplier.start <= o.due_date <= supplier.end]
+
+
+def _supplier_occurrences(
+    supplier: SupplierDates, dates: tuple[date, ...], start: date, end: date
+) -> list[Occurrence]:
+    return [Occurrence(day, supplier.amount_cents) for day in dates if start <= day <= end]
 
 
 def _row(source: FixedSource, today: date) -> FixedCostRow | None:
     period = _current_or_next_period(source.periods, today)
     if period is None:
         return None
+    # A linked payment shows the advance it pays now; day and interval stay its own.
+    amount = period.amount_cents if source.supplier is None else source.supplier.amount_cents
     return FixedCostRow(
         name=source.name,
         day=period.day,
         interval_months=period.interval_months,
-        amount_cents=period.amount_cents,
-        next_due=schedule.next_due_date(source.periods, source.last_paid_date, today),
+        amount_cents=amount,
+        next_due=next_due(source, today),
     )
 
 

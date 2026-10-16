@@ -6,9 +6,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from sonar.db import MIGRATIONS_DIR, apply_migrations
-from sonar.recurring.schedule import occurrences
-from sonar.recurring.store import list_payments
+from sonar.categorization.store import add_category
+from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
+from sonar.recurring.schedule import SchedulePeriod, occurrences
+from sonar.recurring.store import add_manual, list_payments
+from sonar.utilities.model import BillingPeriod, Charge, Meter
+from sonar.utilities.store import add_meter, add_period
 from sonar.web.app import _format_cents, create_app
 from tests.html import cents, fields, soup, text
 from tests.seed import seed
@@ -568,3 +571,80 @@ def test_resume_form_prefills_amount_interval_and_day_from_the_latest_period(tmp
     assert resume_form.select_one('input[name="amount"]')["id"] == (
         f"resume-amount-payment-{payment_id}"
     )
+
+
+def _seed_water_meter_and_payments(db_path: Path) -> int:
+    """A scheduled Water meter, the Water bill it feeds and an unrelated Rent; the meter id."""
+    conn = connect(db_path)
+    try:
+        add_category(conn, "Water", "fixed")
+        meter_id = add_meter(conn, Meter("Water", "water"))
+        add_period(
+            conn,
+            meter_id,
+            BillingPeriod(
+                start_date=date(2026, 1, 1),
+                settlement_date=date(2026, 12, 31),
+                base_fee_cents=None,
+                unit_price_micro=None,
+                state_factor_e4=None,
+                calorific_value_e4=None,
+                advance_cents=24_000,
+                expected_usage=150,
+                category="Water",
+                drinking=Charge(1_140_000, 3600, 7),
+                wastewater=Charge(3_690_000, 9600, 0),
+                advance_mode="schedule",
+                advance_dates=(date(2026, 6, 15), date(2026, 9, 15), date(2026, 12, 15)),
+                settlement_debit_days=55,
+            ),
+        )
+        add_manual(
+            conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 25_000, 1, 18)
+        )
+        add_manual(conn, "Rent", "Housing", SchedulePeriod(date(2026, 1, 1), None, 90_000, 1, 3))
+    finally:
+        conn.close()
+    return meter_id
+
+
+def test_linked_payment_row_shows_the_advance_next_date_and_a_meter_badge(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    meter_id = _seed_water_meter_and_payments(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        water = _payment_row_by_name(client, "Water bill")
+
+    assert cents(water.select_one('[data-field="amount"]')) == 24_000
+    next_due = water.select_one('[data-field="next_due"]')
+    assert next_due.select_one("time")["datetime"] == "2026-12-15"
+    badge = water.select_one('[data-field="advance-link"]')
+    assert badge.select_one("a")["href"] == f"/utilities/meters/{meter_id}"
+    assert "Water" in text(badge)
+    assert badge.select_one("a")["title"]
+
+
+def test_unlinked_payment_row_keeps_its_own_amount_and_next_due(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    _seed_water_meter_and_payments(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        rent = _payment_row_by_name(client, "Rent")
+
+    assert rent.select_one('[data-field="advance-link"]') is None
+    assert cents(rent.select_one('[data-field="amount"]')) == 90_000
+    assert rent.select_one('[data-field="next_due"] time')["datetime"] == "2026-10-03"
+
+
+def test_every_payment_tbody_has_an_anchor_id(tmp_path):
+    db_path = tmp_path / "t.db"
+    seed(db_path)
+    _seed_water_meter_and_payments(db_path)
+
+    with TestClient(create_app(db_path, today=_today)) as client:
+        rows = _payment_rows(client.get("/recurring"))
+
+    assert rows
+    assert all(row["id"] == f"payment-{row['data-payment-id']}" for row in rows)

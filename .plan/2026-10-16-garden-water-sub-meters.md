@@ -84,7 +84,7 @@ and dark; the final check passes SPEC §11 and §12.
 | N09 | visual check | gate | N06,N08,N13 | -/- | 0 | 0 | TODO | |
 | N10 | plan acceptance | check | N09 | -/sonnet | 0 | 0 | TODO | |
 | N11 | advance link in the forecast | exec | N05 | opus/sonnet | 1 | 0 | DONE | |
-| N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 0 | 0 | TODO | |
+| N12 | Fixed payments link | exec | N08,N11 | sonnet/sonnet | 1 | 0 | DONE | |
 | N13 | utilities link and SPEC | exec | N06,N12 | sonnet/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight
@@ -574,4 +574,11 @@ check: PASS 3/3
 verify: PASS
 
 ### N06 try 2 · 2026-10-16
+verify: PASS
+
+### N12 try 1 · 2026-10-16
+exec: DONE · 2040 passed
+- Fixed payments page and /api/recurring show the advance link: advance amount, supplier next date, Dates-from badge to the meter page, tbody id payment-{id}; API adds advance_meter_id
+- next_due built from FixedSource with the link's supplier in both web modules; sonar.css rebuilt, no change needed
+check: PASS 3/3
 verify: PASS

@@ -9,9 +9,12 @@ from fastapi.testclient import TestClient
 
 from sonar.auth.settings import AuthSettings
 from sonar.categorization.service import add_rule
+from sonar.categorization.store import add_category
 from sonar.db import MIGRATIONS_DIR, apply_migrations, connect
 from sonar.recurring.schedule import SchedulePeriod
 from sonar.recurring.store import add_manual, dismiss, get_payment, list_payments
+from sonar.utilities.model import BillingPeriod, Charge, Meter
+from sonar.utilities.store import add_meter, add_period
 from sonar.web.app import create_app
 from tests.seed import seed
 
@@ -80,6 +83,7 @@ def test_put_description_then_get_lists_it_with_the_schedule(tmp_path):
             }
         ],
         "debt_id": None,
+        "advance_meter_id": None,
     }
     assert put.status_code == 200
     assert put.json() == expected
@@ -537,6 +541,101 @@ def test_debt_id_is_the_debt_that_links_the_payment(tmp_path):
 
     assert [item["debt_id"] for item in before] == [None]
     assert [item["debt_id"] for item in after] == [debt_id]
+
+
+def _add_scheduled_meter(conn, name: str, category: str) -> int:
+    """A water meter whose supplier dates are 06-15, 09-15 and 12-15 of 2026, 240.00 each."""
+    meter_id = add_meter(conn, Meter(name, "water"))
+    add_period(
+        conn,
+        meter_id,
+        BillingPeriod(
+            start_date=date(2026, 1, 1),
+            settlement_date=date(2026, 12, 31),
+            base_fee_cents=None,
+            unit_price_micro=None,
+            state_factor_e4=None,
+            calorific_value_e4=None,
+            advance_cents=24_000,
+            expected_usage=150,
+            category=category,
+            drinking=Charge(1_140_000, 3600, 7),
+            wastewater=Charge(3_690_000, 9600, 0),
+            advance_mode="schedule",
+            advance_dates=(date(2026, 6, 15), date(2026, 9, 15), date(2026, 12, 15)),
+            settlement_debit_days=55,
+        ),
+    )
+    return meter_id
+
+
+def test_advance_meter_id_and_next_due_follow_the_meter_schedule(tmp_path):
+    app, db_path = _app(tmp_path)
+    conn = connect(db_path)
+    try:
+        add_category(conn, "Water", "fixed")
+        meter_id = _add_scheduled_meter(conn, "Water", "Water")
+        add_manual(
+            conn, "Water bill", "Water", SchedulePeriod(date(2026, 1, 1), None, 25_000, 1, 18)
+        )
+        add_manual(conn, "Rent", "Housing", SchedulePeriod(date(2026, 1, 1), None, 90_000, 1, 3))
+    finally:
+        conn.close()
+
+    with TestClient(app) as client:
+        items = {item["name"]: item for item in client.get("/api/recurring").json()}
+
+    water, rent = items["Water bill"], items["Rent"]
+    assert water["advance_meter_id"] == meter_id
+    assert water["next_due"] == "2026-12-15"
+    # The payment's own amount and periods stay as entered.
+    assert water["amount_cents"] == 25_000
+    assert [period["amount_cents"] for period in water["periods"]] == [25_000]
+    assert rent["advance_meter_id"] is None
+    assert rent["next_due"] == "2026-10-03"
+
+
+def test_a_debt_linked_payment_has_no_advance_meter(tmp_path):
+    db_path = tmp_path / "t.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        apply_migrations(conn, MIGRATIONS_DIR)
+        for month in (7, 8, 9):
+            conn.execute(
+                """
+                INSERT INTO transactions (
+                    source, account, booking_date, value_date, amount_cents, currency,
+                    counterparty, purpose, iban, mandate_ref, creditor_id, raw_row,
+                    fingerprint, occurrence, category
+                ) VALUES ('test', 'acc', ?, ?, -10000, 'EUR', 'Car Bank', '', NULL, NULL,
+                    NULL, 'raw', ?, 1, NULL)
+                """,
+                (f"2026-0{month}-05", f"2026-0{month}-05", f"car{month}"),
+            )
+        add_rule(conn, TODAY, {"category": "Loans & Installments", "counterparty": "Car Bank"})
+        _add_scheduled_meter(conn, "Loan meter", "Loans & Installments")
+        conn.commit()
+    finally:
+        conn.close()
+    debt = {
+        "kind": "installment",
+        "name": "Car",
+        "total_cents": 120_000,
+        "rate_cents": 10_000,
+        "interval_months": 1,
+        "first_payment_date": "2026-07-05",
+        "payments_count": 12,
+        "match_field": "counterparty",
+        "match_value": "Car Bank",
+    }
+    app = create_app(db_path, today=lambda: TODAY)
+    with TestClient(app) as client:
+        before = client.get("/api/recurring").json()
+        client.post("/api/debts", json=debt)
+        after = client.get("/api/recurring").json()
+
+    assert [item["advance_meter_id"] is not None for item in before] == [True]
+    assert [item["advance_meter_id"] for item in after] == [None]
 
 
 def _all_payments(db_path: Path):

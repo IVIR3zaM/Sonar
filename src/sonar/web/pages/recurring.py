@@ -10,11 +10,14 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from sonar.cashflow.forecast import FixedSource, next_due
+from sonar.cashflow.service import AdvanceLink, advance_links
 from sonar.db import connect
 from sonar.debts.store import debt_overview
 from sonar.money import parse_cents
 from sonar.recurring.schedule import SchedulePeriod, next_due_date, schedule_status
 from sonar.recurring.store import (
+    RecurringPayment,
     add_manual,
     dismiss,
     edit_payment,
@@ -23,6 +26,20 @@ from sonar.recurring.store import (
     resume_payment,
 )
 from sonar.web import forms
+
+
+def _shown_amount(payment: RecurringPayment, link: AdvanceLink | None) -> int:
+    # A linked payment pays the meter's advance; Cadence and the drawer stay its own.
+    return payment.periods[-1].amount_cents if link is None else link.supplier.amount_cents
+
+
+def _shown_next_due(
+    payment: RecurringPayment, link: AdvanceLink | None, today: date
+) -> date | None:
+    if link is None:
+        return next_due_date(payment.periods, payment.last_paid_date, today)
+    source = FixedSource(payment.name, payment.periods, payment.last_paid_date, link.supplier)
+    return next_due(source, today)
 
 
 def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Templates) -> APIRouter:
@@ -44,12 +61,15 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 for view in debt_overview(conn, today())
                 for payment in view.linked_payments
             }
+            links = advance_links(conn, today())
             # periods come back ordered by starts_on, so [-1] is the latest.
             rows = [
                 {
                     "payment": payment,
                     "latest": payment.periods[-1],
-                    "next_due": next_due_date(payment.periods, payment.last_paid_date, today()),
+                    "link": links.get(payment.id),
+                    "amount_cents": _shown_amount(payment, links.get(payment.id)),
+                    "next_due": _shown_next_due(payment, links.get(payment.id), today()),
                     "status": schedule_status(payment.periods, today()),
                     "debt_name": debt_names_by_payment_id.get(payment.id),
                     "edit_error": forms.row_error(errors, "edit", payment.id),

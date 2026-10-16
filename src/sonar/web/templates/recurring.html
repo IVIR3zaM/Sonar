@@ -61,7 +61,7 @@
       {% set drawer_id = "drawer-" ~ payment.id %}
       {#- One <tbody> per payment keeps the data row and its drawer row
           together, so a CSS/JS toggle never has to reach across siblings. -#}
-      <tbody data-payment-id="{{ payment.id }}">
+      <tbody data-payment-id="{{ payment.id }}" id="payment-{{ payment.id }}">
         <tr data-row class="{{ tr }}">
           <td class="{{ td }} [overflow-wrap:anywhere]">
             <span data-field="name" class="font-medium text-ink">{{ payment.name }}</span>
@@ -70,6 +70,12 @@
             {% endif %}
             {% if row.debt_name %}
             <div class="mt-1">{{ badge(row.debt_name, tone="accent", attrs={"data-field": "debt"}) }}</div>
+            {% endif %}
+            {% if row.link %}
+            <div class="mt-1" data-field="advance-link">
+              <a href="/utilities/meters/{{ row.link.meter_id }}" title="{% for day in row.link.supplier.remaining %}{{ date(day) }}{% if not loop.last %}, {% endif %}{% endfor %}"
+                 class="inline-flex">{{ badge("Dates from " ~ row.link.meter_name, tone="accent") }}</a>
+            </div>
             {% endif %}
             {% if row.status %}
             <div class="mt-1">
@@ -85,7 +91,7 @@
             {% if payment.category %}{{ badge(payment.category) }}{% endif %}
           </td>
           <td class="{{ td_amount }}" data-field="amount">
-            {{ amount(row.latest.amount_cents, colored=false) }}
+            {{ amount(row.amount_cents, colored=false) }}
             {#- Below sm, Cadence/Last paid/Next due/Manage are hidden, so the
                 Amount cell repeats the next due date and carries the drawer
                 toggle as an icon button (size-8 = 32px, the min touch target). -#}

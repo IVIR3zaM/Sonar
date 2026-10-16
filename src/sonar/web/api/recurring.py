@@ -10,9 +10,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import StrictInt, StrictStr
 
+from sonar.cashflow.forecast import FixedSource, next_due
+from sonar.cashflow.service import AdvanceLink, advance_links
 from sonar.db import connect
 from sonar.debts.store import debt_overview
-from sonar.recurring.schedule import SchedulePeriod, next_due_date
+from sonar.recurring.schedule import SchedulePeriod
 from sonar.recurring.store import (
     NotDismissed,
     PaymentNotFound,
@@ -70,9 +72,23 @@ def _iso(value: date | None) -> str | None:
     return None if value is None else value.isoformat()
 
 
-def _recurring_item(payment: RecurringPayment, today: date, debt_ids: dict[int, int]) -> dict:
+def _next_due(payment: RecurringPayment, link: AdvanceLink | None, today: date) -> date | None:
+    # A linked payment's next date is the supplier's; its amount and periods stay its own.
+    supplier = None if link is None else link.supplier
+    return next_due(
+        FixedSource(payment.name, payment.periods, payment.last_paid_date, supplier), today
+    )
+
+
+def _recurring_item(
+    payment: RecurringPayment,
+    today: date,
+    debt_ids: dict[int, int],
+    links: dict[int, AdvanceLink],
+) -> dict:
     # periods come back ordered by starts_on, so [-1] is the latest.
     latest = payment.periods[-1]
+    link = links.get(payment.id)
     return {
         "id": payment.id,
         "detection_key": payment.detection_key,
@@ -85,7 +101,7 @@ def _recurring_item(payment: RecurringPayment, today: date, debt_ids: dict[int, 
         "interval_months": latest.interval_months,
         "day": latest.day,
         "last_paid_date": _iso(payment.last_paid_date),
-        "next_due": _iso(next_due_date(payment.periods, payment.last_paid_date, today)),
+        "next_due": _iso(_next_due(payment, link, today)),
         "until": _iso(latest.until),
         "periods": [
             {
@@ -98,6 +114,7 @@ def _recurring_item(payment: RecurringPayment, today: date, debt_ids: dict[int, 
             for period in payment.periods
         ],
         "debt_id": debt_ids.get(payment.id),
+        "advance_meter_id": None if link is None else link.meter_id,
     }
 
 
@@ -154,15 +171,18 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         }
 
     def _item(conn, id: int) -> dict:
-        return _recurring_item(get_payment(conn, id), today(), _debt_ids(conn))
+        return _recurring_item(
+            get_payment(conn, id), today(), _debt_ids(conn), advance_links(conn, today())
+        )
 
     @router.get("/recurring")
     async def get_recurring() -> JSONResponse:
         conn = connect(db_path)
         try:
             debt_ids = _debt_ids(conn)
+            links = advance_links(conn, today())
             items = [
-                _recurring_item(p, today(), debt_ids)
+                _recurring_item(p, today(), debt_ids, links)
                 for p in list_payments(conn, include_dismissed=True)
             ]
         finally:

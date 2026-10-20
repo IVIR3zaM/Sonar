@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from planzilla.plan import PUSH_ALIASES, PlanError
+from planzilla.providers import HARNESSES, PROVIDERS, check_token, provider_of, split_token
 
 DEFAULT_MODELS = {"planner": "opus", "exec": "sonnet", "verify": "sonnet"}
 KEYS = (
@@ -18,11 +19,12 @@ KEYS = (
     "preauthorized",
     "always_review",
     "commit_trailer",
+    "providers",
+    "harness",
 )
 RETENTION = ("keep", "prune-logs", "delete", "branch-only")
 
 _LINE_RE = re.compile(r"([a-z_]+):(?: (.*))?")
-_MODEL_RE = re.compile(r"[a-z0-9.-]+")
 
 
 @dataclass
@@ -37,6 +39,8 @@ class Config:
     preauthorized: list[str] = field(default_factory=list)
     always_review: bool = False
     commit_trailer: str = ""
+    providers: tuple[str, ...] = ("claude",)
+    harness: str = "claude-code"
 
 
 def load_config(repo: Path) -> Config:
@@ -50,6 +54,7 @@ def load_config(repo: Path) -> Config:
 def parse_config(text: str, file: Path | str) -> Config:
     config = Config()
     seen: set[str] = set()
+    lines: dict[str, int] = {}
     for number, line in enumerate(text.split("\n"), 1):
         if not line.strip() or line.startswith("#"):
             continue
@@ -62,10 +67,13 @@ def parse_config(text: str, file: Path | str) -> Config:
         if key in seen:
             raise PlanError(file, number, f"repeated config key: {key}")
         seen.add(key)
+        lines[key] = number
         try:
             _apply(config, key, value)
         except ValueError as error:
             raise PlanError(file, number, f"bad {key} value {value!r}: {error}") from None
+    if "models" in seen:
+        _check_listed(config, lines["models"], file)
     if "verify_fast" not in seen:
         config.verify_fast = config.verify
     return config
@@ -90,12 +98,35 @@ def _apply(config: Config, key: str, value: str) -> None:
         for pair in filter(None, (part.strip() for part in value.split(","))):
             role, _, model = pair.partition("=")
             role, model = role.strip(), model.strip()
-            if role not in DEFAULT_MODELS or not _MODEL_RE.fullmatch(model):
+            if role not in DEFAULT_MODELS:
                 raise ValueError("expected 'planner=<m>, exec=<m>, verify=<m>' (any subset)")
-            config.models[role] = model
+            config.models[role] = check_token(model)
+    elif key == "harness":
+        config.harness = _choice(value, HARNESSES)
+    elif key == "providers":
+        names = tuple(part.strip() for part in value.split(","))
+        if (
+            not value
+            or any(name not in PROVIDERS for name in names)
+            or len(set(names)) < len(names)
+        ):
+            raise ValueError(
+                f"expected a comma-separated subset of {', '.join(PROVIDERS)}, no repeats"
+            )
+        config.providers = names
 
 
 def _choice(value: str, allowed: tuple[str, ...]) -> str:
     if value not in allowed:
         raise ValueError(f"expected one of {', '.join(allowed)}")
     return value
+
+
+def _check_listed(config: Config, number: int, file: Path | str) -> None:
+    """Every `models` token's provider must be in `providers` (either line order)."""
+    for model in config.models.values():
+        provider = provider_of(split_token(model)[0])
+        if provider is not None and provider not in config.providers:
+            raise PlanError(
+                file, number, f"bad models value {model!r}: provider {provider} is not in providers"
+            )

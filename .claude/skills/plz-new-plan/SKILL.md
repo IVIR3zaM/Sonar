@@ -20,20 +20,32 @@ Questions go to the user in as few rounds as possible: clarification once (step 
    - L: more than 10 nodes, several sessions or environments, or evidence files (`runs/`).
 4. **Config** (req 8). If `.plan/config.md` is missing, detect values from `pyproject.toml`, `package.json`,
    `Makefile`, `CLAUDE.md`/`AGENTS.md`: `verify` (full check), `verify_fast`, `commit` (`per-node`), `push`
-   (`per-node` in a cloud session, else `none`), `retention` (`keep`), `preauthorized`.
+   (`per-node` in a cloud session, else `none`), `retention` (`keep`), `preauthorized`. Always detect, too
+   (FORMAT §8), each provider's CLI (`command -v claude`, `command -v codex`) and login (`claude auth status`
+   exits 0 with `"loggedIn": true`; `codex login status` exits 0), and the harness: `CLAUDECODE=1` means
+   `claude-code`, else name the harness you run in (e.g. `codex`).
 5. **One round** (req 7). Ask the gaps, the tier and (when the config is missing) the detected config values together,
    in one AskUserQuestion round (up to 4 questions per call; recommended answer first, labelled
-   "(Recommended)"). Ask a follow-up round only if an answer opens a new gap.
+   "(Recommended)"). Ask a follow-up round only if an answer opens a new gap. Config missing: that round also
+   asks `providers` (recommend each logged-in provider; show a logged-out one its login command, `claude auth
+   login` or `codex login`) and `harness` (recommend the detected one). Config present: it asks only a provider
+   the request names that `providers` lacks, or `harness` when the file has none and the detected harness is
+   not `claude-code`.
 
 ## 2. Config
 
 Config missing: write `.plan/config.md` from `templates/config.md` (in `.planzilla/`, else the installed
-package's `planzilla/kit/`) with the agreed values; keep every other key at its default.
+package's `planzilla/kit/`) with the agreed values, `providers` and `harness` included; keep every other key at
+its default. Answer `providers: codex` alone: also write `models: planner=codex@high, exec=codex@medium,
+verify=codex@medium`. Config present: rewrite or add only the one line the step-1 answer changed (`providers:`
+or `harness:`); leave every other line as it is.
 
 ## 3. Plan
 
-Slug: 2-5 kebab-case words for the outcome. Dispatch `plz-planner` (model: config `models` planner, default
-opus) with exactly one line:
+Slug: 2-5 kebab-case words for the outcome. Every planner dispatch here (Outline, Revise) goes to `plz-planner`
+with model `<m>` (config `models` planner, default opus) by plz-run-plan's Dispatch rule: natively only in
+Claude Code for opus, sonnet, haiku or fable without `@<effort>`, else `plz run planner <m> '<line>'` (via
+`plz-run` in Claude Code, a background shell job in Codex). Outline with exactly one line:
 `Outline: <slug> · Request: <the agreed intent: goal; in scope; out of scope; constraints; definition of done; tier <T>>`
 Pass what was agreed, not the user's raw wording. The planner stores it as the Intent in its own words (L:
 `intent.md`; S/M: the `## Intent` section; never the raw prompt) and writes the plan as DRAFT:

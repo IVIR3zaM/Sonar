@@ -27,7 +27,7 @@ CLI: run `.planzilla/plz` if that file exists, else `planzilla`; below, `plz <co
    - `brief`: `plz set <plan> <id> BRIEFING`.  · `exec`: `plz set <plan> <id> RUNNING`.
    - `verify`: `plz set <plan> <id> VERIFYING`. · `replan`: `plz set <plan> <id> REPLAN`.
    - `check`: `plz check <plan> <id>`; route its PASS or FAIL line as in step 4 (executor `DONE`).
-   Dispatch from each set line (below).
+   Dispatch from each set line (below), by the Dispatch rule.
 4. Route each reply as it arrives:
    - executor `DONE <id> | …`: `plz check <plan> <id>`; PASS → `plz set <plan> <id> VERIFYING`;
      FAIL → `plz set <plan> <id> RETRY --note "fail <ids>"`.
@@ -60,7 +60,15 @@ Every state change goes through `plz set` before the dispatch that depends on it
   `Plan: <plan> · Node: <id> · Try: <t>`.
 - `<id> DONE …` → `plz commit <plan> <id>`; exit 3 stops the run. `· plan DONE` in its line: finish.
 - `<id> WAITING …` or `<id> BLOCKED …` → add the id to held. `TODO` or `RETRY` → nothing; `next` picks it up.
-Dispatch the named agent with model `<m>`, the exact line above and nothing else.
+Dispatch rule, for every dispatch (step 5 too), by the harness you run in (config `harness`, FORMAT §14): the
+named agent gets model `<m>`, the exact line and nothing else.
+- Native only in Claude Code, for opus, sonnet, haiku or fable without `@<effort>`; a bare `claude` or `codex` never.
+- Else `plz run <role> <m> '<line>'`, role from the named agent (planner, executor, verifier): in Claude Code,
+  dispatch `plz-run` with `Run: <role> <m> · <line>`; in Codex, one background shell job per line writes `out`,
+  `err`, `rc` to its own temp dir; wait in calls of at most 5 minutes; reply = last line of `out` (rc 0) or `err`;
+  remove the dir. One batch sends native and `plz run` dispatches together, in parallel.
+- Route a `plz run` reply as its role's reply (step 4); an `error: …` line is a crash. `plz-visual` never goes to
+  `plz run`; a line no route can dispatch (`plz-visual` in Codex) stops the run: tell the user `<id>: cannot dispatch <agent> <m>`.
 
 Tiers: an S plan escalates to M on its first BLOCKED executor; route it the same way (`REPLAN`, `Replan:`);
 the planner sets `tier: M` and may add rows through `plz set --add`. Tiers never go back.

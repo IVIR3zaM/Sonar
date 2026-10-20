@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from planzilla.providers import check_token
+
 NODE_ID = r"N[0-9]{2,}[a-z]?"
 PLAN_NAME = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2})-([a-z0-9]+(?:-[a-z0-9]+)*)")
 PLAN_STATUSES = ("DRAFT", "READY", "RUNNING", "WAITING", "BLOCKED", "DONE")
@@ -31,7 +33,7 @@ GRAPH_SEPARATOR = "|----|-------|------|------|-------|-----|----|--------|-----
 PUSH_ALIASES = {"per-node": "per-node", "none": "none", "yes": "per-node", "no": "none"}
 
 _NODE_RE = re.compile(NODE_ID)
-_MODEL_RE = re.compile(r"([a-z0-9.-]+)/([a-z0-9.-]+)")
+_MODEL_RE = re.compile(r"([^/]+)/([^/]+)")
 _HEADER_LINE_RE = re.compile(r"([a-z_]+): (.*)")
 _CREATED_RE = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2}) · updated: ([0-9]{4}-[0-9]{2}-[0-9]{2})")
 _BUDGETS_RE = re.compile(r"([0-9]+) tries per brief · ([0-9]+) replans per node")
@@ -434,6 +436,11 @@ def parse_row(line: str, file: Path, number: int) -> Node:
     models = _MODEL_RE.fullmatch(model)
     if not models:
         raise bad("model", model)
+    try:
+        for token in models.groups():
+            check_token(token)
+    except ValueError:
+        raise bad("model", model) from None
     for column, value in (("try", tries), ("rp", rp)):
         if not value.isdigit():
             raise bad(column, value)

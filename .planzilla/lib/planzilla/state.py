@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass, replace
 
 from planzilla.plan import NODE_ID, Brief, Node
+from planzilla.providers import check_token
 
 IN_FLIGHT = ("BRIEFING", "RUNNING", "VERIFYING", "REPLAN")
 RESUME_TEXT = "rerun at try {t}; partial edits of this try may be in the tree"
@@ -26,7 +27,7 @@ _AGENTS = {
     "VERIFYING": "plz-verifier",
 }
 _NODE_RE = re.compile(NODE_ID)
-_MODEL_RE = re.compile(r"([a-z0-9.-]+)/([a-z0-9.-]+)")
+_MODEL_RE = re.compile(r"([^/]+)/([^/]+)")
 
 
 class StateError(Exception):
@@ -223,6 +224,11 @@ def _edit(node: Node, title: str | None, deps: str | None, model: str | None) ->
         models = _MODEL_RE.fullmatch(model)
         if not models:
             raise StateError(f"bad --model {model!r}: expected <exec>/<verify>")
+        try:
+            for token in models.groups():
+                check_token(token)
+        except ValueError as error:
+            raise StateError(f"bad --model {model!r}: {error}") from None
         node = replace(node, exec_model=models.group(1), verify_model=models.group(2))
     return node
 

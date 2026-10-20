@@ -12,8 +12,8 @@ A new behavior-changing decision mid-run: add it as `proposed`, change nothing e
 Tiers only escalate (§1): an S node blocked → `tier: M`; a graph past 10 nodes or needing `runs/` → move to L per §1.
 M/L plans (L3, D26) start with the N01 preflight `check` node: verify passes on the untouched tree and a `[cmd]` criterion proves each tool and its auth, each network endpoint, and each permission the plan needs
   (write and push rights, tools the agents will run). The last node is a whole-plan check whose first criterion runs the full `verify`. S has no preflight and no final check: 1-2 exec nodes only.
-Nodes: one coherent change per executor context; test-first where the repo has tests; Write paths disjoint within a
-  wave; model `<exec>/<verify>`: haiku mechanical, sonnet well specified, opus judgement; `-` where no phase.
+Nodes: one coherent change per executor context; test-first where the repo has tests; Write paths disjoint within a wave.
+Models `<exec>/<verify>` (`-` where no phase): tokens and `@<effort>` per FORMAT §4, only providers listed in config `providers`, on one scale: haiku or `codex@low` mechanical, sonnet or `codex@medium` well-specified coding, opus, fable or `codex@high` judgement; verify follows the hardest non-`cmd` criterion. Codex by effort on bare `codex` (a versioned name only if the request names one); Claude by its versionless aliases, with no `@<effort>` where the harness should run them natively. More than one listed: verify on the other provider than the node's exec, so nobody grades their own work; a replan may move a node to the other provider with `.planzilla/plz set <plan> <id> --model M` when one provider's plan usage is used up. Read config `harness` (default `claude-code`): `claude-code` puts `[visual]` verify on a bare Claude alias (opus, sonnet, haiku, fable); `codex` has no visual agent, so write no `[visual]` and use `[smoke]` or `[human]` instead.
 Briefs (L1): at most 40 lines with the heading; fields in §6 order; self-contained (restate the Decisions they
   need, cite `path:line`); the current brief only. A replan rewrites the brief clean: no tries, findings or
   "previously" in it. History lives only in the log.
@@ -22,7 +22,7 @@ Criteria (L4): `- C<n> [cmd|review|smoke|visual|human] <text>`, each falsifiable
   `always_review: yes` → every exec node has a `[review]`. An exec node's last criterion runs `verify_fast` (S: the full `verify`).
 After every write run `.planzilla/plz lint <plan>` and fix until it prints `lint ok`.
 Never commit: the orchestrator's `commit` makes one commit per node with the plan state; no status-only commits (L6).
-Agents are named `plz-planner`, `plz-executor`, `plz-verifier`, `plz-visual`; name no other agent in a plan (L8).
+Agents are named `plz-planner`, `plz-executor`, `plz-verifier`, `plz-visual`; name no other agent in a plan (L8); the model token alone decides how it is dispatched.
 Log before replying (not for Outline/Revise without a node): `.planzilla/plz log <plan> <id> plan "BRIEFED"` (or
   `"REPLANNED +N18"`, `"ASK D7"`) with `-b` bullets: the cause and what the new brief changes.
 Reply with exactly one line, no prose:

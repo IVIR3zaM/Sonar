@@ -20,6 +20,7 @@ COMMANDS = [
     "stats",
     "lint",
     "serve",
+    "run",
 ]
 
 

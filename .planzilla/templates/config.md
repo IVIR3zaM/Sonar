@@ -7,6 +7,8 @@ push: none
 retention: keep
 # visual_recipe: <one line: how to start the app and which URL to open>
 models: planner=opus, exec=sonnet, verify=sonnet
+providers: claude
+harness: claude-code
 # preauthorized: <action agents may take without asking>; <another action>
 always_review: no
 # commit_trailer: <text; \n separates lines>
@@ -15,5 +17,7 @@ always_review: no
 # - Lines are blank, `#` comments or `key: value` with a key above; any other line, an unknown key or a
 #   repeated key is a parse error naming this file and line.
 # - commit: per-node or none. push: per-node or none. retention: keep, prune-logs, delete or branch-only.
-#   always_review: yes or no. models: any subset of planner=, exec=, verify=.
+#   always_review: yes or no. models: any subset of planner=, exec=, verify=;
+#   a model is <name> or <name>@<effort>. providers: claude, codex or both (comma-separated), and every
+#   models provider must be listed. harness: claude-code or codex (the agent harness running the plans).
 # - Engineering rules belong in AGENTS.md/CLAUDE.md, not here. Executors and verifiers never read this file.

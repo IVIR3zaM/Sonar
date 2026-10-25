@@ -141,7 +141,7 @@ def _input(page, selector: str) -> str:
 # Page
 
 
-def test_readings_list_newest_first_with_usage_and_kwh_per_day(client, db_path):
+def test_readings_list_newest_first_with_usage_and_per_day(client, db_path):
     meter = _with_readings(db_path)
     _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 16), 1_125_000)))
 
@@ -158,14 +158,14 @@ def test_readings_list_newest_first_with_usage_and_kwh_per_day(client, db_path):
         "",
     ]
     # 25 kWh over 5 days and 100 kWh over 10 days; the first reading has no previous one.
-    assert [text(row.select_one('[data-field="kwh_per_day"]')) for row in rows] == [
+    assert [text(row.select_one('[data-field="per_day"]')) for row in rows] == [
         "5",
         "10",
         "",
     ]
 
 
-def test_gas_usage_is_converted_to_kwh_per_day_by_the_period(client, db_path):
+def test_gas_usage_is_converted_to_per_day_by_the_period(client, db_path):
     meter = _gas_meter(db_path)
     period = _period(state_factor_e4=9_500, calorific_value_e4=110_000)
     _store(db_path, lambda conn: add_period(conn, meter, period))
@@ -176,7 +176,7 @@ def test_gas_usage_is_converted_to_kwh_per_day_by_the_period(client, db_path):
 
     # 100 m³ in 10 days x 0.95 x 11 kWh per m³ = 104.5 kWh per day, rounded half up.
     assert text(row.select_one('[data-field="usage"]')) == "100.000"
-    assert text(row.select_one('[data-field="kwh_per_day"]')) == "105"
+    assert text(row.select_one('[data-field="per_day"]')) == "105"
 
 
 def test_edit_reading_prefills_and_saves(client, db_path):
@@ -920,6 +920,18 @@ def test_start_new_period_copies_the_water_period_and_moves_dates_a_year(client,
     assert _input(form, "input[name=expected_usage]") == "150"
 
 
+def test_water_readings_show_whole_litres_per_day(client, db_path):
+    meter = _water_meter(db_path)
+    _store(db_path, lambda conn: add_period(conn, meter, _water_period()))
+    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 1), 1_000)))
+    _store(db_path, lambda conn: add_reading(conn, meter, Reading(date(2026, 1, 11), 4_125)))
+
+    table = _page(client, meter).select_one(f"#meter-{meter}-readings")
+
+    assert "L per day" in text(table.select_one("thead"))
+    assert text(table.select_one('tbody [data-row] [data-field="per_day"]')) == "313"
+
+
 def test_usage_units_say_m3_for_water_and_kwh_for_the_others(client, db_path):
     water = _water_meter(db_path)
     power = _with_readings(db_path)
@@ -930,7 +942,7 @@ def test_usage_units_say_m3_for_water_and_kwh_for_the_others(client, db_path):
     water_page = _page(client, water)
     power_page = _page(client, power)
 
-    assert "m³ per day" in text(water_page.select_one(f"#meter-{water}-readings thead"))
+    assert "L per day" in text(water_page.select_one(f"#meter-{water}-readings thead"))
     assert "kWh per day" in text(power_page.select_one(f"#meter-{power}-readings thead"))
     assert "m³" in text(
         water_page.select_one(f"#meter-{water}-new-period label[for$=expected-usage]")

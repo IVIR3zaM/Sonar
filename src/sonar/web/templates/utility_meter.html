@@ -107,7 +107,7 @@
             <th class="{{ th }}">Date</th>
             <th class="{{ th_num }}">Reading ({{ m.unit }})</th>
             <th class="{{ th_num }}">Usage ({{ m.unit }})</th>
-            {% if not m.is_garden %}<th class="{{ th_num }}">{{ m.usage_unit }} per day</th>{% endif %}
+            {% if not m.is_garden %}<th class="{{ th_num }}">{{ m.per_day_unit }} per day</th>{% endif %}
             <th class="{{ th }}"><span class="sr-only">Manage</span></th>
           </tr>
         </thead>
@@ -120,7 +120,7 @@
             <td class="{{ td }}" data-field="date">{{ date(reading.reading_date) }}</td>
             <td class="{{ td_num }}" data-field="reading">{{ reading.value_milli | scaled(3) }}</td>
             <td class="{{ td_num }}" data-field="usage">{% if row.usage_milli is not none %}{{ row.usage_milli | scaled(3) }}{% endif %}</td>
-            {% if not m.is_garden %}<td class="{{ td_num }}" data-field="kwh_per_day">{% if row.kwh_per_day is not none %}{{ row.kwh_per_day }}{% endif %}</td>{% endif %}
+            {% if not m.is_garden %}<td class="{{ td_num }}" data-field="per_day">{% if row.per_day is not none %}{{ row.per_day }}{% endif %}</td>{% endif %}
             <td class="{{ td }}">
               <details{% if err %} open{% endif %}>
                 <summary class="{{ summary }}">Edit</summary>

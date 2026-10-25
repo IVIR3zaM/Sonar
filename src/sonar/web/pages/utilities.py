@@ -74,6 +74,7 @@ PERIOD_FIELDS = (
 )
 UNITS = {"gas": "m³", "electricity": "kWh", "water": "m³"}  # what a meter reading counts
 USAGE_UNITS = {"gas": "kWh", "electricity": "kWh", "water": "m³"}  # what usage and cost go by
+PER_DAY_UNITS = {"gas": "kWh", "electricity": "kWh", "water": "L"}
 CHARGES = (("drinking", "Drinking water"), ("wastewater", "Wastewater"))
 
 
@@ -81,7 +82,7 @@ CHARGES = (("drinking", "Drinking water"), ("wastewater", "Wastewater"))
 class ReadingRow:
     stored: Stored[Reading]
     usage_milli: int | None  # since the previous point of the continuous series
-    kwh_per_day: int | None
+    per_day: int | None
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,7 @@ class MeterCard:
     view: MeterView
     unit: str
     usage_unit: str
+    per_day_unit: str
     readings: list[ReadingRow]  # newest first
     current: BillingPeriod | None
     latest: Stored[BillingPeriod] | None
@@ -311,7 +313,7 @@ def _next_period_values(latest: Stored[BillingPeriod] | None) -> dict[str, str]:
 
 
 def _reading_rows(view: MeterView) -> list[ReadingRow]:
-    """Newest first, each with the usage since the previous point and its kWh per day."""
+    """Newest first, each with the usage since the previous point and its daily mean."""
     series = continuous_series(
         [stored.item for stored in view.readings], [stored.item for stored in view.exchanges]
     )
@@ -332,7 +334,11 @@ def _reading_rows(view: MeterView) -> list[ReadingRow]:
             ReadingRow(
                 stored,
                 usage_milli=value_on[day] - before_value,
-                kwh_per_day=round_half_up(sum(kwh[each] for each in days) / len(days))
+                per_day=round_half_up(
+                    sum(kwh[each] for each in days)
+                    / len(days)
+                    * (1000 if view.meter.kind == "water" else 1)
+                )
                 if known
                 else None,
             )
@@ -374,6 +380,7 @@ def _card(
         view=view,
         unit=UNITS[view.meter.kind],
         usage_unit=USAGE_UNITS[view.meter.kind],
+        per_day_unit=PER_DAY_UNITS[view.meter.kind],
         readings=_reading_rows(view),
         current=current,
         latest=latest,

@@ -226,8 +226,10 @@ def test_get_lists_both_kinds_with_the_other_kinds_fields_null(db_path):
 
 
 def test_status_figures_equal_the_debt_overview(db_path):
+    with connect(db_path) as conn:
+        _insert_tx(conn, "home-july", "2026-07-30", "Home Bank", "M-2")
     with _client(db_path) as client:
-        client.post("/api/debts", json={**LOAN, "interest_bp": 450})
+        client.post("/api/debts", json={**LOAN, "interest_bp": 450, "rate_cents": 10_000})
         client.post("/api/debts", json=INSTALLMENT)
         items = client.get("/api/debts").json()
 

@@ -138,12 +138,10 @@ def loan_status(loan: Loan, txs: Iterable[ParsedTransaction], today: date) -> Lo
         loan.balance_cents, loan.balance_as_of, loan.rate_cents, loan.interest_bp
     )
     projected = amortization.balance_on(loan.balance_cents, payments, today)
-    # Only debits after the statement date are this loan's real payments; the
-    # statement balance already accounts for anything paid before it.
-    paid_since = sum(
-        abs(tx.amount_cents)
-        for tx in txs
-        if matches(tx, loan.match) and tx.booking_date > loan.balance_as_of
+    # A shared debit can cover several loans, so count only this loan's
+    # scheduled amount once per due date, ignoring extra repayments.
+    paid_since = _paid_scheduled_amount(
+        payments, (tx for tx in txs if matches(tx, loan.match)), today
     )
     return LoanStatus(
         projected_balance_cents=projected,
@@ -151,6 +149,36 @@ def loan_status(loan: Loan, txs: Iterable[ParsedTransaction], today: date) -> Lo
         paid_since_statement_cents=paid_since,
         paid_off=projected == 0,
     )
+
+
+def _paid_scheduled_amount(
+    payments: Iterable[amortization.LoanPayment],
+    debits: Iterable[ParsedTransaction],
+    today: date,
+) -> int:
+    remaining = list(debits)
+    paid_cents = 0
+    for payment in sorted(payments, key=lambda payment: payment.due_date):
+        if payment.due_date > today:
+            break
+        candidates = (
+            index
+            for index, tx in enumerate(remaining)
+            if abs(tx.booking_date - payment.due_date) <= schedule.TOLERANCE
+            and abs(tx.amount_cents) >= payment.amount_cents
+        )
+        closest = min(
+            candidates,
+            key=lambda index: (
+                abs(remaining[index].booking_date - payment.due_date),
+                remaining[index].booking_date,
+            ),
+            default=None,
+        )
+        if closest is not None:
+            paid_cents += payment.amount_cents
+            remaining.pop(closest)
+    return paid_cents
 
 
 def debt_schedule(

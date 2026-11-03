@@ -141,6 +141,14 @@ def list_categories(conn: sqlite3.Connection) -> list[Category]:
     ]
 
 
+def fixed_category_names(conn: sqlite3.Connection) -> list[str]:
+    """Names available to hand-entered fixed payments."""
+    return [
+        row[0]
+        for row in conn.execute("SELECT name FROM categories WHERE type = 'fixed' ORDER BY name")
+    ]
+
+
 def add_category(conn: sqlite3.Connection, name: str, type: str, debt: bool = False) -> int:
     _validate_category(name, type, debt)
     with conn:

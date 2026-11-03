@@ -12,6 +12,7 @@ from pydantic import StrictInt, StrictStr
 
 from sonar.cashflow.forecast import FixedSource, next_due
 from sonar.cashflow.service import AdvanceLink, advance_links
+from sonar.categorization.store import fixed_category_names
 from sonar.db import connect
 from sonar.debts.store import debt_overview
 from sonar.recurring.schedule import SchedulePeriod
@@ -27,6 +28,7 @@ from sonar.recurring.store import (
     pause_payment,
     restore,
     resume_payment,
+    set_category,
     update_details,
 )
 from sonar.web.api._common import _parse_body, _StrictModel
@@ -41,6 +43,7 @@ _SCHEDULE_ERROR_FIELDS = {
 
 
 class RecurringIn(_StrictModel):
+    category: StrictStr | None = None
     name: StrictStr | None = None
     description: StrictStr | None = None
     amount_cents: StrictInt | None = None
@@ -49,6 +52,7 @@ class RecurringIn(_StrictModel):
 
 
 class RecurringAddIn(_StrictModel):
+    category: StrictStr | None = None
     name: StrictStr | None = None
     description: StrictStr | None = None
     amount_cents: StrictInt | None = None
@@ -120,6 +124,12 @@ def _recurring_item(
 
 def _bad(error: str, field: str) -> JSONResponse:
     return JSONResponse({"error": error, "field": field}, status_code=400)
+
+
+def _check_category(conn, category: str | None) -> JSONResponse | None:
+    if category is not None and category not in fixed_category_names(conn):
+        return _bad("Choose a fixed category", "category")
+    return None
 
 
 def _missing(body: _StrictModel, keys: tuple[str, ...]) -> JSONResponse | None:
@@ -210,7 +220,10 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
         period = SchedulePeriod(starts_on, None, body.amount_cents, body.interval_months, body.day)
         conn = connect(db_path)
         try:
-            payment_id = add_manual(conn, name, None, period, body.description)
+            category = body.category if body.category and body.category.strip() else None
+            if (error := _check_category(conn, category)) is not None:
+                return error
+            payment_id = add_manual(conn, name, category, period, body.description)
             item = _item(conn, payment_id)
         finally:
             conn.close()
@@ -227,6 +240,12 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
                 current = get_payment(conn, id)
             except PaymentNotFound:
                 return _not_found(id)
+            category = body.category if body.category and body.category.strip() else None
+            if "category" in body.model_fields_set:
+                if current.source != "manual":
+                    return _bad("Only manual payments can change category", "category")
+                if (error := _check_category(conn, category)) is not None:
+                    return error
             name = (body.name or "").strip() if "name" in body.model_fields_set else current.name
             if not name:
                 return JSONResponse(
@@ -248,6 +267,8 @@ def build_router(db_path: Path, today: Callable[[], date]) -> APIRouter:
                 edit_payment(conn, id, name, amount_cents, interval_months, day, description)
             else:
                 update_details(conn, id, name, description)
+            if "category" in body.model_fields_set:
+                set_category(conn, id, category)
             item = _item(conn, id)
         finally:
             conn.close()

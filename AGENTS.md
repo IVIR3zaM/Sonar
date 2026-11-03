@@ -98,8 +98,8 @@ Endpoints (all under `/api`, `Content-Type: application/json`):
 | POST | `/rules/{id}/move` | `position` |
 | GET | `/uncategorized` | - |
 | GET | `/recurring` | - |
-| POST | `/recurring` | `name`, `amount_cents`, `interval_months`, `day`, `starts_on`, `description` |
-| PUT | `/recurring/{id}` | `name`, `description`, `amount_cents`, `interval_months`, `day` |
+| POST | `/recurring` | `name`, `amount_cents`, `interval_months`, `day`, `starts_on`, `description`, `category` |
+| PUT | `/recurring/{id}` | `name`, `description`, `amount_cents`, `interval_months`, `day`, `category` |
 | POST | `/recurring/{id}/pause` | `last_date` |
 | POST | `/recurring/{id}/resume` | `starts_on`, `amount_cents`, `interval_months`, `day` |
 | POST | `/recurring/{id}/dismiss` | - |

@@ -47,9 +47,9 @@ dashboard breakdown; the final check confirms SPEC §11 and §12.
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | manual category API and docs | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
-| N03 | breakdown labels from categories | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
-| N04 | category in Fixed payments forms | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N02 | manual category API and docs | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
+| N03 | breakdown labels from categories | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 1 | TODO | |
+| N04 | category in Fixed payments forms | exec | N02,N03 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N05 | visual check | gate | N03,N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
@@ -105,6 +105,8 @@ Context: D5 latest matched debit that has a category (latest booking date, ties 
   Installments; debts with linked payments keep today's rule. `add_manual` already stores a category
   (`src/sonar/recurring/store.py:69`); no validation here. The existing service test
   (`tests/cashflow/test_service_fixed_breakdown.py:20-70`) must keep passing unchanged. `today` stays a parameter.
+  Runs after N02 is committed, so the full verify sees N02's API and tests; changes in the tree under this Write
+  set are this node's to keep, fix or finish.
 Read: `src/sonar/debts/model.py`, `src/sonar/cashflow/service.py:100-190`, `src/sonar/cashflow/service.py:494-540`,
   `tests/cashflow/test_service_fixed_breakdown.py`, `tests/debts/test_model_last_payment.py`
 Write: `src/sonar/debts/model.py`, `src/sonar/cashflow/service.py`, `tests/debts/test_model_latest_category.py`,
@@ -178,3 +180,20 @@ Done when:
 
 ### N01 try 1 · 2026-11-03
 check: PASS 5/5
+
+### N03 try 1 · 2026-11-03
+exec: BLOCKED · Verify fails outside Write: missing categorization.store.fixed_category_names and E501 in recurring/web category tests; N03 targeted tests: 12 passed
+
+### N02 try 1 · 2026-11-03
+exec: DONE · 2152 tests passed; ruff check and format clean
+- Added fixed-category lookup, manual-only category setter, and validated recurring POST/PUT category support with tests.
+- Documented exact-name validation, omit/clear semantics, and the debt breakdown label override in SPEC §13 and AGENTS.md.
+check: PASS 2/2
+
+### N03 replan 1 · 2026-11-03
+plan: REPLANNED
+- Cause: N02 and N03 ran in the same wave on one tree; the full verify failed on N02's in-flight files, not on N03
+- N03 now depends on N02 and N04 on N02,N03, so no exec node runs beside another; brief gains one Context line that tree changes in its Write set are its own
+
+### N02 try 1 · 2026-11-03
+verify: PASS

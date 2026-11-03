@@ -26,6 +26,10 @@ class PaymentNotFound(LookupError):
     """Raised by edit/dismiss/pause/resume when `id` has no matching row."""
 
 
+class NotManual(ValueError):
+    """Raised when a detected payment's category is edited manually."""
+
+
 class NotDismissed(ValueError):
     """Raised by restore when the payment is not dismissed, so there is nothing to restore."""
 
@@ -87,6 +91,15 @@ def add_manual(
         payment_id = cursor.lastrowid
         _insert_periods(conn, payment_id, (period,))
     return payment_id
+
+
+def set_category(conn: sqlite3.Connection, id: int, category: str | None) -> None:
+    """Set a manual payment's category without changing its locks or schedule."""
+    with conn:
+        payment = get_payment(conn, id)
+        if payment.source != "manual":
+            raise NotManual(id)
+        conn.execute("UPDATE recurring_payments SET category = ? WHERE id = ?", (category, id))
 
 
 def edit_payment(

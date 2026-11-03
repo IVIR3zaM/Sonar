@@ -1,5 +1,5 @@
 # Fixed costs at current rates
-status: RUNNING
+status: DONE
 created: 2026-11-03 · updated: 2026-11-03
 goal: the Fixed costs Monthly equivalent and the dashboard fixed breakdown count every payment at its current rate, with an end note for debts ending within a year
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -52,7 +52,7 @@ passes on the dashboard at desktop and 375px, light and dark; the final check co
 | N02 | current-rate math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N03 | end note and API | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | visual check | gate | N03 | -/sonnet | 0 | 0 | DONE | |
-| N05 | plan acceptance | check | N04 | -/sonnet | 0 | 0 | TODO | |
+| N05 | plan acceptance | check | N04 | -/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only download),
@@ -189,4 +189,8 @@ exec: DONE · 2217 passed; ruff check and format clean; CSS rebuild matches
 - Added conditional muted payment end notes with ISO hooks and wrapping; rebuilt sonar.css.
 - Verified six-payment installment full rate, end note present/absent, API ISO/null dates, and monthly/gap totals; API serialization needed no change.
 check: PASS 3/3
+verify: PASS
+
+### N05 try 1 · 2026-11-03
+check: PASS 1/1
 verify: PASS

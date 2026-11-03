@@ -12,13 +12,19 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
+from planzilla.config import Config, parse_config
 from planzilla.plan import (
     PLAN_NAME,
+    Brief,
     Plan,
+    PlanError,
     append_entry,
     attempt_key,
-    find_plans,
+    node_paths,
+    parse_brief,
+    parse_inline_brief,
     parse_plan,
+    render_graph,
     render_plan,
 )
 
@@ -39,6 +45,43 @@ def fail(message: str, code: int) -> int:
     """Print `error: <message>` to stderr and return the exit code."""
     print(f"error: {message}", file=sys.stderr)
     return code
+
+
+def find_plans(repo: Path) -> list[Path]:
+    """Plans in `<repo>/.plan/`: L directories and S/M `.md` files, sorted by name."""
+    plan_dir = repo / ".plan"
+    if not plan_dir.is_dir():
+        return []
+    return sorted(
+        (path for path in plan_dir.iterdir() if _is_plan_path(path)), key=lambda p: p.name
+    )
+
+
+def load_plan(path: Path) -> Plan:
+    """Load an L plan directory or an S/M plan file, preserving UTF-8 bytes."""
+    graph_file = path / "plan.md" if path.is_dir() else path
+    if not graph_file.is_file():
+        raise PlanError(graph_file, 1, "plan file not found")
+    return parse_plan(graph_file.read_bytes().decode("utf-8"), path, graph_file)
+
+
+def load_brief(plan: Plan, node_id: str) -> Brief | None:
+    """Load a node's brief, or None when it has not been written yet."""
+    if not plan.is_dir:
+        return parse_inline_brief(plan, node_id)
+    node = plan.node(node_id)
+    file = node_paths(plan, node_id).brief
+    if not file.is_file():
+        return None
+    return parse_brief(file.read_bytes().decode("utf-8").split("\n"), 1, file, node, "# ")
+
+
+def load_config(repo: Path) -> Config:
+    """Read `<repo>/.plan/config.md`; a missing file gives all defaults."""
+    path = repo / ".plan" / "config.md"
+    if not path.is_file():
+        return Config()
+    return parse_config(path.read_bytes().decode("utf-8"), path)
 
 
 def _is_plan_path(path: Path) -> bool:
@@ -105,6 +148,14 @@ def write_plan(plan: Plan, status: str, today: str) -> Plan:
     """Write Graph changes plus header `status:`/`updated:`; return the reloaded plan."""
     text = render_plan(plan, status, today)
     write_atomic(plan.graph_file, text)
+    return parse_plan(text, plan.path, plan.graph_file)
+
+
+def save_graph(plan: Plan) -> Plan:
+    """Atomically rewrite changed Graph rows; return a plan parsed from the saved text."""
+    text = render_graph(plan)
+    if text != plan.text:
+        write_atomic(plan.graph_file, text)
     return parse_plan(text, plan.path, plan.graph_file)
 
 

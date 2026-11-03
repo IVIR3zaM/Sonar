@@ -88,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, "text/plain; charset=utf-8", b"not found\n")
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         pass
 
 

@@ -4,9 +4,16 @@ import argparse
 from pathlib import Path
 
 from planzilla import state
-from planzilla.commands._common import ResolveError, fail, resolve_plan
-from planzilla.config import load_config
-from planzilla.plan import PlanError, load_brief, load_plan
+from planzilla.commands._common import (
+    ResolveError,
+    fail,
+    load_brief,
+    load_config,
+    load_plan,
+    resolve_plan,
+)
+from planzilla.config import plan_policy
+from planzilla.plan import PlanError
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -19,8 +26,9 @@ def run(args: argparse.Namespace) -> int:
         if plan.header.status == "DRAFT":
             return fail(f"plan {plan.name} is DRAFT", 2)
         config = load_config(plan.root)
+        policy = plan_policy(config, plan)
         facts = {node.id: state.brief_facts(load_brief(plan, node.id)) for node in plan.nodes}
-        lines = state.next_lines(plan.nodes, facts, config.models)
+        lines = state.next_lines(plan.nodes, facts, policy.models)
     except (ResolveError, PlanError, state.StateError) as error:
         return fail(str(error), 2)
     for line in lines:

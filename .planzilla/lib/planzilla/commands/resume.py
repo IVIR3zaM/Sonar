@@ -11,12 +11,16 @@ from planzilla.commands._common import (
     ResolveError,
     append_log,
     fail,
+    load_brief,
+    load_config,
+    load_plan,
     plan_lock,
     resolve_plan,
     uncommitted,
     write_plan,
 )
-from planzilla.plan import PlanError, load_brief, load_plan
+from planzilla.config import plan_policy
+from planzilla.plan import PlanError
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -35,6 +39,7 @@ def run(args: argparse.Namespace) -> int:
             plan = load_plan(path)
             if plan.header.status == "DRAFT":
                 return fail(f"plan {plan.name} is DRAFT", 2)
+            plan_policy(load_config(plan.root), plan)
             if plan.header.status == "DONE":
                 return 0
             dirty = set()

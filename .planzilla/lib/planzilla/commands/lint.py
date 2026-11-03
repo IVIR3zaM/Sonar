@@ -11,10 +11,17 @@ from fnmatch import fnmatchcase
 from functools import cache
 from pathlib import Path
 
-from planzilla.commands._common import ResolveError, fail, resolve_plan
-from planzilla.config import load_config
-from planzilla.plan import TAGS, Brief, Plan, PlanError, load_brief, load_plan
-from planzilla.providers import has_visual_agent, provider_of, runs_natively, split_token
+from planzilla.commands._common import (
+    ResolveError,
+    fail,
+    load_brief,
+    load_config,
+    load_plan,
+    resolve_plan,
+)
+from planzilla.config import effective_policy
+from planzilla.plan import TAGS, Brief, Plan, PlanError
+from planzilla.providers import allowed_routes, check_allowed, has_visual_agent, runs_natively
 from planzilla.state import StateError, waves
 
 MAX_BRIEF_LINES = 40
@@ -134,13 +141,17 @@ def _overlap_problems(plan: Plan, briefs: dict[str, Brief], level: dict[str, int
 
 
 def _provider_problems(plan: Plan, providers: Sequence[str]) -> list[Problem]:
-    """A Graph exec or verify token whose provider config `providers` does not list."""
+    """Graph token route constraints checked against the effective plan policy."""
     problems = []
     for node in plan.nodes:
         for token in (node.exec_model, node.verify_model):
-            provider = None if token == "-" else provider_of(split_token(token)[0])
-            if provider is not None and provider not in providers:
-                message = f"{node.id} model {token} needs config providers to list {provider}"
+            try:
+                check_allowed(token, providers)
+            except ValueError:
+                routes = allowed_routes(token)
+                required = routes[0] if len(routes) == 1 else f"one of {', '.join(routes)}"
+                source = "plan" if plan.header.providers is not None else "config"
+                message = f"{node.id} model {token} needs {source} providers to list {required}"
                 problems.append(Problem(plan.graph_file, node.line or 1, "providers", message))
     return problems
 
@@ -224,9 +235,13 @@ def run(args: argparse.Namespace) -> int:
     except (OSError, UnicodeDecodeError) as error:
         return fail(f"cannot read {root / '.plan' / 'config.md'}: {error}", 2)
     try:
+        policy = effective_policy(config, plan.header, plan.graph_file)
         problems, wave_count = lint_plan(
-            plan, config.providers, config.harness, config.models["verify"]
+            plan, policy.providers, config.harness, policy.models["verify"]
         )
+    except PlanError as error:
+        print(format_problem(Problem(error.file, error.line, "parse", error.message), root))
+        return 1
     except (OSError, UnicodeDecodeError) as error:
         return fail(f"cannot read plan files: {error}", 2)
     if problems:

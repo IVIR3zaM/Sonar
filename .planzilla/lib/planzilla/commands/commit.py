@@ -10,12 +10,14 @@ from planzilla.commands._common import (
     LockTimeout,
     ResolveError,
     fail,
+    load_brief,
+    load_config,
+    load_plan,
     plan_lock,
     resolve_plan,
     write_atomic,
 )
-from planzilla.config import load_config
-from planzilla.plan import Plan, PlanError, load_brief, load_plan
+from planzilla.plan import Plan, PlanError
 
 
 class CommandError(Exception):

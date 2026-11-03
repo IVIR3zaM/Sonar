@@ -9,6 +9,7 @@ from planzilla import __version__
 
 COMMANDS = [
     "install",
+    "policy",
     "next",
     "set",
     "resume",
@@ -20,6 +21,7 @@ COMMANDS = [
     "stats",
     "lint",
     "serve",
+    "dispatch",
     "run",
 ]
 

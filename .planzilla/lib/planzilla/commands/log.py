@@ -17,10 +17,11 @@ from planzilla.commands._common import (
     ResolveError,
     append_log,
     fail,
+    load_plan,
     plan_lock,
     resolve_plan,
 )
-from planzilla.plan import Plan, PlanError, load_plan, node_paths
+from planzilla.plan import Plan, PlanError, node_paths
 
 KINDS = ("exec", "verify", "plan", "human", "note")
 

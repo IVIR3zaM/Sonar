@@ -8,8 +8,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from planzilla.commands import log
-from planzilla.commands._common import append_log, plan_lock, resolve_plan, write_atomic
-from planzilla.plan import Criterion, Node, attempt_key, load_brief, load_plan, node_paths
+from planzilla.commands._common import (
+    append_log,
+    load_brief,
+    load_plan,
+    plan_lock,
+    resolve_plan,
+    write_atomic,
+)
+from planzilla.plan import Criterion, Node, attempt_key, node_paths
 
 TIMEOUT = 900
 LAST_LINE_MAX = 120

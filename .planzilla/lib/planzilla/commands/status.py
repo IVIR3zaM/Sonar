@@ -9,9 +9,14 @@ import subprocess
 import time
 from pathlib import Path
 
-from planzilla.commands._common import ResolveError, fail, resolve_plan
+from planzilla.commands._common import (
+    ResolveError,
+    fail,
+    load_plan,
+    resolve_plan,
+)
 from planzilla.commands.log import read_log
-from planzilla.plan import PlanError, load_plan
+from planzilla.plan import PlanError
 from planzilla.report import Commit, Report, build_report, format_status, parse_git_log
 from planzilla.state import StateError
 

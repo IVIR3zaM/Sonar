@@ -1,0 +1,44 @@
+[
+  {
+    "route": "claude",
+    "mode": "cli",
+    "delivery_id": "claude-cli",
+    "models": [
+      {"exact_id": "claude-opus-5", "family": "opus", "aliases": ["opus"], "efforts": ["low", "medium", "high", "max"]},
+      {"exact_id": "claude-sonnet-5", "family": "sonnet", "aliases": ["sonnet"], "efforts": ["low", "medium", "high", "max"]},
+      {"exact_id": "claude-haiku-4.5", "family": "haiku", "aliases": ["haiku"], "efforts": ["low", "medium", "high", "max"]}
+    ],
+    "model_control": true,
+    "effort_control": true,
+    "availability": "external_reply",
+    "evidence": ["placeholder: replace with what you observed, e.g. 'claude -p ... --model claude-sonnet-5' replied on <date>"],
+    "enabled": false
+  },
+  {
+    "route": "codex",
+    "mode": "cli",
+    "delivery_id": "codex-cli",
+    "models": [
+      {"exact_id": "gpt-6.1-sol", "family": "sol", "aliases": [], "efforts": ["low", "medium", "high"]}
+    ],
+    "model_control": true,
+    "effort_control": true,
+    "availability": "external_reply",
+    "evidence": ["placeholder: replace with what you observed, e.g. 'codex exec -m gpt-6.1-sol' replied on <date>"],
+    "enabled": false
+  },
+  {
+    "route": "copilot",
+    "mode": "cli",
+    "delivery_id": "copilot-cli",
+    "models": [
+      {"exact_id": "claude-opus-5", "family": "opus", "aliases": ["opus"], "efforts": ["low", "medium", "high"]},
+      {"exact_id": "claude-sonnet-5", "family": "sonnet", "aliases": ["sonnet"], "efforts": ["low", "medium", "high"]}
+    ],
+    "model_control": true,
+    "effort_control": true,
+    "availability": "external_reply",
+    "evidence": ["placeholder: replace with what you observed, e.g. 'copilot -p ... --model claude-sonnet-5' replied on <date>; see docs/COPILOT.md"],
+    "enabled": false
+  }
+]

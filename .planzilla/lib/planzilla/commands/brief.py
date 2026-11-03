@@ -5,9 +5,14 @@ import re
 from pathlib import Path
 
 from planzilla.commands import log
-from planzilla.commands._common import resolve_plan
-from planzilla.config import Config, load_config
-from planzilla.plan import Brief, Node, Plan, load_brief, load_plan
+from planzilla.commands._common import (
+    load_brief,
+    load_config,
+    load_plan,
+    resolve_plan,
+)
+from planzilla.config import Config
+from planzilla.plan import Brief, Node, Plan
 
 RERUN_NOTICE = (
     "Rerun: this try was interrupted; the tree may hold its partial edits. Continue from them."

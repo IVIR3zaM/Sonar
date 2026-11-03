@@ -9,12 +9,15 @@ from planzilla.commands._common import (
     LockTimeout,
     ResolveError,
     fail,
+    load_brief,
+    load_config,
+    load_plan,
     plan_lock,
     resolve_plan,
     write_plan,
 )
-from planzilla.config import load_config
-from planzilla.plan import NODE_TYPES, STATUSES, PlanError, load_brief, load_plan
+from planzilla.config import plan_policy
+from planzilla.plan import NODE_TYPES, STATUSES, PlanError
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -41,6 +44,7 @@ def run(args: argparse.Namespace) -> int:
             if plan.header.status == "DRAFT":
                 return fail(f"plan {plan.name} is DRAFT", 2)
             config = load_config(plan.root)
+            policy = plan_policy(config, plan)
             facts = {} if args.add else {args.id: state.brief_facts(load_brief(plan, args.id))}
             plan.nodes, status = state.set_node(
                 plan.nodes,
@@ -55,11 +59,12 @@ def run(args: argparse.Namespace) -> int:
                 facts=facts,
                 budgets=(plan.header.tries_budget, plan.header.replans_budget),
             )
+            policy = plan_policy(config, plan)
             plan = write_plan(plan, status, today())
     except (ResolveError, PlanError, state.StateError) as error:
         return fail(str(error), 2)
     except LockTimeout as error:
         return fail(str(error), 3)
     node_facts = facts.get(args.id, state.Facts())
-    print(state.set_line(plan.node(args.id), node_facts, config.models))
+    print(state.set_line(plan.node(args.id), node_facts, policy.models))
     return 0

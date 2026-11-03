@@ -38,7 +38,7 @@ Definition of done: with a salary day, recent income and a complete lights-on mo
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | bare minimum math and SPEC | exec | N01 | codex@medium/sonnet | 0 | 0 | TODO | |
+| N02 | bare minimum math and SPEC | exec | N01 | codex@medium/sonnet | 1 | 1 | DONE | |
 | N03 | dashboard and API wiring | exec | N02 | codex@medium/sonnet | 0 | 0 | TODO | |
 | N04 | Bare minimum card | exec | N03 | codex@medium/sonnet | 0 | 0 | TODO | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
@@ -56,44 +56,44 @@ Done when:
 - C4 [cmd] `test -w .git/index && git status --porcelain >/dev/null`
 
 ## N02 bare minimum math and SPEC
-Do: Add the pure module `src/sonar/cashflow/bare_minimum.py`. Its frozen dataclasses have plain fields only,
-  no properties, so `_jsonable` (web/api/_common.py:52) serializes every value:
-  `CycleNeed(start, end, days, fixed_cents, lights_on_cents, need_cents, residual_cents)`,
-  `DebtEnd(name, kind, end_date, rate_cents)` and `BareMinimum(total_cents, cycle: CycleNeed, income_cents,
-  residual_cents, debt_cents, debt_share_percent, occasional_cents, occasional_margin_cents,
-  cycles: tuple[CycleNeed, ...], drops: tuple[DebtEnd, ...])`. Functions:
-  `cycle_income(rows, category_types, salary_day, estimate_date) -> int | None` (D3);
-  `occasional_per_month(months) -> int` (D5); `bare_minimum(cycles, lights_on_daily_cents, debt_due,
-  debt_ends, income_cents, occasional_cents, estimate_date) -> BareMinimum | None` (D1, D2, D4, D7), where `cycles` are
-  `CycleCost`s (only the `forecast` kind is used), `debt_due` are `DueItem`s and the result is None without a
-  forecast cycle. Add the D10 bullet at the end of SPEC.md §13.
-Context: D1 need_k = forecast_cents + lights-on part; max; residual_k = income − need_k. D2 lights-on part =
-  daily cents × days; ties go to the earliest cycle. D3 window [start − 7, end − 7] days, `income` group
-  credits, min over totals > 0, else None. D4 debt cents = debt_due within the max cycle; percent half up; 0
-  when fixed is 0. D5 average of the latest 3 months' `occasional_cents`, half up, 0 without months;
-  margin = residual − occasional. D7 keep debt_ends with end_date in [estimate_date + 1, last forecast end],
-  sorted by (end_date, name). D10 one §13 bullet. Reuse `payday.complete_cycles` (payday.py:82),
-  `SALARY_DAY_DISTANCE` (recurring/detect.py:31), `groups.INCOME` and the half-up idiom at income.py:75.
-Read: `src/sonar/cashflow/forecast.py`, `src/sonar/cashflow/income.py`, `src/sonar/cashflow/payday.py`, `src/sonar/cashflow/lights_on.py`, `tests/cashflow/test_income.py`, `SPEC.md`
+Do: Add the pure module `src/sonar/cashflow/bare_minimum.py`: frozen dataclasses, plain fields, no properties (for
+  `_jsonable`, web/api/_common.py:52): `CycleNeed(start, end, days, fixed_cents, lights_on_cents, need_cents,
+  residual_cents)`, `DebtEnd(name, kind, end_date, rate_cents)`, `BareMinimum(total_cents, cycle: CycleNeed,
+  income_cents, residual_cents, debt_cents, debt_share_percent, occasional_cents, occasional_margin_cents, cycles:
+  tuple[CycleNeed, ...], drops: tuple[DebtEnd, ...])`; `cycle_income(rows, category_types, salary_day, estimate_date)
+  -> int | None` (D3); `occasional_per_month(months) -> int` (D5); `bare_minimum(cycles, lights_on_daily_cents,
+  debt_due, debt_ends, income_cents, occasional_cents, estimate_date) -> BareMinimum | None` (D1, D2, D4, D7) over
+  `CycleCost`s (only `kind == "forecast"`) and `DueItem`s, None without a forecast cycle. Append one bullet at the end
+  of SPEC.md §13 (SPEC.md:225-265), "Bare minimum (§9, §12, API)", stating D1-D8 as below; no other SPEC change.
+Context: D1 over the 6 forecast cycles need_k = `forecast_cents` + lights-on part; bare minimum = max need_k, with its
+  fixed and lights-on parts; residual = income − bare minimum; residual_k = income − need_k (not cumulative). D2
+  lights-on part = daily expected cents (`lights_on_forecast(months, 1)`, lights_on.py:151) × days; ties: earliest
+  cycle. D3 per cycle of `payday.complete_cycles(estimate_date, salary_day, 3)` (payday.py:82) sum `income`-group
+  credits booked in [start − 7, end − 7] (`SALARY_DAY_DISTANCE`, recurring/detect.py:31); income = min total > 0,
+  else None. D4 debt cents = debt-schedule `debt_due` in the max cycle (unlinked recurring stays plain fixed); share =
+  debt ÷ fixed, integer percent half up, 0 when fixed is 0. D5 average `occasional_cents` of the latest 3 complete
+  months, half up (income.py:75), 0 without months; margin = residual − occasional, below 0 explains negative months.
+  D6 (SPEC only) numbers show when a salary day, a cycle income and a complete lights-on month exist, balance or not
+  (estimate date then today); else a hint, the first missing of `salary_day`, `income`, `lights_on`; the API has
+  `bare_minimum` (null on a hint) and `bare_minimum_hint` (null or that reason). D7 open debts (installment
+  `end_date`, loan `payoff_date`) ending in [estimate_date + 1, last forecast end], sorted by (end_date, name). D8
+  (SPEC only) a full-width "Bare minimum" card right before Fixed costs: total with its cycle, fixed and lights-on
+  parts, income, residual, a debt-share line, an occasional-vs-residual line, a 6-row cycle table (cycle, fixed,
+  lights on, need, residual; max marked) and an ending-debts table (name, kind, end date, rate), scrolling at 375px.
+Read: `src/sonar/cashflow/{forecast,income,payday,lights_on}.py`, `tests/cashflow/test_income.py`, `SPEC.md:225-265`
 Write: `src/sonar/cashflow/bare_minimum.py`, `tests/cashflow/test_bare_minimum.py`, `SPEC.md`
-Test first: in `tests/cashflow/test_bare_minimum.py`, with anonymized rows:
-  (a) Forecast cycles A 2026-11-26..12-23 (28 days, fixed 200_000) and B 2026-12-24..2027-01-25 (33 days,
-  fixed 260_000), daily 2_500, plus an actual and a current CycleCost that are ignored. Needs are 270_000 and
-  342_500, so the total is 342_500 in cycle B (fixed 260_000, lights 82_500). Income 400_000 gives residual
-  57_500 and residuals 130_000 / 57_500.
-  (b) Debt due 80_000 + 50_000 in B and 30_000 in A gives debt_cents 130_000 and share 50; 1 of 3 gives 33,
-  2 of 3 gives 67, and fixed 0 gives 0.
-  (c) Occasional 70_000 gives margin −12_500; equal needs pick the earlier cycle.
-  (d) Drops keep a debt ending inside A..B and one ending in the current cycle after estimate_date, drop one
-  ending on estimate_date and one after B, sort by date; no forecast cycle gives None.
-  (e) cycle_income: a salary booked 2 days before payday counts in that payday's cycle; other income credits
-  add to it; debits and non-income credits are ignored; the lowest cycle above 0 wins; no credits gives None;
-  (f) occasional_per_month uses only the latest 3 months and rounds half up.
+Test first: `tests/cashflow/test_bare_minimum.py`, anonymized. (a) Forecast A 2026-11-26..12-23 (28 days, fixed
+  200_000), B 2026-12-24..2027-01-25 (33 days, fixed 260_000), daily 2_500, an ignored actual and current CycleCost:
+  needs 270_000 / 342_500, total 342_500 in B (lights 82_500); income 400_000: residual 57_500, residuals 130_000 /
+  57_500. (b) Debt due 80_000 + 50_000 in B, 30_000 in A: debt 130_000, share 50; 1/3 → 33, 2/3 → 67, fixed 0 → 0.
+  (c) Occasional 70_000 → margin −12_500; equal needs pick the earlier cycle. (d) Drops keep one ending in A..B and
+  one in the current cycle after estimate_date, drop one ending on estimate_date and one after B, sorted; no forecast
+  cycle → None. (e) cycle_income: salary 2 days before payday counts in that cycle; other income credits add; debits
+  and non-income credits ignored; lowest cycle above 0 wins; none → None. (f) occasional_per_month: latest 3, half up.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/cashflow/test_bare_minimum.py`
-- C2 [review] Tests (a)-(f) exist with these numbers. The module is pure: no I/O, no `date.today`, no float,
-  integer cents, and the dataclass fields are as listed. D2-D5 and D7 are applied exactly, and SPEC.md gains
-  exactly one §13 bullet stating D1-D8.
+- C2 [review] Tests (a)-(f) with these numbers; module pure (no I/O, no `date.today`, no float, integer cents), fields
+  as listed; D1-D5, D7 exact; `git diff SPEC.md` adds one bullet at the end of §13 stating D1-D8, nothing else.
 - C3 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 dashboard and API wiring
@@ -200,3 +200,18 @@ Done when:
 
 ### N01 try 1 · 2026-11-03
 check: PASS 4/4
+
+### N02 try 1 · 2026-11-03
+exec: BLOCKED · C2 requires a SPEC §13 bullet stating D1–D8, but the brief defines neither D6 nor D8; their behavior must be supplied before implementation.
+
+### N02 replan 1 · 2026-11-03
+plan: REPLANNED
+- cause: brief asked for a SPEC §13 bullet stating D1-D8 but did not restate D6 (hint and API null rules) or D8 (card layout)
+- new brief restates D1-D8 in Context, marks D6/D8 as SPEC-only text, pins SPEC.md:225-265 and C2 to a git diff SPEC.md check; scope, files and tests unchanged
+
+### N02 try 1 · 2026-11-03
+exec: DONE · 2091 passed; ruff check clean; changed Python files formatted
+- Added pure bare minimum cycle needs, income, occasional average and debt-end calculations with 15 tests.
+- Appended one SPEC §13 bullet covering D1-D8; forecast cycles sorted chronologically for earliest ties.
+check: PASS 2/2
+verify: PASS

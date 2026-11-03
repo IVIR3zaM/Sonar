@@ -13,6 +13,7 @@ from sonar.debts.model import Loan, MatchRule
 from sonar.debts.store import add_debt
 from sonar.utilities.model import BillingPeriod, Meter, Reading
 from sonar.utilities.store import add_meter, add_period, add_reading
+from sonar.web.api.cashflow import _jsonable
 from sonar.web.app import create_app
 from tests.seed import seed
 
@@ -33,6 +34,44 @@ def _expected_board(db_path: Path):
         return load_dashboard(conn, load_stored_taxonomy(conn).categories, TODAY)
     finally:
         conn.close()
+
+
+def test_bare_minimum_matches_dashboard_without_a_balance(tmp_path):
+    db_path = tmp_path / "bare.db"
+    seed(
+        db_path,
+        '[[category]]\nname = "Salary"\ntype = "income"\n'
+        '[[category]]\nname = "Groceries"\ntype = "lights_on"\n'
+        '[[rule]]\ncategory = "Salary"\ncounterparty = "Employer"\n'
+        '[[rule]]\ncategory = "Groceries"\ncounterparty = "Shop"\n',
+    )
+    _add_salary_credits(db_path)
+    conn = connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE transactions SET amount_cents = -3100, category = 'Groceries', "
+            "counterparty = 'Shop' "
+            "WHERE booking_date = '2026-06-26'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    with TestClient(create_app(db_path, today=lambda: TODAY)) as client:
+        client.put("/api/settings", json={"salary_day": 26})
+        body = client.get("/api/dashboard").json()
+    board = _expected_board(db_path)
+
+    assert board.bare_minimum is not None
+    assert body["bare_minimum"] == _jsonable(board.bare_minimum)
+    assert body["bare_minimum_hint"] is None
+
+
+def test_bare_minimum_without_salary_day_has_setup_hint(tmp_path):
+    with _client(tmp_path) as client:
+        body = client.get("/api/dashboard").json()
+
+    assert body["bare_minimum"] is None
+    assert body["bare_minimum_hint"] == "salary_day"
 
 
 def test_without_a_salary_day_the_forecast_keys_are_null(tmp_path):

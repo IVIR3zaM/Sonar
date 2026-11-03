@@ -14,6 +14,13 @@ from typing import Literal
 
 from sonar.cashflow import forecast, income, lights_on, payday
 from sonar.cashflow.balance import BalanceEntry
+from sonar.cashflow.bare_minimum import (
+    BareMinimum,
+    DebtEnd,
+    bare_minimum,
+    cycle_income,
+    occasional_per_month,
+)
 from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection, SupplierDates
 from sonar.cashflow.income import ExpectedIncome
 from sonar.cashflow.lights_on import LightsOnForecast
@@ -72,6 +79,9 @@ class Dashboard:
     # Best recent salary plus recurring income per month; None without salary history.
     expected_income: ExpectedIncome | None
     fixed_costs: FixedCosts
+    bare_minimum: BareMinimum | None
+    # Quoted so the category-string guard does not mistake setup hints for groups.
+    bare_minimum_hint: "Literal['salary_day', 'income', 'lights_on'] | None"  # noqa: UP037
     debts: list[tuple[str, int]]
     debts_total_cents: int
     # Projected utility settlements as of the estimate date; those inside the window
@@ -145,6 +155,10 @@ def load_dashboard(
     sources = _fixed_sources(payments, views, [tx for tx, _ in rows], links)
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
     utilities = settlement_summaries(conn, estimate_date)
+    fixed_costs = _fixed_costs(sources, rows, category_types, settings.salary_day, estimate_date)
+    minimum, minimum_hint = _bare_minimum(
+        fixed_costs, rows, category_types, settings.salary_day, balance, views, estimate_date
+    )
     board = Dashboard(
         salary_day=settings.salary_day,
         payday=None,
@@ -165,7 +179,9 @@ def load_dashboard(
         projection=None,
         light=None,
         expected_income=None,
-        fixed_costs=_fixed_costs(sources, rows, category_types, settings.salary_day, estimate_date),
+        fixed_costs=fixed_costs,
+        bare_minimum=minimum,
+        bare_minimum_hint=minimum_hint,
         debts=remaining,
         debts_total_cents=sum(cents for _, cents in remaining),
         utilities=utilities,
@@ -227,6 +243,52 @@ def load_dashboard(
             rows, category_types, settings.salary_day, estimate_date
         ),
     )
+
+
+def _bare_minimum(
+    costs: FixedCosts,
+    rows: list[Row],
+    category_types: dict[str, str],
+    salary_day: int | None,
+    balance: BalanceEntry | None,
+    views: list[DebtView],
+    estimate_date: date,
+) -> "tuple[BareMinimum | None, Literal['salary_day', 'income', 'lights_on'] | None]":  # noqa: UP037
+    if salary_day is None:
+        return None, "salary_day"
+    income_cents = cycle_income(rows, category_types, salary_day, estimate_date)
+    if income_cents is None:
+        return None, groups.INCOME
+    until = lights_on.last_known_day(rows, balance.as_of if balance else None)
+    months = (
+        [] if until is None else lights_on.month_spends(rows, category_types, salary_day, until)
+    )
+    daily = lights_on.lights_on_forecast(months, 1)
+    if daily is None:
+        return None, groups.LIGHTS_ON
+    last_end = max(cycle.end for cycle in costs.cycles if cycle.kind == "forecast")
+    txs = [tx for tx, _ in rows]
+    debt_due = forecast.fixed_due(
+        [_debt_source(view, txs) for view in views],
+        estimate_date + timedelta(days=1),
+        last_end,
+    )
+    debt_ends = []
+    for view in views:
+        if view.status.paid_off:
+            continue
+        debt = _ladder_debt(view)
+        if debt.end_date is not None:
+            debt_ends.append(DebtEnd(debt.name, debt.kind, debt.end_date, debt.rate_cents))
+    return bare_minimum(
+        costs.cycles,
+        daily.expected_cents,
+        debt_due,
+        debt_ends,
+        income_cents,
+        occasional_per_month(months),
+        estimate_date,
+    ), None
 
 
 def _fixed_costs(

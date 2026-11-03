@@ -39,7 +39,7 @@ Definition of done: with a salary day, recent income and a complete lights-on mo
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | bare minimum math and SPEC | exec | N01 | codex@medium/sonnet | 1 | 1 | DONE | |
-| N03 | dashboard and API wiring | exec | N02 | codex@medium/sonnet | 0 | 0 | TODO | |
+| N03 | dashboard and API wiring | exec | N02 | codex@medium/sonnet | 1 | 0 | DONE | |
 | N04 | Bare minimum card | exec | N03 | codex@medium/sonnet | 0 | 0 | TODO | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
@@ -213,5 +213,12 @@ plan: REPLANNED
 exec: DONE · 2091 passed; ruff check clean; changed Python files formatted
 - Added pure bare minimum cycle needs, income, occasional average and debt-end calculations with 15 tests.
 - Appended one SPEC §13 bullet covering D1-D8; forecast cycles sorted chronologically for earliest ties.
+check: PASS 2/2
+verify: PASS
+
+### N03 try 1 · 2026-11-03
+exec: DONE · 2100 passed; ruff check and format clean
+- src/sonar/cashflow/service.py:82 adds bare minimum and ordered hints before the balance early return; debt inputs use debt schedules.
+- tests/cashflow/test_service_bare_minimum.py and tests/web/test_api_dashboard.py cover linked debts, drops, hints and numbers without a balance; quoted hint annotations preserve literal types under the category guard.
 check: PASS 2/2
 verify: PASS

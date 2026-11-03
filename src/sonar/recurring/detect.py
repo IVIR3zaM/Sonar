@@ -27,6 +27,7 @@ from sonar.transactions import ParsedTransaction
 MIN_PAYMENTS = {1: 3, 2: 3, 3: 3, 6: 2, 12: 2}
 EXCLUDED_TYPES = EXCLUDED_FROM_RECURRENCE
 NAME_LENGTH = 40
+CARD_SETTLEMENT_LABELS = {"abrechnung karte"}
 # Days from the salary day within which an income series is the salary itself.
 SALARY_DAY_DISTANCE = 7
 DAYS_IN_MONTH_CYCLE = 31
@@ -85,7 +86,17 @@ def _detect_series(
     return sorted((p for p in detected if p is not None), key=lambda p: p.key)
 
 
+def _card_merchant(tx: ParsedTransaction) -> str:
+    if normalize_text(tx.counterparty) not in CARD_SETTLEMENT_LABELS:
+        return ""
+    merchant, separator, _ = tx.purpose.partition("//")
+    return " ".join(merchant.split()) if separator else ""
+
+
 def payment_key(tx: ParsedTransaction) -> str:
+    merchant = _card_merchant(tx)
+    if merchant:
+        return f"card:{normalize_text(merchant)}"
     # Mandate refs are only unique per creditor, so the creditor is part of the key.
     if tx.mandate_ref:
         return f"mandate:{tx.creditor_id or ''}/{tx.mandate_ref}"
@@ -171,7 +182,11 @@ def _detect_group(
     )
     return DetectedPayment(
         key=key,
-        name=latest_tx.counterparty.strip() or latest_tx.purpose.strip()[:NAME_LENGTH],
+        name=(
+            _card_merchant(latest_tx)[:NAME_LENGTH]
+            or latest_tx.counterparty.strip()
+            or latest_tx.purpose.strip()[:NAME_LENGTH]
+        ),
         category=latest_category,
         schedule=period,
         last_paid_date=last_paid,

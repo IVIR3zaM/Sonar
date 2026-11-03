@@ -55,7 +55,7 @@ SPEC §11 and §12.
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | card merchant series keys | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | VERIFYING | |
+| N02 | card merchant series keys | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N03 | card series sync, fixture and drafts | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |

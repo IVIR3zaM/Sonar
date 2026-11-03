@@ -1,5 +1,5 @@
 # Bare minimum clarity and card merchants
-status: RUNNING
+status: DONE
 created: 2026-11-03 · updated: 2026-11-03
 goal: card subscriptions are detected per merchant, and the Bare minimum card reads as answer, where it goes, next 6 cycles
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -61,7 +61,7 @@ SPEC §11 and §12.
 | N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N07 | visual check | gate | N09 | -/sonnet | 0 | 1 | DONE | |
-| N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
+| N08 | plan acceptance | check | N07 | -/sonnet | 1 | 0 | DONE | |
 | N09 | bare minimum card gate fixes | exec | N06 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
@@ -366,4 +366,8 @@ exec: DONE · 2210 passed; ruff check clean; focused 34 passed; CSS rebuild comp
 - Updated summary magnitudes and three wordings, collapsed composition rows, debt label, chart labels and width, SPEC presentation, and generated CSS.
 - Kept signed summary attributes, existing hooks, fixed breakdown markup, calculations, and API unchanged.
 check: PASS 3/3
+verify: PASS
+
+### N08 try 1 · 2026-11-03
+check: PASS 1/1
 verify: PASS

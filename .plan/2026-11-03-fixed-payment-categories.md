@@ -1,5 +1,5 @@
 # Fixed payment categories
-status: WAITING
+status: RUNNING
 created: 2026-11-03 · updated: 2026-11-03
 goal: every fixed payment in the dashboard breakdown sits under a real category, for hand-entered payments and unlinked debts alike
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -50,7 +50,7 @@ dashboard breakdown; the final check confirms SPEC §11 and §12.
 | N02 | manual category API and docs | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N03 | breakdown labels from categories | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N04 | category in Fixed payments forms | exec | N02,N03 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N05 | visual check | gate | N03,N04 | -/sonnet | 0 | 0 | TODO | |
+| N05 | visual check | gate | N03,N04 | -/sonnet | 0 | 0 | DONE | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight

@@ -111,5 +111,5 @@ def test_fixed_breakdown_uses_manual_and_unlinked_debt_categories():
         "Furniture": ["Linked debt"],
     }
     assert board.fixed_breakdown.count == 4
-    assert board.fixed_breakdown.total_cents == 15_000
+    assert board.fixed_breakdown.total_cents == 35_000
     assert board.fixed_breakdown.total_cents == board.fixed_costs.monthly_equivalent_cents

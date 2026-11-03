@@ -49,7 +49,7 @@ passes on the dashboard at desktop and 375px, light and dark; the final check co
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | current-rate math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N02 | current-rate math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N03 | end note and API | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N04 | visual check | gate | N03 | -/sonnet | 0 | 0 | TODO | |
 | N05 | plan acceptance | check | N04 | -/sonnet | 0 | 0 | TODO | |
@@ -71,7 +71,7 @@ Do: In `src/sonar/cashflow/forecast.py`, replace `_year_total` (`forecast.py:277
   helper giving each source's exact monthly amount (D1-D4) and its `ends_on` (D5); `fixed_costs` (`forecast.py:203`)
   and `fixed_breakdown` (`forecast.py:219`) both use it, keeping the largest-remainder apportioning. Add
   `ends_on: date | None = None` to `BreakdownPayment` (`forecast.py:91`). Update tests that assert the old 12-month
-  average to the new rule. Append the SPEC §13 bullet (D9) after `SPEC.md:272`.
+  average to the new rule. Append one SPEC §13 bullet after `SPEC.md:272` stating D1-D6 (D9).
 Context: D1 count at the amount of the period valid on the estimate date (latest-started wins, `forecast.py:338`);
   no such period (ended, paid off, paused now) = left out. D2 not started yet (all periods start later) = its first
   period's rate when it starts within 12 months of the estimate date, else left out. D3 meter-linked sources
@@ -79,14 +79,19 @@ Context: D1 count at the amount of the period valid on the estimate date (latest
   estimate month / 12. D4 exact rational amount / interval (e.g. `fractions.Fraction`, never float); total = sum
   rounded half up once; breakdown floors each, leftover cents to the largest remainders, ties by name. D5 `ends_on`
   = `until` of the latest-starting period when <= estimate date + 12 months (`schedule.add_months`), else None.
+  D6 (SPEC text only here; N03 builds it): `/api/dashboard` `fixed_breakdown.groups[].payments[]` carries `ends_on`
+  as ISO date or null; the page shows "<amount> · ends <Mon YYYY>" (e.g. "55,18 € · ends Apr 2027"), muted, hook
+  `data-field="ends"` with `data-date` ISO, no note when null. D9 the bullet is titled "Fixed costs current rates
+  (§9, §12, API)" and says it overrides the monthly-equivalent rule (`SPEC.md:136`), the 12-month averaging and
+  yearly-cents apportioning sentences of §13 Fixed costs breakdown (`SPEC.md:267`), and its payments shape
+  `{name, monthly_cents}` (now plus `ends_on`).
   Debt schedules end with a one-day final period (`src/sonar/debts/model.py:219-235`), so the latest-starting
   period's `until` is the debt's end. Update `EQUIVALENT_MONTHS`' comment and the docstrings to say why.
-  The SPEC bullet states D1-D6 in plain words and names what it overrides.
   Tests likely on the old rule: `tests/cashflow/test_forecast.py:47-70,133-140,175-179`,
   `tests/cashflow/test_fixed_breakdown.py:20-60,115-128`, `tests/cashflow/test_service.py:168`,
   `tests/cashflow/test_service_fixed_breakdown.py:114`, `tests/web/test_dashboard_page.py:379`.
 Read: `src/sonar/cashflow/forecast.py`, `src/sonar/debts/model.py:184-235`, `src/sonar/recurring/schedule.py:20-40`,
-  `tests/cashflow/test_fixed_breakdown.py`, `tests/cashflow/test_forecast.py:1-180`, `SPEC.md:266-272`
+  `tests/cashflow/test_fixed_breakdown.py`, `tests/cashflow/test_forecast.py:1-180`, `SPEC.md:136,266-272`
 Write: `src/sonar/cashflow/forecast.py`, `tests/cashflow/**`, `tests/web/test_dashboard_page.py`, `SPEC.md`
 Test first: a monthly installment-shaped source of 5518 with 6 payments left (final period last) gives breakdown
   monthly 5518, `ends_on` its last date, and the same 5518 in `fixed_costs(...).monthly_equivalent_cents`; a
@@ -99,7 +104,7 @@ Done when:
   across mixed intervals including a non-divisor of 12) and D5 (inside, outside and open-ended)
 - C3 [review] one helper feeds both `fixed_costs` and `fixed_breakdown`; no float; `today` stays a parameter;
   `fixed_due`, `cycle_costs` and `_row` behave as before
-- C4 [review] the SPEC §13 bullet matches D1-D6 and names the Monthly equivalent rule and breakdown D1 it overrides
+- C4 [review] the SPEC §13 bullet states D1-D6 in plain words and names the three overridden rules listed in D9
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 end note and API
@@ -161,3 +166,20 @@ Done when:
 
 ### N01 try 1 · 2026-11-03
 check: PASS 5/5
+
+### N02 try 1 · 2026-11-03
+exec: BLOCKED · The brief requires a SPEC bullet covering D1-D6 but defines only D1-D5; D6 is needed before writing the behavioral amendment.
+check: PASS 2/2
+
+### N02 replan 1 · 2026-11-03
+plan: REPLANNED
+- cause: brief asked the SPEC bullet to state D1-D6 but restated only D1-D5
+- brief now restates D6 (API ends_on, end note text and hooks; SPEC text only, N03 builds it) and D9 with the exact SPEC lines it overrides (SPEC.md:136, SPEC.md:267 averaging, apportioning and payments shape)
+- C4 reworded to check D1-D6 and the three overrides
+
+### N02 try 1 · 2026-11-03
+exec: DONE · 2216 tests passed; targeted 275 passed; ruff check and changed-file formatting passed
+- Shared exact monthly-rate helper drives fixed costs and breakdown; adds ends_on and current-rate regression coverage.
+- Meter-linked sources retain calendar-year planning; SPEC §13 documents D1-D6 and overridden rules.
+check: PASS 2/2
+verify: PASS

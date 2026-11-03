@@ -47,9 +47,8 @@ def _insurance() -> FixedSource:
 def test_fixed_costs_water_example_monthly_equivalent():
     costs = fixed_costs((_water(),), date(2026, 9, 23))
 
-    # Sep 2026 .. Aug 2027; Sep 15 counts although it is already paid.
-    # 2 * 24000 + 4 * 26000 = 152000; 152000 / 12 = 12666.67
-    assert costs.monthly_equivalent_cents == 12667
+    # Current bimonthly rate: 24000 / 2, regardless of the future pause.
+    assert costs.monthly_equivalent_cents == 12000
     assert costs.rows == (FixedCostRow("Water", 15, 2, 24000, date(2026, 11, 15)),)
     assert costs.cycles == ()
 
@@ -64,8 +63,8 @@ def test_fixed_costs_rows_sorted_by_day_then_name_and_annual_month_stands_out():
         FixedCostRow("Rent", 1, 1, 100000, date(2026, 10, 1)),
         FixedCostRow("Water", 15, 2, 24000, date(2026, 11, 15)),
     )
-    # (152000 + 12 * 100000 + 120000) / 12 = 122666.67
-    assert costs.monthly_equivalent_cents == 122667
+    # Current rates: 12000 + 100000 + 10000.
+    assert costs.monthly_equivalent_cents == 122000
 
 
 def test_fixed_costs_paused_row_shows_the_next_period():

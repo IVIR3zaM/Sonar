@@ -376,7 +376,7 @@ def test_full_dashboard_row_scoped(tmp_path):
         assert cents(page.select_one("#overdraft-limit")) == -50_000
         assert _runway(page) == _projection(page)
 
-        assert cents(page.select_one("#monthly-equivalent")) == 53_333
+        assert cents(page.select_one("#monthly-equivalent")) == 60_000
         assert records(page.select_one("#fixed-costs")) == [
             {
                 "name": "Rent",

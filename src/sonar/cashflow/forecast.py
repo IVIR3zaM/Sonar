@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+from fractions import Fraction
 from typing import Literal
 
 from sonar.cashflow import payday
@@ -17,7 +18,7 @@ from sonar.recurring import schedule
 from sonar.recurring.detect import Row
 from sonar.recurring.schedule import Occurrence, SchedulePeriod
 
-# The monthly equivalent averages the plan over a year, so yearly payments count.
+# Meter-linked sources average planned supplier and own dates over a year.
 EQUIVALENT_MONTHS = 12
 ACTUAL_CYCLES = 6
 FORECAST_CYCLES = 6
@@ -91,6 +92,7 @@ class FixedCosts:
 class BreakdownPayment:
     name: str
     monthly_cents: int
+    ends_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -201,13 +203,13 @@ def traffic_light(p: Projection, limit_cents: int) -> Literal["green", "yellow",
 
 
 def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
-    """Monthly equivalent and one row per current payment; no pay cycles yet.
+    """Current monthly rates and one row per payment; no pay cycles yet.
 
     The pay cycles need a salary day, so the caller adds them with `cycle_costs`.
     """
-    total = sum(_year_total(source, today) for source in sources)
+    total = sum((_monthly_rate(source, today)[0] for source in sources), Fraction())
     # Integer round half up; totals are never negative, so this is exact.
-    monthly_equivalent = (total * 2 + EQUIVALENT_MONTHS) // (EQUIVALENT_MONTHS * 2)
+    monthly_equivalent = (total + Fraction(1, 2)) // 1
     rows = [row for source in sources if (row := _row(source, today)) is not None]
     return FixedCosts(
         monthly_equivalent_cents=monthly_equivalent,
@@ -217,26 +219,27 @@ def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
 
 
 def fixed_breakdown(labelled: Sequence[tuple[str, FixedSource]], today: date) -> FixedBreakdown:
-    """Apportion the monthly equivalent across payments and their caller-supplied labels."""
+    """Apportion exact current monthly rates across payments and caller-supplied labels."""
     planned = [
-        (label, source.name, year_cents)
+        (label, source.name, amount, ends_on)
         for label, source in labelled
-        if (year_cents := _year_total(source, today)) > 0
+        for amount, ends_on in [_monthly_rate(source, today)]
+        if amount > 0
     ]
-    year_total = sum(cents for _, _, cents in planned)
-    total = (year_total * 2 + EQUIVALENT_MONTHS) // (EQUIVALENT_MONTHS * 2)
-    monthly = [cents // EQUIVALENT_MONTHS for _, _, cents in planned]
+    exact_total = sum((amount for _, _, amount, _ in planned), Fraction())
+    total = (exact_total + Fraction(1, 2)) // 1
+    monthly = [amount // 1 for _, _, amount, _ in planned]
     remainder_order = sorted(
         range(len(planned)),
-        key=lambda i: (-(planned[i][2] % EQUIVALENT_MONTHS), planned[i][1]),
+        key=lambda i: (-(planned[i][2] % 1), planned[i][1]),
     )
     # Allocate the rounded total's leftover cents without rounding every payment up.
     for index in remainder_order[: total - sum(monthly)]:
         monthly[index] += 1
 
     grouped: dict[str, list[BreakdownPayment]] = {}
-    for (label, name, _), cents in zip(planned, monthly, strict=True):
-        grouped.setdefault(label, []).append(BreakdownPayment(name, cents))
+    for (label, name, _, ends_on), cents in zip(planned, monthly, strict=True):
+        grouped.setdefault(label, []).append(BreakdownPayment(name, cents, ends_on))
     groups = []
     for name, payments in grouped.items():
         group_total = sum(payment.monthly_cents for payment in payments)
@@ -274,13 +277,27 @@ def _fixed_debits(rows: Sequence[Row], category_types: dict[str, str]) -> list[t
     ]
 
 
-def _year_total(source: FixedSource, today: date) -> int:
-    """One source's planned cents in the 12 calendar months from today's month."""
-    first = today.replace(day=1)
-    end = schedule.add_months(first, EQUIVALENT_MONTHS, 1) - timedelta(days=1)
-    # No last_paid filter: this averages the plan, so a payment already made
-    # this month still belongs to this month.
-    return sum(occurrence.amount_cents for occurrence in _planned(source, first, end))
+def _monthly_rate(source: FixedSource, today: date) -> tuple[Fraction, date | None]:
+    """Current terms avoid diluting debts by their remaining months; meters keep planned dates."""
+    horizon = schedule.add_months(today, EQUIVALENT_MONTHS, today.day)
+    latest = max(source.periods, key=lambda p: p.starts_on, default=None)
+    ends_on = latest.until if latest is not None else None
+    if ends_on is not None and ends_on > horizon:
+        ends_on = None
+    if source.supplier is not None:
+        first = today.replace(day=1)
+        end = schedule.add_months(first, EQUIVALENT_MONTHS, 1) - timedelta(days=1)
+        # Include already-paid occurrences: this figure represents the whole plan.
+        cents = sum(occurrence.amount_cents for occurrence in _planned(source, first, end))
+        return Fraction(cents, EQUIVALENT_MONTHS), ends_on
+    valid = [p for p in source.periods if p.is_valid_on(today)]
+    period = max(valid, key=lambda p: p.starts_on, default=None)
+    if period is None:
+        first_period = min(source.periods, key=lambda p: p.starts_on, default=None)
+        if first_period is None or not today < first_period.starts_on <= horizon:
+            return Fraction(), ends_on
+        period = first_period
+    return Fraction(period.amount_cents, period.interval_months), ends_on
 
 
 def _planned(source: FixedSource, start: date, end: date) -> list[Occurrence]:

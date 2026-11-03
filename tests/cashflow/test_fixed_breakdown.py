@@ -27,7 +27,7 @@ def test_mixed_schedules_apportion_to_monthly_equivalent_and_sort_groups_and_pay
         ),
         None,
     )
-    paused = FixedSource("Paused", (SchedulePeriod(date(2027, 9, 1), None, 100, 1, 1),), None)
+    paused = FixedSource("Paused", (SchedulePeriod(date(2027, 9, 24), None, 100, 1, 1),), None)
     labelled = (
         ("Utilities", _source("Quarterly", 101, 3)),
         ("Loans", ending),
@@ -44,18 +44,18 @@ def test_mixed_schedules_apportion_to_monthly_equivalent_and_sort_groups_and_pay
         == fixed_costs(tuple(source for _, source in labelled), TODAY).monthly_equivalent_cents
     )
     assert result == FixedBreakdown(
-        1289,
+        1297,
         5,
         (
             BreakdownGroup("Housing", 1200, 93, (BreakdownPayment("Rent", 1200),)),
             BreakdownGroup(
                 "Utilities",
                 84,
-                7,
+                6,
                 (BreakdownPayment("Bimonthly", 50), BreakdownPayment("Quarterly", 34)),
             ),
+            BreakdownGroup("Loans", 10, 1, (BreakdownPayment("Debt", 10, date(2026, 11, 30)),)),
             BreakdownGroup("Insurance", 3, 0, (BreakdownPayment("Annual", 3),)),
-            BreakdownGroup("Loans", 2, 0, (BreakdownPayment("Debt", 2),)),
         ),
     )
     assert sum(group.total_cents for group in result.groups) == result.total_cents
@@ -112,7 +112,7 @@ def test_empty_breakdown_and_payment_rounding_to_zero_have_zero_share():
     )
 
 
-def test_paused_months_only_count_planned_occurrences():
+def test_future_pause_does_not_dilute_current_rate():
     source = FixedSource(
         "Paused",
         (
@@ -124,7 +124,7 @@ def test_paused_months_only_count_planned_occurrences():
 
     result = fixed_breakdown((("Other", source),), TODAY)
 
-    assert result.total_cents == 40
+    assert result.total_cents == 120
     assert result.total_cents == fixed_costs((source,), TODAY).monthly_equivalent_cents
 
 
@@ -146,3 +146,107 @@ def test_supplier_dates_replace_own_occurrences_inside_the_span():
 
     assert result.total_cents == 90
     assert result.total_cents == fixed_costs((source,), TODAY).monthly_equivalent_cents
+
+
+def test_installment_keeps_current_rate_and_reports_final_payment_date():
+    last_date = date(2027, 3, 1)
+    source = FixedSource(
+        "Installment",
+        (
+            SchedulePeriod(date(2026, 9, 1), date(2027, 2, 28), 5518, 1, 1),
+            SchedulePeriod(last_date, last_date, 2000, 1, 1),
+        ),
+        TODAY,
+    )
+
+    result = fixed_breakdown((("Loans", source),), TODAY)
+
+    assert result.groups[0].payments == (BreakdownPayment("Installment", 5518, last_date),)
+    assert result.total_cents == fixed_costs((source,), TODAY).monthly_equivalent_cents == 5518
+
+
+def test_current_rate_uses_latest_started_valid_period_and_ignores_future_changes():
+    source = FixedSource(
+        "Changing",
+        (
+            SchedulePeriod(date(2026, 1, 1), None, 100, 1, 1),
+            SchedulePeriod(date(2026, 9, 1), None, 300, 1, 1),
+            SchedulePeriod(date(2026, 10, 1), None, 900, 1, 1),
+        ),
+        None,
+    )
+
+    assert fixed_breakdown((("Other", source),), TODAY).total_cents == 300
+    assert fixed_costs((source,), TODAY).monthly_equivalent_cents == 300
+
+
+def test_paused_ended_and_far_future_sources_are_omitted():
+    sources = (
+        FixedSource(
+            "Paused",
+            (
+                SchedulePeriod(date(2026, 1, 1), date(2026, 8, 31), 100, 1, 1),
+                SchedulePeriod(date(2026, 10, 1), None, 200, 1, 1),
+            ),
+            None,
+        ),
+        FixedSource(
+            "Ended", (SchedulePeriod(date(2026, 1, 1), date(2026, 9, 1), 100, 1, 1),), None
+        ),
+        FixedSource("Far future", (SchedulePeriod(date(2027, 9, 24), None, 100, 1, 1),), None),
+        FixedSource("Paid off", (), None),
+    )
+
+    assert fixed_breakdown(tuple(("Other", s) for s in sources), TODAY) == FixedBreakdown(0, 0, ())
+    assert fixed_costs(sources, TODAY).monthly_equivalent_cents == 0
+
+
+def test_first_future_period_counts_at_the_twelve_month_boundary():
+    source = FixedSource(
+        "Future",
+        (
+            SchedulePeriod(date(2027, 9, 23), date(2027, 9, 23), 3001, 3, 23),
+            SchedulePeriod(date(2027, 10, 23), None, 9000, 3, 23),
+        ),
+        None,
+    )
+
+    assert fixed_breakdown((("Other", source),), TODAY).total_cents == 1000
+    assert fixed_costs((source,), TODAY).monthly_equivalent_cents == 1000
+
+
+def test_exact_mixed_intervals_round_once_and_apportion_largest_remainders():
+    sources = (
+        _source("Quarterly", 3001, 3),
+        _source("Five months", 4, 5),
+        _source("Annual", 5, 12),
+    )
+
+    result = fixed_breakdown(tuple(("Other", s) for s in sources), TODAY)
+
+    # 3001/3 + 4/5 + 5/12 = 1001.55, rounded once to 1002.
+    assert result.total_cents == fixed_costs(sources, TODAY).monthly_equivalent_cents == 1002
+    assert result.groups[0].payments == (
+        BreakdownPayment("Quarterly", 1000),
+        BreakdownPayment("Annual", 1),
+        BreakdownPayment("Five months", 1),
+    )
+
+
+def test_end_note_includes_boundary_but_omits_thirteen_months_and_open_ended():
+    sources = tuple(
+        FixedSource(name, (SchedulePeriod(date(2026, 1, 1), until, 100, 1, 1),), None)
+        for name, until in (
+            ("Boundary", date(2027, 9, 23)),
+            ("Later", date(2027, 10, 23)),
+            ("Open", None),
+        )
+    )
+
+    result = fixed_breakdown(tuple(("Other", s) for s in sources), TODAY)
+
+    assert result.groups[0].payments == (
+        BreakdownPayment("Boundary", 100, date(2027, 9, 23)),
+        BreakdownPayment("Later", 100),
+        BreakdownPayment("Open", 100),
+    )

@@ -56,9 +56,9 @@ SPEC §11 and §12.
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | card merchant series keys | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N03 | card series sync, fixture and drafts | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N03 | card series sync, fixture and drafts | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
+| N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 1 | 0 | VERIFYING | |
 | N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N07 | visual check | gate | N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
@@ -271,3 +271,20 @@ verify: PASS
 
 ### N02 try 1 · 2026-11-03
 verify: PASS
+
+### N03 try 1 · 2026-11-03
+exec: DONE · 2208 passed; ruff check clean; changed Python files formatted
+- Added synthetic card CSV and five tests covering monthly detection, latest amount, excluded grocer and one-offs, preserved card edits and locked non-card names.
+- Card draft rules use the merchant purpose; non-card matching unchanged. Focused draft and card tests: 21 passed.
+check: PASS 2/2
+
+### N05 try 1 · 2026-11-03
+exec: DONE · 2208 passed; ruff check and format clean; CSS reproducibility passed
+- Rebuilt the card as equation, composition and six-cycle zones; retained hooks and hint breakdown; rebuilt sonar.css.
+- Added failing-first dashboard comparisons, positive and negative wording, visible share bars, 3/7 group disclosure and debt-ending coverage; kept cycle table behind Show as table.
+
+### N03 try 1 · 2026-11-03
+verify: PASS
+
+### N05 try 1 · 2026-11-03
+check: PASS 3/3

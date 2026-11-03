@@ -71,6 +71,9 @@ def draft_prefill(
 
 
 def _match_rule(detection_key: str, latest: ParsedTransaction) -> MatchRule | None:
+    if detection_key.startswith("card:"):
+        merchant = " ".join(latest.purpose.partition("//")[0].split())
+        return MatchRule("purpose", merchant)
     if detection_key.startswith("mandate:") and latest.mandate_ref:
         return MatchRule("mandate", latest.mandate_ref)
     # A debit without a counterparty has nothing a debt could match on.

@@ -36,6 +36,16 @@ def _expected_board(db_path: Path):
         conn.close()
 
 
+def test_fixed_breakdown_matches_dashboard_without_salary_day(tmp_path):
+    with _client(tmp_path) as client:
+        body = client.get("/api/dashboard").json()
+        board = _expected_board(client.db_path)
+
+    assert board.salary_day is None
+    assert isinstance(body["fixed_breakdown"], dict)
+    assert body["fixed_breakdown"] == _jsonable(board.fixed_breakdown)
+
+
 def test_bare_minimum_matches_dashboard_without_a_balance(tmp_path):
     db_path = tmp_path / "bare.db"
     seed(

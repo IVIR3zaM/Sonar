@@ -48,7 +48,7 @@ and §12.
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | breakdown math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
-| N03 | dashboard and API wiring | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N03 | dashboard and API wiring | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N04 | breakdown subsection | exec | N03 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
@@ -106,27 +106,42 @@ Done when:
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 dashboard and API wiring
-Do: Add `fixed_breakdown: FixedBreakdown` to `Dashboard` (`src/sonar/cashflow/service.py:54`) and fill it in
-  `load_dashboard` (`service.py:139`) from the same sources and estimate date as `fixed_costs`, in both the early
-  return and the full path. Label every source per D3 with the same linked-payment exclusion as `_fixed_sources`
-  (`service.py:489`); derive sources and labels from one place rather than repeating the exclusion. `/api/dashboard`
-  serializes it through `_jsonable` (`src/sonar/web/api/cashflow.py:57`) unchanged.
-Context: D3 recurring payment -> its `category` name; debt schedule -> category of its first `linked_payments` entry
-  that has one, else "Loans" for `Loan` and "Installments" for `Installment` (`src/sonar/debts/model.py:49,72`);
-  other uncategorized -> "Other". D5 top-level key, always an object, filled with or without salary day or balance.
-  Fixtures: `tests/cashflow/test_service_bare_minimum.py:23-35`, helpers in `tests/cashflow/test_service.py`.
-Read: `src/sonar/cashflow/service.py`, `src/sonar/debts/store.py:50-90`, `tests/cashflow/test_service_bare_minimum.py`, `tests/web/test_api_dashboard.py:39-75`
+Do: Add `fixed_breakdown: forecast.FixedBreakdown` to `Dashboard` (`src/sonar/cashflow/service.py:54`) and set it in
+  `load_dashboard` (`service.py:139`) to `forecast.fixed_breakdown(labelled, estimate_date)` before the early return
+  (`service.py:189`), so both paths carry it. Replace `_fixed_sources` (`service.py:489`) with one
+  `_labelled_fixed_sources(payments, views, txs, links) -> tuple[tuple[str, FixedSource], ...]` that keeps the
+  linked-payment exclusion and attaches each source's D3 label; `load_dashboard:155` and `load_payoff:114` take the
+  plain sources from it (`tuple(source for _, source in labelled)`), so the exclusion stays in one place.
+  `/api/dashboard` serializes the new field through `_jsonable` (`src/sonar/web/api/cashflow.py:57`) unchanged.
+Context: Domain API, done and tested (`src/sonar/cashflow/forecast.py:91-109,219-256`):
+  `fixed_breakdown(labelled: Sequence[tuple[str, FixedSource]], today: date) -> FixedBreakdown`;
+  `FixedBreakdown(total_cents, count, groups)`, `BreakdownGroup(name, total_cents, share_percent, payments)`,
+  `BreakdownPayment(name, monthly_cents)`; its total equals `fixed_costs(...).monthly_equivalent_cents` for the same
+  sources and date; zero-year sources are dropped. `FixedSource` is at `forecast.py:38`.
+  D3 labels: recurring payment -> `RecurringPayment.category` (`src/sonar/recurring/store.py:38`), else "Other";
+  debt schedule -> `category` of the first `view.linked_payments` entry that has one (`src/sonar/debts/store.py:50-54`),
+  else "Loans" for a `Loan` and "Installments" for an `Installment` (`src/sonar/debts/model.py:49,72`).
+  D5 `/api/dashboard` has a top-level `fixed_breakdown` object, filled with or without salary day or balance.
+  Helpers: `add_manual(conn, name, category, period)` (`src/sonar/recurring/store.py:69`), `_monthly`,
+  `_insert_detected`, `_insert_tx`, `_installment` in `tests/cashflow/test_service.py:44-128`; loan fixture
+  `tests/cashflow/test_service.py:298-308`; linking via mandate as `tests/cashflow/test_service_bare_minimum.py:44-47`.
+Read: `src/sonar/cashflow/service.py:54-200,476-530`, `src/sonar/cashflow/forecast.py:38-44,91-109,219-256`,
+  `tests/cashflow/test_service_bare_minimum.py:1-60`, `tests/cashflow/test_service.py:38-130,295-330`,
+  `tests/web/test_api_dashboard.py:1-75`
 Write: `src/sonar/cashflow/service.py`, `tests/cashflow/test_service_fixed_breakdown.py`, `tests/web/test_api_dashboard.py`
-Test first: a DB with a categorized recurring payment, an uncategorized one, a loan whose linked payment has no
-  category and an installment with no link yields groups named by category, "Other", "Loans" and "Installments",
-  whose totals sum to `board.fixed_costs.monthly_equivalent_cents`, and the linked payment appears once.
+Test first: without a salary day, a DB with a categorized manual payment, an uncategorized one, a loan linked to an
+  uncategorized detected payment, an installment linked to a categorized one and an installment with no link yields
+  groups named by category, "Other", "Loans" and "Installments"; group totals sum to
+  `board.fixed_costs.monthly_equivalent_cents`; each linked payment appears only under its debt's name.
 Done when:
 - C1 [cmd] `uv run pytest -q tests/cashflow/test_service_fixed_breakdown.py tests/web/test_api_dashboard.py`
-- C2 [review] the service test covers each D3 label, the linked payment counted once, the sum rule, and the
-  breakdown filled without a salary day
-- C3 [review] an API test asserts `body["fixed_breakdown"] == _jsonable(board.fixed_breakdown)` and that it is an
-  object without a salary day
-- C4 [review] the linked-payment exclusion exists once in `service.py`; no SQL outside stores
+- C2 [review] the service test covers each D3 label (category, "Other", "Loans", "Installments", a debt taking its
+  linked payment's category), each linked payment counted once, the sum rule, and the breakdown filled without a
+  salary day
+- C3 [review] an API test asserts `body["fixed_breakdown"] == _jsonable(board.fixed_breakdown)` and that it is a
+  dict without a salary day
+- C4 [review] the linked-payment exclusion exists once in `service.py`; `load_payoff` uses the same helper; no SQL
+  outside stores
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N04 breakdown subsection
@@ -195,5 +210,20 @@ plan: REPLANNED
 exec: DONE · 2112 passed; ruff check and format clean
 - Added frozen breakdown models, largest-remainder monthly allocation, grouped shares and ordering, and shared per-source yearly totals.
 - Added seven domain tests and the SPEC §13 Fixed costs breakdown bullet; retained payments with positive yearly totals even when their monthly amount rounds to zero.
+check: PASS 2/2
+verify: PASS
+
+### N03 try 1 · 2026-11-03
+exec: BLOCKED · Brief omits the fixed-breakdown domain API and its source from Read; need its type and callable signature to wire Dashboard without guessing.
+
+### N03 replan 1 · 2026-11-03
+plan: REPLANNED
+- cause: brief did not name the N02 domain API (fixed_breakdown signature, dataclasses) nor put forecast.py in Read
+- brief now cites forecast.py:91-109,219-256 with the exact signature and fields, names the single _labelled_fixed_sources helper shared by load_dashboard and load_payoff, and adds the linked-category debt case to the test
+
+### N03 try 1 · 2026-11-03
+exec: DONE · 2117 passed; ruff check and format clean
+- Added labelled fixed sources shared by dashboard and payoff; populated fixed_breakdown before setup returns.
+- Covered all D3 labels, debt deduplication, total equality across salary and balance states, and API serialization; observed five failures before implementation.
 check: PASS 2/2
 verify: PASS

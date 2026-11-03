@@ -79,6 +79,7 @@ class Dashboard:
     # Best recent salary plus recurring income per month; None without salary history.
     expected_income: ExpectedIncome | None
     fixed_costs: FixedCosts
+    fixed_breakdown: forecast.FixedBreakdown
     bare_minimum: BareMinimum | None
     # Quoted so the category-string guard does not mistake setup hints for groups.
     bare_minimum_hint: "Literal['salary_day', 'income', 'lights_on'] | None"  # noqa: UP037
@@ -111,7 +112,9 @@ def load_payoff(conn: sqlite3.Connection, today: date) -> Payoff:
     views = debt_overview(conn, estimate_date)
     payments = list_payments(conn)
     links = _advance_links(payments, views, meter_cashflows(conn, estimate_date))
-    rows = forecast.fixed_costs(_fixed_sources(payments, views, txs, links), estimate_date).rows
+    labelled = _labelled_fixed_sources(payments, views, txs, links)
+    sources = tuple(source for _, source in labelled)
+    rows = forecast.fixed_costs(sources, estimate_date).rows
     now_min, now_max = forecast.fixed_range(rows)
     open_views = [view for view in views if not view.status.paid_off]
     ladder = payoff_ladder([_ladder_debt(view) for view in open_views], now_min, now_max)
@@ -152,7 +155,8 @@ def load_dashboard(
     payments = list_payments(conn)
     cashflows = meter_cashflows(conn, estimate_date)
     links = _advance_links(payments, views, cashflows)
-    sources = _fixed_sources(payments, views, [tx for tx, _ in rows], links)
+    labelled = _labelled_fixed_sources(payments, views, [tx for tx, _ in rows], links)
+    sources = tuple(source for _, source in labelled)
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
     utilities = settlement_summaries(conn, estimate_date)
     fixed_costs = _fixed_costs(sources, rows, category_types, settings.salary_day, estimate_date)
@@ -180,6 +184,7 @@ def load_dashboard(
         light=None,
         expected_income=None,
         fixed_costs=fixed_costs,
+        fixed_breakdown=forecast.fixed_breakdown(labelled, estimate_date),
         bare_minimum=minimum,
         bare_minimum_hint=minimum_hint,
         debts=remaining,
@@ -486,12 +491,12 @@ def _inflows(
     return forecast.fixed_due(sources, start, end)
 
 
-def _fixed_sources(
+def _labelled_fixed_sources(
     payments: list[RecurringPayment],
     views: list[DebtView],
     txs: list[ParsedTransaction],
     links: dict[int, AdvanceLink],
-) -> tuple[FixedSource, ...]:
+) -> tuple[tuple[str, FixedSource], ...]:
     """Recurring payments plus debt schedules, with each real payment counted once.
 
     A recurring payment linked to a debt is the same money (SPEC §7), and the
@@ -500,12 +505,21 @@ def _fixed_sources(
     """
     linked_ids = _linked_payment_ids(views)
     recurring = [
-        _recurring_source(payment, links.get(payment.id))
+        (payment.category or "Other", _recurring_source(payment, links.get(payment.id)))
         for payment in payments
         if payment.id not in linked_ids
     ]
     # A paid-off debt's schedule is empty, which is how it drops out (SPEC §7).
-    owed = [_debt_source(view, txs) for view in views]
+    owed = [
+        (
+            next(
+                (payment.category for payment in view.linked_payments if payment.category),
+                "Installments" if isinstance(view.debt, Installment) else "Loans",
+            ),
+            _debt_source(view, txs),
+        )
+        for view in views
+    ]
     return tuple(recurring + owed)
 
 

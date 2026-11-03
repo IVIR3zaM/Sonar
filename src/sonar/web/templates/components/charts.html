@@ -296,3 +296,56 @@
   {%- endfor %}
 </g>
 {%- endmacro %}
+
+{% macro need_bar(fixed, lights, income) %}
+{%- set width = 300 -%}
+{%- set g = charts.need_bar(fixed, lights, income, width) -%}
+{%- set summary = "Bare minimum: fixed " ~ fixed|eur ~ ", lights on " ~ lights|eur ~ ", income " ~ income|eur -%}
+<svg role="img" aria-label="{{ summary }}" viewBox="-1 0 {{ width + 2 }} 32"
+     preserveAspectRatio="none" class="block h-8 w-full">
+  <title>{{ summary }}</title>
+  <rect data-part="fixed" data-cents="{{ fixed }}" x="0" y="10" width="{{ g.fixed_width }}" height="12"
+        class="fill-sky-500 dark:fill-sky-400">
+    <title>Fixed {{ fixed|eur }}</title>
+  </rect>
+  <rect data-part="lights" data-cents="{{ lights }}" x="{{ g.fixed_width }}" y="10" width="{{ g.lights_width }}" height="12"
+        class="fill-amber-500/60 dark:fill-amber-400/60">
+    <title>Keep the lights on {{ lights|eur }}</title>
+  </rect>
+  <line data-part="income" data-cents="{{ income }}" x1="{{ g.income_x }}" x2="{{ g.income_x }}" y1="0" y2="32"
+        stroke="currentColor" stroke-width="2">
+    <title>Income {{ income|eur }}</title>
+  </line>
+</svg>
+{%- endmacro %}
+
+{% macro residual_chart(cycles) %}
+{%- set height = 40 -%}
+{%- set slot = 24 -%}
+{%- set values = cycles|map(attribute="residual_cents")|list -%}
+{%- set bars = charts.residual_bars(values, height) -%}
+{%- set tightest = values|min if values else none -%}
+{%- set width = [cycles|length * slot, slot]|max -%}
+{%- set summary = "Income left after the bare minimum per pay cycle" -%}
+<svg role="img" aria-label="{{ summary }}" viewBox="0 -1 {{ width }} {{ height * 2 + 2 }}" class="block h-44 w-full">
+  <title>{{ summary }}</title>
+  <line data-part="zero" x1="0" x2="{{ width }}" y1="{{ height }}" y2="{{ height }}" stroke="currentColor" stroke-width="1" />
+  {%- for c in cycles %}
+  {%- set bar = bars[loop.index0] %}
+  <rect data-cents="{{ c.residual_cents }}" {% if c.residual_cents == tightest %}data-max="true"{% endif %}
+        x="{{ loop.index0 * slot + 4 }}" y="{{ bar.y }}" width="{{ slot - 8 }}" height="{{ bar.height }}"
+        class="{{ 'fill-red-600 dark:fill-red-400' if bar.sign < 0 else 'fill-sky-500 dark:fill-sky-400' }}">
+    <title>{{ charts.cycle_label(c.start, c.end) }}: {{ c.residual_cents|eur }} left</title>
+  </rect>
+  {%- endfor %}
+</svg>
+{%- endmacro %}
+
+{% macro share_bar(percent) %}
+{%- set summary = "Debt share of the bare minimum: " ~ percent ~ "%" -%}
+<svg role="img" aria-label="{{ summary }}" viewBox="0 0 100 6" preserveAspectRatio="none" class="block h-4 w-full">
+  <title>{{ summary }}</title>
+  <rect x="0" y="0" width="100" height="6" class="fill-emerald-100 dark:fill-emerald-950" />
+  <rect data-part="share" x="0" y="0" width="{{ percent }}%" height="6" class="fill-sky-500 dark:fill-sky-400" />
+</svg>
+{%- endmacro %}

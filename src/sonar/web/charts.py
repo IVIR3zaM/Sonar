@@ -191,6 +191,42 @@ def bars(values: Sequence[int], width: int) -> list[int]:
     return _scale(values, width)
 
 
+@dataclass(frozen=True)
+class NeedBar:
+    fixed_width: int
+    lights_width: int
+    income_x: int
+
+
+def need_bar(fixed: int, lights: int, income: int, width: int) -> NeedBar:
+    """Need segments and income on one scale, preserving the rounded total width."""
+    need = fixed + lights
+    peak = max(need, income)
+    if not peak:
+        return NeedBar(0, 0, 0)
+    fixed_width = round(Fraction(fixed * width, peak))
+    need_width = round(Fraction(need * width, peak))
+    return NeedBar(fixed_width, need_width - fixed_width, round(Fraction(income * width, peak)))
+
+
+@dataclass(frozen=True)
+class ResidualBar:
+    y: int
+    height: int
+    sign: int
+
+
+def residual_bars(values: Sequence[int], height: int) -> list[ResidualBar]:
+    """Signed bars around y=height, with `height` pixels available on either side."""
+    peak = max((abs(value) for value in values), default=0)
+    result = []
+    for value in values:
+        size = round(Fraction(abs(value) * height, peak)) if peak else 0
+        sign = (value > 0) - (value < 0)
+        result.append(ResidualBar(height - size if value > 0 else height, size, sign))
+    return result
+
+
 def line_points(
     series: Sequence[Sequence[int]], width: int, height: int
 ) -> list[list[tuple[int, int]]]:

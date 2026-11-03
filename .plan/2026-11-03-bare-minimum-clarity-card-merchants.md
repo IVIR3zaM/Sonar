@@ -55,9 +55,9 @@ SPEC §11 and §12.
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | card merchant series keys | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N02 | card merchant series keys | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | VERIFYING | |
 | N03 | card series sync, fixture and drafts | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
-| N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
 | N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N07 | visual check | gate | N06 | -/sonnet | 0 | 0 | TODO | |
@@ -249,3 +249,25 @@ Done when:
 
 ### N01 try 1 · 2026-11-03
 check: PASS 6/6
+
+### N04 try 1 · 2026-11-03
+exec: DONE · 2199 passed; ruff check clean; 91 chart tests passed; formatting clean
+- Added integer need and signed residual geometry plus accessible need, residual and debt share SVG macros.
+- Residual zero is at height with equal space on either side; data-max marks minimum residual cycles. CSS rebuild matches tracked bundle.
+
+### N02 try 1 · 2026-11-03
+exec: DONE · 72 recurring tests passed; 2184 passed excluding parallel N04 tests; ruff check and changed-file format check passed
+- Added pure card merchant keys and latest merchant names; fallback keys unchanged; 20 new tests observed 8 fail before implementation.
+- Full Verify stopped at tests/web/test_charts_bare_minimum.py missing need_bar; D13 exemption applied using PYTEST_ADDOPTS=--ignore=tests/web/test_charts_bare_minimum.py.
+
+### N04 try 1 · 2026-11-03
+check: PASS 2/2
+
+### N02 try 1 · 2026-11-03
+check: PASS 2/2
+
+### N04 try 1 · 2026-11-03
+verify: PASS
+
+### N02 try 1 · 2026-11-03
+verify: PASS

@@ -47,7 +47,7 @@ and §12.
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
-| N02 | breakdown math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N02 | breakdown math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N03 | dashboard and API wiring | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N04 | breakdown subsection | exec | N03 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
@@ -71,12 +71,27 @@ Do: Add a pure `fixed_breakdown(labelled, today)` to `src/sonar/cashflow/forecas
   (`total_cents`, `count`, `groups`), `BreakdownGroup` (`name`, `total_cents`, `share_percent`, `payments`) and
   `BreakdownPayment` (`name`, `monthly_cents`). Split `_year_total` (`forecast.py:216`) so one per-source helper
   gives each source's 12-month planned cents and both functions use it. Append the SPEC §13 bullet.
-Context: D1 per-source 12-month planned total / 12, sources with a 0 total left out. D2 largest remainder: floor
-  each source's year cents / 12, give the leftover cents (round-half-up of the summed year cents / 12, as
-  `forecast.py:189`, minus the floors) one each to the largest remainders, ties by name; group total = sum of its
-  payments. D4 share percent half up, 0 for a 0 total. D7 groups by total desc then name, payments by monthly desc
-  then name. Labels arrive from the caller (D3 lives in N03). D9 SPEC §13 bullet "Fixed costs breakdown (§9, §12,
-  API)" after `SPEC.md:266`, stating D1-D7. `today` stays a parameter; integer cents only.
+Context: Code uses D1, D2, D4, D7; labels arrive from the caller (D3 is coded in N03). The SPEC bullet states all of
+  D1-D7 below, in plain words.
+  D1 a payment's monthly amount = its planned occurrences in the 12 calendar months from the estimate date's month
+  (the Monthly equivalent's rule), / 12; a debt ending or a payment paused inside the year counts only its planned
+  months; a source with a 0 12-month total is left out.
+  D2 largest remainder: floor each source's year cents / 12; the leftover (round-half-up of the summed year cents
+  / 12, as `forecast.py:189`, minus the floors) goes one cent each to the largest remainders, ties by name; a group
+  total = sum of its payments, so groups sum exactly to the Monthly equivalent.
+  D3 group label: a recurring payment's category name (whatever its group); a debt schedule takes the category of
+  its first linked payment that has one, else "Loans" (loan) or "Installments" (installment); any other
+  uncategorized payment goes under "Other".
+  D4 share = group total × 100 / breakdown total, integer percent rounded half up, 0 when the total is 0; shares
+  are not forced to add to 100.
+  D5 the subsection closes the Bare minimum card in both its hint and numbers states and is absent when no payment
+  is listed; `/api/dashboard` has a top-level `fixed_breakdown` {`total_cents`, `count`, `groups`: [{`name`,
+  `total_cents`, `share_percent`, `payments`: [{`name`, `monthly_cents`}]}]}, always an object.
+  D6 each group is a collapsed `<details>` whose summary shows name, share and total, with a compact name-and-amount
+  list of its payments inside; a header line states the total a month and the payment count.
+  D7 groups by total desc then name; payments by monthly desc then name.
+  D9 one bullet "Fixed costs breakdown (§9, §12, API)" appended after `SPEC.md:266`. `today` stays a parameter;
+  integer cents only.
 Read: `src/sonar/cashflow/forecast.py`, `tests/cashflow/test_forecast.py`, `SPEC.md:225-266`
 Write: `src/sonar/cashflow/forecast.py`, `tests/cashflow/test_fixed_breakdown.py`, `SPEC.md`
 Test first: with a monthly, a 2-monthly, a yearly, an odd-cent quarterly, a debt-like source ending inside the
@@ -87,7 +102,7 @@ Done when:
 - C2 [review] `tests/cashflow/test_fixed_breakdown.py` covers the sum-to-Monthly-equivalent rule with remainders
   that need apportioning, group sums, the zero-total exclusion, share rounding and the 0-total share, and D7 order
 - C3 [review] `fixed_costs` and `fixed_breakdown` share one per-source year-total helper; no date.today(), no float
-- C4 [review] SPEC.md has one new §13 bullet stating D1-D7 and the `/api/dashboard` `fixed_breakdown` shape of D5
+- C4 [review] SPEC.md has one new §13 bullet stating D1-D7 as given in Context, including the D5 API shape
 - C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## N03 dashboard and API wiring
@@ -167,3 +182,18 @@ Done when:
 
 ### N01 try 1 · 2026-11-03
 check: PASS 5/5
+
+### N02 try 1 · 2026-11-03
+exec: BLOCKED · C4 requires a SPEC bullet stating D1-D7, but the brief omits D3 label rules and D6 behavior; provide those decisions to document them without guessing.
+
+### N02 replan 1 · 2026-11-03
+plan: REPLANNED
+- cause: C4 asked the SPEC bullet to state D1-D7 but the brief restated only D1, D2, D4, D7
+- brief now restates D3, D5, D6 in full for the SPEC text; code scope unchanged (labels still from caller, D3 coded in N03)
+
+### N02 try 1 · 2026-11-03
+exec: DONE · 2112 passed; ruff check and format clean
+- Added frozen breakdown models, largest-remainder monthly allocation, grouped shares and ordering, and shared per-source yearly totals.
+- Added seven domain tests and the SPEC §13 Fixed costs breakdown bullet; retained payments with positive yearly totals even when their monthly amount rounds to zero.
+check: PASS 2/2
+verify: PASS

@@ -87,6 +87,27 @@ class FixedCosts:
     cycles: tuple[CycleCost, ...]
 
 
+@dataclass(frozen=True)
+class BreakdownPayment:
+    name: str
+    monthly_cents: int
+
+
+@dataclass(frozen=True)
+class BreakdownGroup:
+    name: str
+    total_cents: int
+    share_percent: int
+    payments: tuple[BreakdownPayment, ...]
+
+
+@dataclass(frozen=True)
+class FixedBreakdown:
+    total_cents: int
+    count: int
+    groups: tuple[BreakdownGroup, ...]
+
+
 def fixed_due(sources: tuple[FixedSource, ...], start: date, end: date) -> list[DueItem]:
     """Fixed payments still expected within [start, end]."""
     items = [
@@ -184,7 +205,7 @@ def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
 
     The pay cycles need a salary day, so the caller adds them with `cycle_costs`.
     """
-    total = _year_total(sources, today)
+    total = sum(_year_total(source, today) for source in sources)
     # Integer round half up; totals are never negative, so this is exact.
     monthly_equivalent = (total * 2 + EQUIVALENT_MONTHS) // (EQUIVALENT_MONTHS * 2)
     rows = [row for source in sources if (row := _row(source, today)) is not None]
@@ -192,6 +213,46 @@ def fixed_costs(sources: tuple[FixedSource, ...], today: date) -> FixedCosts:
         monthly_equivalent_cents=monthly_equivalent,
         rows=tuple(sorted(rows, key=lambda r: (r.day, r.name))),
         cycles=(),
+    )
+
+
+def fixed_breakdown(labelled: Sequence[tuple[str, FixedSource]], today: date) -> FixedBreakdown:
+    """Apportion the monthly equivalent across payments and their caller-supplied labels."""
+    planned = [
+        (label, source.name, year_cents)
+        for label, source in labelled
+        if (year_cents := _year_total(source, today)) > 0
+    ]
+    year_total = sum(cents for _, _, cents in planned)
+    total = (year_total * 2 + EQUIVALENT_MONTHS) // (EQUIVALENT_MONTHS * 2)
+    monthly = [cents // EQUIVALENT_MONTHS for _, _, cents in planned]
+    remainder_order = sorted(
+        range(len(planned)),
+        key=lambda i: (-(planned[i][2] % EQUIVALENT_MONTHS), planned[i][1]),
+    )
+    # Allocate the rounded total's leftover cents without rounding every payment up.
+    for index in remainder_order[: total - sum(monthly)]:
+        monthly[index] += 1
+
+    grouped: dict[str, list[BreakdownPayment]] = {}
+    for (label, name, _), cents in zip(planned, monthly, strict=True):
+        grouped.setdefault(label, []).append(BreakdownPayment(name, cents))
+    groups = []
+    for name, payments in grouped.items():
+        group_total = sum(payment.monthly_cents for payment in payments)
+        share = (group_total * 200 + total) // (total * 2) if total else 0
+        groups.append(
+            BreakdownGroup(
+                name,
+                group_total,
+                share,
+                tuple(sorted(payments, key=lambda payment: (-payment.monthly_cents, payment.name))),
+            )
+        )
+    return FixedBreakdown(
+        total,
+        len(planned),
+        tuple(sorted(groups, key=lambda group: (-group.total_cents, group.name))),
     )
 
 
@@ -213,15 +274,13 @@ def _fixed_debits(rows: Sequence[Row], category_types: dict[str, str]) -> list[t
     ]
 
 
-def _year_total(sources: tuple[FixedSource, ...], today: date) -> int:
-    """Fixed payments due in the 12 calendar months from today's month."""
+def _year_total(source: FixedSource, today: date) -> int:
+    """One source's planned cents in the 12 calendar months from today's month."""
     first = today.replace(day=1)
     end = schedule.add_months(first, EQUIVALENT_MONTHS, 1) - timedelta(days=1)
     # No last_paid filter: this averages the plan, so a payment already made
     # this month still belongs to this month.
-    return sum(
-        occurrence.amount_cents for source in sources for occurrence in _planned(source, first, end)
-    )
+    return sum(occurrence.amount_cents for occurrence in _planned(source, first, end))
 
 
 def _planned(source: FixedSource, start: date, end: date) -> list[Occurrence]:

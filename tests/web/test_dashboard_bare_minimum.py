@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sonar.cashflow.service import load_dashboard
 from sonar.db import connect
 from sonar.web.app import create_app
-from tests.html import cents, fields, records, soup
+from tests.html import cents, fields, records, soup, text
 from tests.seed import seed
 from tests.web.test_dashboard_page import (
     GROCERIES_TOML,
@@ -42,17 +42,39 @@ def _settings(client):
 
 
 @pytest.mark.parametrize("ending_debt", [True, False])
-def test_bare_minimum_matches_dashboard(tmp_path, ending_debt):
+@pytest.mark.parametrize("rent", ["500.00", "5000.00"])
+def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
     db_path = tmp_path / "test.db"
     _seed(db_path)
+    for month in (6, 7, 8):
+        _insert_debit(
+            db_path,
+            fingerprint=f"extras-{month}",
+            booking_date=f"2026-{month:02d}-05",
+            amount_cents=-20_000,
+            counterparty="Restaurant",
+        )
     with TestClient(create_app(db_path, today=_today)) as client:
         _settings(client)
+        assert (
+            client.post(
+                "/api/categories", json={"name": "Extras", "group": "occasional", "debt": False}
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/rules",
+                json={"category": "Extras", "counterparty": "Restaurant", "position": 1},
+            ).status_code
+            == 201
+        )
         assert (
             client.post(
                 "/recurring",
                 data={
                     "name": "Rent",
-                    "amount": "500.00",
+                    "amount": rent,
                     "interval_months": "1",
                     "day": "15",
                     "starts_on": "2026-01-15",
@@ -83,13 +105,76 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt):
         conn = connect(db_path)
         try:
             dashboard = load_dashboard(
-                conn, {"Salary": "income", "Groceries": "lights_on", "Dining": "occasional"}, TODAY
+                conn,
+                {
+                    "Salary": "income",
+                    "Groceries": "lights_on",
+                    "Dining": "occasional",
+                    "Extras": "occasional",
+                },
+                TODAY,
             )
         finally:
             conn.close()
 
     minimum = dashboard.bare_minimum
     assert minimum is not None
+    assert minimum.occasional_cents == 20_000
+    assert (minimum.residual_cents < 0) == (rent == "5000.00")
+    assert (minimum.occasional_margin_cents < 0) == (rent == "5000.00")
+    equation = page.select_one("#bare-minimum-equation")
+    assert equation is not None
+    assert fields(equation) == {
+        "income": minimum.income_cents,
+        "total": minimum.total_cents,
+        "cycle": fields(page.select_one("#bare-minimum"))["cycle"],
+        "residual": minimum.residual_cents,
+    }
+    summary = page.select_one("#bare-minimum-summary")
+    assert int(summary["data-residual"]) == minimum.residual_cents
+    assert int(summary["data-margin"]) == minimum.occasional_margin_cents
+    assert fields(summary) == {
+        "residual": minimum.residual_cents,
+        "occasional": minimum.occasional_cents,
+        "margin": minimum.occasional_margin_cents,
+    }
+    assert ("shortfall" in text(summary)) == (minimum.residual_cents < 0)
+    assert ("below" in text(summary)) == (minimum.occasional_margin_cents < 0)
+    assert [
+        el["id"]
+        for el in page.select(
+            "#bare-minimum-equation, #bare-minimum-bar, #bare-minimum-summary, "
+            "#bare-minimum-fixed, #bare-minimum-lights, #bare-minimum-chart, "
+            "#bare-minimum-cycles"
+        )
+    ] == [
+        "bare-minimum-equation",
+        "bare-minimum-bar",
+        "bare-minimum-summary",
+        "bare-minimum-fixed",
+        "bare-minimum-lights",
+        "bare-minimum-chart",
+        "bare-minimum-cycles",
+    ]
+    assert {
+        part["data-part"]: cents(part) for part in page.select("#bare-minimum-bar [data-cents]")
+    } == {
+        "fixed": minimum.cycle.fixed_cents,
+        "lights": minimum.cycle.lights_on_cents,
+        "income": minimum.income_cents,
+    }
+    gap = page.select_one("#bare-minimum-gap-note")
+    assert fields(gap) == {
+        "monthly": dashboard.fixed_costs.monthly_equivalent_cents,
+        "cycle": minimum.cycle.fixed_cents,
+    }
+    bars = page.select("#bare-minimum-chart rect[data-cents]")
+    assert [cents(bar) for bar in bars] == [cycle.residual_cents for cycle in minimum.cycles]
+    for bar, cycle in zip(bars, minimum.cycles, strict=True):
+        assert bar.has_attr("data-max") == (cycle.residual_cents == minimum.residual_cents)
+    table_details = page.select_one("#bare-minimum-cycles").find_parent("details")
+    assert table_details is not None and not table_details.has_attr("open")
+    assert text(table_details.select_one("summary")) == "Show as table"
     assert [el["id"] for el in page.select("#lights-on-card, #bare-minimum-card, #fixed-card")] == [
         "lights-on-card",
         "bare-minimum-card",
@@ -115,6 +200,8 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt):
     share = page.select_one("#bare-minimum-debt-share")
     assert int(share["data-percent"]) == minimum.debt_share_percent
     assert cents(share) == minimum.debt_cents
+    assert share.find_parent(id="bare-minimum-fixed") is not None
+    assert "debt" in text(share).lower()
     occasional = page.select_one("#bare-minimum-occasional")
     assert int(occasional["data-margin"]) == minimum.occasional_margin_cents
     assert cents(occasional) == minimum.occasional_cents
@@ -147,7 +234,9 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt):
             for drop in minimum.drops
         ]
     else:
-        assert page.select_one("#bare-minimum-no-drops") is not None
+        assert page.select_one("#bare-minimum-no-drops") is None
+        assert page.select_one("#bare-minimum-drops") is None
+        assert "Upcoming debt endings" not in text(page.select_one("#bare-minimum-card"))
 
 
 @pytest.mark.parametrize(

@@ -58,7 +58,7 @@ SPEC §11 and §12.
 | N02 | card merchant series keys | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N03 | card series sync, fixture and drafts | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 1 | 0 | VERIFYING | |
+| N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N07 | visual check | gate | N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
@@ -288,3 +288,12 @@ verify: PASS
 
 ### N05 try 1 · 2026-11-03
 check: PASS 3/3
+verify: FAIL C4
+- C4 src/sonar/web/templates/index.html - D11 new hooks #bare-minimum-bar, #bare-minimum-chart, #bare-minimum-gap-note do not exist (page uses #bare-minimum-need-bar, #bare-minimum-residual-chart, #bare-minimum-fixed-gap; tests assert those names) - expected the D11 hook names
+
+### N05 try 2 · 2026-11-03
+exec: DONE · 2208 passed; ruff check and format clean; CSS rebuild matches
+- Corrected D11 hooks in index.html and corresponding page assertions: bare-minimum-bar, bare-minimum-chart, bare-minimum-gap-note.
+- Preserved previous implementation; confirmed failing hook assertions before the template fix.
+check: PASS 3/3
+verify: PASS

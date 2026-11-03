@@ -5,7 +5,7 @@
 {% from "components/button.html" import button %}
 {% from "components/empty.html" import empty %}
 {% from "components/amount.html" import amount, date %}
-{% from "components/charts.html" import runway_bar, cycle_columns, category_bars %}
+{% from "components/charts.html" import runway_bar, cycle_columns, category_bars, need_bar, residual_chart, share_bar %}
 
 {#- Shared table styling; the wrapper scrolls so a wide table never widens the page at 375px. -#}
 {% set table_wrap = "-mx-1 overflow-x-auto px-1" %}
@@ -217,72 +217,7 @@
 
   <div class="min-w-0 lg:col-span-2">
   {% call card(title="Bare minimum", subtitle="Income needed to cover a full pay cycle", id="bare-minimum-card") %}
-    {% if dashboard.bare_minimum_hint %}
-    {% set reason = dashboard.bare_minimum_hint %}
-    <p id="bare-minimum-hint" data-reason="{{ reason }}" class="text-sm text-ink-muted">
-      {% if reason == "salary_day" %}Set your <a href="/settings" class="font-medium text-accent hover:underline">salary day</a> to see the bare minimum.
-      {% elif reason == "income" %}Categorize your <a href="/categories" class="font-medium text-accent hover:underline">income</a> to see the bare minimum.
-      {% else %}Add spending history for <a href="/lights-on" class="font-medium text-accent hover:underline">Keep the lights on</a> to see the bare minimum.{% endif %}
-    </p>
-    {% elif dashboard.bare_minimum %}
-    {% set minimum = dashboard.bare_minimum %}
-    {% call stat("Bare minimum", id="bare-minimum") %}
-      {{ amount(minimum.total_cents, colored=false) }}
-      <span data-field="cycle" class="block text-sm font-normal text-ink-muted">{{ charts.cycle_label(minimum.cycle.start, minimum.cycle.end) }}</span>
-    {% endcall %}
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {{ stat("Fixed costs", value=amount(minimum.cycle.fixed_cents, colored=false), id="bare-minimum-fixed") }}
-      {% call stat("Keep the lights on", id="bare-minimum-lights") %}
-        {{ amount(minimum.cycle.lights_on_cents, colored=false) }}
-        <span class="block text-xs font-normal text-ink-muted">{{ amount((minimum.cycle.lights_on_cents // minimum.cycle.days), colored=false, attrs={"data-field": "daily"}) }} a day × <span data-days="{{ minimum.cycle.days }}">{{ minimum.cycle.days }} days</span></span>
-      {% endcall %}
-      {{ stat("Income per cycle", value=amount(minimum.income_cents, colored=false), id="bare-minimum-income") }}
-      {{ stat("Residual", value=amount(minimum.residual_cents), id="bare-minimum-residual") }}
-      {% call stat("Debt share of fixed costs", id="bare-minimum-debt-share", attrs={"data-percent": minimum.debt_share_percent}) %}
-        {{ minimum.debt_share_percent }}% <span class="text-sm font-normal text-ink-muted">({{ amount(minimum.debt_cents, colored=false) }})</span>
-      {% endcall %}
-      {% call stat("Occasional spending per month", id="bare-minimum-occasional", attrs={"data-margin": minimum.occasional_margin_cents}) %}
-        {{ amount(minimum.occasional_cents, colored=false) }}
-        <span class="block text-xs font-normal text-ink-muted">{{ "shortfall" if minimum.occasional_margin_cents < 0 else "margin" }} {{ amount(minimum.occasional_margin_cents) }}</span>
-      {% endcall %}
-    </div>
-    <div class="{{ table_wrap }} mt-4">
-      <table id="bare-minimum-cycles" class="{{ table }}">
-        <thead><tr><th class="{{ th }}">Cycle</th><th class="{{ th_num }}">Fixed</th><th class="{{ th_num }}">Lights on</th><th class="{{ th_num }}">Need</th><th class="{{ th_num }}">Residual</th></tr></thead>
-        <tbody>
-        {% for cycle in minimum.cycles %}
-          <tr data-row{% if cycle == minimum.cycle %} data-max{% endif %} class="{{ tr }}">
-            <td class="{{ td }} whitespace-nowrap" data-field="cycle" data-start="{{ cycle.start.isoformat() }}" data-end="{{ cycle.end.isoformat() }}">{{ charts.cycle_label(cycle.start, cycle.end) }}</td>
-            <td class="{{ td_num }}" data-field="fixed">{{ amount(cycle.fixed_cents, colored=false) }}</td>
-            <td class="{{ td_num }}" data-field="lights">{{ amount(cycle.lights_on_cents, colored=false) }}</td>
-            <td class="{{ td_num }}" data-field="need">{{ amount(cycle.need_cents, colored=false) }}</td>
-            <td class="{{ td_num }}" data-field="residual">{{ amount(cycle.residual_cents) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <h3 class="mt-4 text-sm font-semibold text-ink">Upcoming debt endings</h3>
-    {% if minimum.drops %}
-    <div class="{{ table_wrap }} mt-2">
-      <table id="bare-minimum-drops" class="{{ table }}">
-        <thead><tr><th class="{{ th }}">Name</th><th class="{{ th }}">Kind</th><th class="{{ th }}">End date</th><th class="{{ th_num }}">Rate</th></tr></thead>
-        <tbody>
-        {% for drop in minimum.drops %}
-          <tr data-row class="{{ tr }}">
-            <td class="{{ td }}" data-field="name">{{ drop.name }}</td>
-            <td class="{{ td }}" data-field="kind">{{ drop.kind }}</td>
-            <td class="{{ td }}" data-field="end_date">{{ date(drop.end_date) }}</td>
-            <td class="{{ td_num }}" data-field="rate">{{ amount(drop.rate_cents, colored=false) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <p id="bare-minimum-no-drops" class="mt-2 text-sm text-ink-muted">No debts end in these six cycles.</p>
-    {% endif %}
-    {% endif %}
+    {% set fixed_breakdown %}
     {% set breakdown = dashboard.fixed_breakdown %}
     {% if breakdown.count %}
     <section id="fixed-breakdown" data-total="{{ breakdown.total_cents }}" data-count="{{ breakdown.count }}" class="mt-4 border-t border-line pt-4">
@@ -291,11 +226,16 @@
         {{ amount(breakdown.total_cents, colored=false, attrs={"data-field": "total"}) }} a month · <span data-field="count">{{ breakdown.count }}</span> {{ "payment" if breakdown.count == 1 else "payments" }}
       </p>
       {% for group in breakdown.groups %}
+      {% if loop.index0 == 5 %}
+      <details id="fixed-breakdown-more" class="mt-3">
+        <summary class="{{ details_summary }}">+{{ breakdown.groups|length - 5 }} more</summary>
+      {% endif %}
       <details data-group class="mt-3 min-w-0">
         <summary data-summary class="{{ details_summary }} break-words">
           <span data-field="name">{{ group.name }}</span>
           <span data-field="share" data-percent="{{ group.share_percent }}" class="ml-1">{{ group.share_percent }}%</span>
           {{ amount(group.total_cents, colored=false, attrs={"data-field": "total"}) }}
+          <span aria-hidden="true" class="mt-1 block">{{ share_bar(group.share_percent) }}</span>
         </summary>
         <ul class="mt-2 space-y-1 pl-4 text-xs text-ink-muted">
           {% for payment in group.payments %}
@@ -306,9 +246,120 @@
           {% endfor %}
         </ul>
       </details>
+      {% if loop.last and loop.index > 5 %}</details>{% endif %}
       {% endfor %}
     </section>
     {% endif %}
+    {% endset %}
+    {% if dashboard.bare_minimum_hint %}
+    {% set reason = dashboard.bare_minimum_hint %}
+    <p id="bare-minimum-hint" data-reason="{{ reason }}" class="text-sm text-ink-muted">
+      {% if reason == "salary_day" %}Set your <a href="/settings" class="font-medium text-accent hover:underline">salary day</a> to see the bare minimum.
+      {% elif reason == "income" %}Categorize your <a href="/categories" class="font-medium text-accent hover:underline">income</a> to see the bare minimum.
+      {% else %}Add spending history for <a href="/lights-on" class="font-medium text-accent hover:underline">Keep the lights on</a> to see the bare minimum.{% endif %}
+    </p>
+
+    {{ fixed_breakdown }}
+    {% elif dashboard.bare_minimum %}
+    {% set minimum = dashboard.bare_minimum %}
+    <section aria-label="The answer">
+      <div id="bare-minimum-equation" class="flex flex-wrap items-start gap-x-4 gap-y-3">
+        <div data-field="income">
+          {{ stat("Income per cycle", value=amount(minimum.income_cents, colored=false), id="bare-minimum-income") }}
+        </div>
+        <span aria-hidden="true" class="pt-5 text-xl text-ink-muted">−</span>
+        <div data-field="total">
+          {% call stat("Bare minimum", id="bare-minimum") %}
+            {{ amount(minimum.total_cents, colored=false) }}
+            <span data-field="cycle" class="block text-sm font-normal text-ink-muted">{{ charts.cycle_label(minimum.cycle.start, minimum.cycle.end) }}</span>
+          {% endcall %}
+        </div>
+        <span aria-hidden="true" class="pt-5 text-xl text-ink-muted">=</span>
+        <div data-field="residual">
+          {{ stat("Left after essentials", value=amount(minimum.residual_cents), id="bare-minimum-residual") }}
+        </div>
+      </div>
+      <div id="bare-minimum-bar" class="mt-4">
+        {{ need_bar(minimum.cycle.fixed_cents, minimum.cycle.lights_on_cents, minimum.income_cents) }}
+        <p class="mt-1 text-xs text-ink-muted">Fixed costs + Keep the lights on · line marks income</p>
+      </div>
+      <p id="bare-minimum-summary" data-residual="{{ minimum.residual_cents }}" data-margin="{{ minimum.occasional_margin_cents }}" class="mt-3 text-sm text-ink-muted">
+        After essentials, you have {{ amount(minimum.residual_cents, attrs={"data-field": "residual"}) }}
+        {% if minimum.residual_cents < 0 %}(a shortfall){% else %}left{% endif %}.
+        Occasional spending averages <span id="bare-minimum-occasional" data-margin="{{ minimum.occasional_margin_cents }}">{{ amount(minimum.occasional_cents, colored=false, attrs={"data-field": "occasional"}) }}</span> a month,
+        leaving a margin of {{ amount(minimum.occasional_margin_cents, attrs={"data-field": "margin"}) }}{% if minimum.occasional_margin_cents < 0 %} below zero{% endif %}.
+      </p>
+    </section>
+
+    <section aria-labelledby="bare-minimum-composition" class="mt-5 border-t border-line pt-4">
+      <h3 id="bare-minimum-composition" class="text-sm font-semibold text-ink">Where it goes</h3>
+      <div id="bare-minimum-fixed" class="mt-3">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm font-semibold text-ink">
+          <span>Fixed costs</span>{{ amount(minimum.cycle.fixed_cents, colored=false) }}
+        </div>
+        <p id="bare-minimum-debt-share" data-percent="{{ minimum.debt_share_percent }}" class="mt-1 text-xs text-ink-muted">
+          Of this, {{ amount(minimum.debt_cents, colored=false) }} is debt · {{ minimum.debt_share_percent }}% of fixed costs.
+        </p>
+        <p id="bare-minimum-gap-note" class="mt-1 text-xs text-ink-muted">
+          Monthly equivalent {{ amount(dashboard.fixed_costs.monthly_equivalent_cents, colored=false, attrs={"data-field": "monthly"}) }};
+          this pay cycle {{ amount(minimum.cycle.fixed_cents, colored=false, attrs={"data-field": "cycle"}) }}. Payment dates can make these differ.
+        </p>
+        {{ fixed_breakdown }}
+      </div>
+      <div id="bare-minimum-lights" class="mt-4 border-t border-line pt-3">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm font-semibold text-ink">
+          <span>Keep the lights on</span>{{ amount(minimum.cycle.lights_on_cents, colored=false) }}
+        </div>
+        <p class="mt-1 text-xs text-ink-muted">{{ amount((minimum.cycle.lights_on_cents // minimum.cycle.days), colored=false, attrs={"data-field": "daily"}) }} a day × <span data-days="{{ minimum.cycle.days }}">{{ minimum.cycle.days }} days</span></p>
+      </div>
+    </section>
+
+    <section aria-labelledby="bare-minimum-future" class="mt-5 border-t border-line pt-4">
+      <h3 id="bare-minimum-future" class="text-sm font-semibold text-ink">Next 6 cycles</h3>
+      <p class="mt-1 text-xs text-ink-muted">Income left after essentials. The outlined bar marks the tightest cycle.</p>
+      <div id="bare-minimum-chart" class="mt-3 [&_rect[data-max]]:stroke-ink [&_rect[data-max]]:stroke-2">
+        {{ residual_chart(minimum.cycles) }}
+      </div>
+      <details class="mt-3">
+        <summary class="{{ details_summary }}">Show as table</summary>
+        <div class="{{ table_wrap }} mt-4">
+          <table id="bare-minimum-cycles" class="{{ table }}">
+            <thead><tr><th class="{{ th }}">Cycle</th><th class="{{ th_num }}">Fixed</th><th class="{{ th_num }}">Lights on</th><th class="{{ th_num }}">Need</th><th class="{{ th_num }}">Residual</th></tr></thead>
+            <tbody>
+            {% for cycle in minimum.cycles %}
+              <tr data-row{% if cycle == minimum.cycle %} data-max{% endif %} class="{{ tr }}">
+                <td class="{{ td }} whitespace-nowrap" data-field="cycle" data-start="{{ cycle.start.isoformat() }}" data-end="{{ cycle.end.isoformat() }}">{{ charts.cycle_label(cycle.start, cycle.end) }}</td>
+                <td class="{{ td_num }}" data-field="fixed">{{ amount(cycle.fixed_cents, colored=false) }}</td>
+                <td class="{{ td_num }}" data-field="lights">{{ amount(cycle.lights_on_cents, colored=false) }}</td>
+                <td class="{{ td_num }}" data-field="need">{{ amount(cycle.need_cents, colored=false) }}</td>
+                <td class="{{ td_num }}" data-field="residual">{{ amount(cycle.residual_cents) }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% if minimum.drops %}
+      <h3 class="mt-4 text-sm font-semibold text-ink">Upcoming debt endings</h3>
+      <div class="{{ table_wrap }} mt-2">
+        <table id="bare-minimum-drops" class="{{ table }}">
+          <thead><tr><th class="{{ th }}">Name</th><th class="{{ th }}">Kind</th><th class="{{ th }}">End date</th><th class="{{ th_num }}">Rate</th></tr></thead>
+          <tbody>
+          {% for drop in minimum.drops %}
+            <tr data-row class="{{ tr }}">
+              <td class="{{ td }}" data-field="name">{{ drop.name }}</td>
+              <td class="{{ td }}" data-field="kind">{{ drop.kind }}</td>
+              <td class="{{ td }}" data-field="end_date">{{ date(drop.end_date) }}</td>
+              <td class="{{ td_num }}" data-field="rate">{{ amount(drop.rate_cents, colored=false) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
   {% endcall %}
   </div>
 

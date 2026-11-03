@@ -72,3 +72,44 @@ def test_fixed_breakdown_labels_each_source_and_counts_linked_payments_once(
         sum(payment.monthly_cents for payment in group.payments) == group.total_cents
         for group in breakdown.groups
     )
+
+
+def test_fixed_breakdown_uses_manual_and_unlinked_debt_categories():
+    with sqlite3.connect(":memory:") as conn:
+        apply_migrations(conn, MIGRATIONS_DIR)
+        period = SchedulePeriod(date(2026, 1, 1), None, 5_000, 1, 15)
+        add_manual(conn, "Streaming", "Subscriptions", period)
+        for mandate, category in [
+            ("sofa", "Loans & Installments"),
+            ("phone", None),
+            ("linked", "Loans & Installments"),
+        ]:
+            _insert_tx(conn, "2026-08-15", -10_000, mandate_ref=mandate, category=category)
+        _insert_detected(conn, "mandate:/linked", "Detected debt", 15, 10_000)
+        conn.execute(
+            "UPDATE recurring_payments SET category = ? WHERE name = ?",
+            ("Furniture", "Detected debt"),
+        )
+        conn.commit()
+        add_debt(conn, _installment("Sofa", "sofa"))
+        add_debt(conn, _installment("Phone", "phone"))
+        add_debt(conn, _installment("Linked debt", "linked"))
+
+        board = load_dashboard(
+            conn,
+            {"Subscriptions": "fixed", "Loans & Installments": "fixed", "Furniture": "fixed"},
+            TODAY,
+        )
+
+    assert {
+        group.name: [payment.name for payment in group.payments]
+        for group in board.fixed_breakdown.groups
+    } == {
+        "Subscriptions": ["Streaming"],
+        "Loans & Installments": ["Sofa"],
+        "Installments": ["Phone"],
+        "Furniture": ["Linked debt"],
+    }
+    assert board.fixed_breakdown.count == 4
+    assert board.fixed_breakdown.total_cents == 15_000
+    assert board.fixed_breakdown.total_cents == board.fixed_costs.monthly_equivalent_cents

@@ -48,7 +48,7 @@ dashboard breakdown; the final check confirms SPEC §11 and §12.
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | manual category API and docs | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N03 | breakdown labels from categories | exec | N02 | gpt-6.1-sol@medium/sonnet | 0 | 1 | TODO | |
+| N03 | breakdown labels from categories | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N04 | category in Fixed payments forms | exec | N02,N03 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N05 | visual check | gate | N03,N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
@@ -196,4 +196,11 @@ plan: REPLANNED
 - N03 now depends on N02 and N04 on N02,N03, so no exec node runs beside another; brief gains one Context line that tree changes in its Write set are its own
 
 ### N02 try 1 · 2026-11-03
+verify: PASS
+
+### N03 try 1 · 2026-11-03
+exec: DONE · 2152 passed; ruff check clean; 12 targeted passed
+- Existing partial implementation retained: latest categorized matched debit labels unlinked debts; linked payment labels and kind fallbacks preserved.
+- Reviewed existing model and service cases; no further edits needed, and full verification passed.
+check: PASS 2/2
 verify: PASS

@@ -108,11 +108,11 @@ def load_payoff(conn: sqlite3.Connection, today: date) -> Payoff:
     """
     balance = current_balance(conn)
     estimate_date = today if balance is None else balance.as_of
-    txs = [tx for tx, _ in transactions_with_category(conn)]
+    categorized_rows = transactions_with_category(conn)
     views = debt_overview(conn, estimate_date)
     payments = list_payments(conn)
     links = _advance_links(payments, views, meter_cashflows(conn, estimate_date))
-    labelled = _labelled_fixed_sources(payments, views, txs, links)
+    labelled = _labelled_fixed_sources(payments, views, categorized_rows, links)
     sources = tuple(source for _, source in labelled)
     rows = forecast.fixed_costs(sources, estimate_date).rows
     now_min, now_max = forecast.fixed_range(rows)
@@ -155,7 +155,7 @@ def load_dashboard(
     payments = list_payments(conn)
     cashflows = meter_cashflows(conn, estimate_date)
     links = _advance_links(payments, views, cashflows)
-    labelled = _labelled_fixed_sources(payments, views, [tx for tx, _ in rows], links)
+    labelled = _labelled_fixed_sources(payments, views, rows, links)
     sources = tuple(source for _, source in labelled)
     remaining = [(view.debt.name, remaining_cents(view)) for view in views]
     utilities = settlement_summaries(conn, estimate_date)
@@ -494,7 +494,7 @@ def _inflows(
 def _labelled_fixed_sources(
     payments: list[RecurringPayment],
     views: list[DebtView],
-    txs: list[ParsedTransaction],
+    rows: list[tuple[ParsedTransaction, str | None]],
     links: dict[int, AdvanceLink],
 ) -> tuple[tuple[str, FixedSource], ...]:
     """Recurring payments plus debt schedules, with each real payment counted once.
@@ -503,6 +503,7 @@ def _labelled_fixed_sources(
     debt's own schedule knows its end and final rate, so the debt wins. A
     payment linked to a meter's schedule follows the schedule's dates.
     """
+    txs = [tx for tx, _ in rows]
     linked_ids = _linked_payment_ids(views)
     recurring = [
         (payment.category or "Other", _recurring_source(payment, links.get(payment.id)))
@@ -514,8 +515,10 @@ def _labelled_fixed_sources(
         (
             next(
                 (payment.category for payment in view.linked_payments if payment.category),
-                "Installments" if isinstance(view.debt, Installment) else "Loans",
-            ),
+                None,
+            )
+            or (model.latest_category(view.debt, rows) if not view.linked_payments else None)
+            or ("Installments" if isinstance(view.debt, Installment) else "Loans"),
             _debt_source(view, txs),
         )
         for view in views

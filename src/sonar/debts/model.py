@@ -244,6 +244,20 @@ def last_payment_date(debt: Installment | Loan, txs: Iterable[ParsedTransaction]
     return max(dates) if dates else None
 
 
+def latest_category(
+    debt: Installment | Loan, rows: Iterable[tuple[ParsedTransaction, str | None]]
+) -> str | None:
+    """Latest categorized matching debit, with same-date ties going to the later row."""
+    latest_date = None
+    category = None
+    for tx, label in rows:
+        if label is not None and matches(tx, debt.match):
+            if latest_date is None or tx.booking_date >= latest_date:
+                latest_date = tx.booking_date
+                category = label
+    return category
+
+
 def linked_keys(debt: Installment | Loan, txs: Iterable[ParsedTransaction]) -> frozenset[str]:
     """Detection keys of every matching debit in the whole history.
 

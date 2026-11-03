@@ -1,5 +1,5 @@
 # Dashboard bare minimum
-status: RUNNING
+status: DONE
 created: 2026-11-03 · updated: 2026-11-03
 goal: a Bare minimum card before Fixed costs, and the same figures in /api/dashboard, showing the heaviest coming pay cycle's need against the lowest recent income
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -42,7 +42,7 @@ Definition of done: with a salary day, recent income and a complete lights-on mo
 | N03 | dashboard and API wiring | exec | N02 | codex@medium/sonnet | 1 | 0 | DONE | |
 | N04 | Bare minimum card | exec | N03 | codex@medium/sonnet | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | DONE | |
-| N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
+| N06 | plan acceptance | check | N05 | -/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only
@@ -228,4 +228,8 @@ exec: DONE · 2105 passed; ruff clean; CSS rebuild matches
 - Added bare minimum card, hints, cycle and debt-ending tables with D8 hooks.
 - Daily basis derives from full-cycle lights amount and days, independent of balance setup; added five page cases.
 check: PASS 3/3
+verify: PASS
+
+### N06 try 1 · 2026-11-03
+check: PASS 4/4
 verify: PASS

@@ -1,5 +1,5 @@
 # Bare minimum clarity and card merchants
-status: RUNNING
+status: WAITING
 created: 2026-11-03 · updated: 2026-11-03
 goal: card subscriptions are detected per merchant, and the Bare minimum card reads as answer, where it goes, next 6 cycles
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -59,7 +59,7 @@ SPEC §11 and §12.
 | N03 | card series sync, fixture and drafts | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
-| N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N07 | visual check | gate | N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
 
@@ -296,4 +296,11 @@ exec: DONE · 2208 passed; ruff check and format clean; CSS rebuild matches
 - Corrected D11 hooks in index.html and corresponding page assertions: bare-minimum-bar, bare-minimum-chart, bare-minimum-gap-note.
 - Preserved previous implementation; confirmed failing hook assertions before the template fix.
 check: PASS 3/3
+verify: PASS
+
+### N06 try 1 · 2026-11-03
+exec: DONE · 2208 passed; ruff check clean
+- Added SPEC §13 Card merchant series D1-D6 and Bare minimum card layout D7-D11 amendments.
+- Documented implemented detection, draft matching, three-zone layout and stable hooks; retained calculation and API rules.
+check: PASS 1/1
 verify: PASS

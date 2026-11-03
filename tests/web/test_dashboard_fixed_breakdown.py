@@ -1,5 +1,8 @@
 """Fixed cost composition inside the Bare minimum card (SPEC §13)."""
 
+from calendar import monthrange
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -38,11 +41,11 @@ def test_fixed_breakdown_matches_dashboard(tmp_path, hint):
                 "/debts/installments",
                 data={
                     "name": "Sofa",
-                    "total": "1200.00",
+                    "total": "600.00",
                     "rate": "100.00",
                     "interval_months": "1",
-                    "first_payment_date": "2026-01-20",
-                    "payments_count": "12",
+                    "first_payment_date": TODAY.isoformat(),
+                    "payments_count": "6",
                     "match_field": "counterparty",
                     "match_value": "Sofa Shop",
                 },
@@ -88,9 +91,29 @@ def test_fixed_breakdown_matches_dashboard(tmp_path, hint):
         bar = group.select_one('[data-part="share"]')
         assert bar["width"] == f"{expected.share_percent}%"
         assert bar.find_parent("summary") is not None
-        assert [fields(payment) for payment in group.select("[data-payment]")] == [
-            {"name": payment.name, "amount": payment.monthly_cents} for payment in expected.payments
-        ]
+        for payment, expected_payment in zip(
+            group.select("[data-payment]"), expected.payments, strict=True
+        ):
+            assert text(payment.select_one("[data-field=name]")) == expected_payment.name
+            assert (
+                cents(payment.select_one("[data-field=amount]")) == expected_payment.monthly_cents
+            )
+            end_note = payment.select_one("[data-field=ends]")
+            if expected_payment.name == "Sofa":
+                year, month = divmod(TODAY.year * 12 + TODAY.month - 1 + 5, 12)
+                ends_on = date(year, month + 1, min(TODAY.day, monthrange(year, month + 1)[1]))
+                assert expected_payment.monthly_cents == 10000
+                assert end_note is not None
+                assert end_note["data-date"] == ends_on.isoformat()
+                assert text(end_note) == f"· ends {ends_on.strftime('%b %Y')}"
+            else:
+                assert end_note is None
+    assert cents(page.select_one("#monthly-equivalent")) == breakdown.total_cents
+    if not hint:
+        assert (
+            cents(page.select_one("#bare-minimum-gap-note [data-field=monthly]"))
+            == breakdown.total_cents
+        )
 
 
 def test_fixed_breakdown_absent_without_fixed_payments(tmp_path):

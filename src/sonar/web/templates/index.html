@@ -239,9 +239,11 @@
         </summary>
         <ul class="mt-2 space-y-1 pl-4 text-xs text-ink-muted">
           {% for payment in group.payments %}
-          <li data-payment class="flex min-w-0 items-baseline justify-between gap-2">
+          <li data-payment class="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
             <span data-field="name" class="min-w-0 break-words">{{ payment.name }}</span>
-            {{ amount(payment.monthly_cents, colored=false, attrs={"data-field": "amount"}) }}
+            <span class="ml-auto min-w-0 text-right">
+              {{ amount(payment.monthly_cents, colored=false, attrs={"data-field": "amount"}) }}{% if payment.ends_on %}<span data-field="ends" data-date="{{ payment.ends_on.isoformat() }}" class="text-xs text-ink-muted"> · ends {{ charts.month_label(payment.ends_on) }}</span>{% endif %}
+            </span>
           </li>
           {% endfor %}
         </ul>

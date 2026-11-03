@@ -46,6 +46,49 @@ def test_fixed_breakdown_matches_dashboard_without_salary_day(tmp_path):
     assert body["fixed_breakdown"] == _jsonable(board.fixed_breakdown)
 
 
+def test_fixed_breakdown_payment_end_dates_are_iso_or_null(tmp_path):
+    with _client(tmp_path) as client:
+        assert (
+            client.post(
+                "/recurring",
+                data={
+                    "name": "Rent",
+                    "amount": "500.00",
+                    "interval_months": "1",
+                    "day": "15",
+                    "starts_on": "2026-01-15",
+                },
+                follow_redirects=False,
+            ).status_code
+            == 303
+        )
+        assert (
+            client.post(
+                "/debts/installments",
+                data={
+                    "name": "Sofa",
+                    "total": "600.00",
+                    "rate": "100.00",
+                    "interval_months": "1",
+                    "first_payment_date": "2026-09-20",
+                    "payments_count": "6",
+                    "match_field": "counterparty",
+                    "match_value": "Sofa Shop",
+                },
+                follow_redirects=False,
+            ).status_code
+            == 303
+        )
+        breakdown = client.get("/api/dashboard").json()["fixed_breakdown"]
+
+    payments = {
+        payment["name"]: payment for group in breakdown["groups"] for payment in group["payments"]
+    }
+    assert payments["Sofa"]["monthly_cents"] == 10000
+    assert payments["Sofa"]["ends_on"] == "2027-02-20"
+    assert payments["Rent"]["ends_on"] is None
+
+
 def test_bare_minimum_matches_dashboard_without_a_balance(tmp_path):
     db_path = tmp_path / "bare.db"
     seed(

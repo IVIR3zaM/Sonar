@@ -1,5 +1,5 @@
 # Fixed payment categories
-status: RUNNING
+status: WAITING
 created: 2026-11-03 · updated: 2026-11-03
 goal: every fixed payment in the dashboard breakdown sits under a real category, for hand-entered payments and unlinked debts alike
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -49,7 +49,7 @@ dashboard breakdown; the final check confirms SPEC §11 and §12.
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | manual category API and docs | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N03 | breakdown labels from categories | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
-| N04 | category in Fixed payments forms | exec | N02,N03 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N04 | category in Fixed payments forms | exec | N02,N03 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N05 | visual check | gate | N03,N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
@@ -203,4 +203,11 @@ exec: DONE · 2152 passed; ruff check clean; 12 targeted passed
 - Existing partial implementation retained: latest categorized matched debit labels unlinked debts; linked payment labels and kind fallbacks preserved.
 - Reviewed existing model and service cases; no further edits needed, and full verification passed.
 check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-11-03
+exec: DONE · 2164 passed; ruff check clean; focused 42 passed; fresh CSS cmp clean
+- Added manual payment category selects and validated add/edit persistence with 400 value retention; detected payments ignore category.
+- Rejected submitted names remain selected only on error; stale stored non-fixed names select None. Rebuilt sonar.css; output unchanged.
+check: PASS 3/3
 verify: PASS

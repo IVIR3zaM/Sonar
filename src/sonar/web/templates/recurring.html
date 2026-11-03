@@ -32,6 +32,14 @@
 {%- endif %}
 {% endmacro %}
 
+{% macro category_field(value, id="field-category", error=false) %}
+  {% set options = [("", "None")] %}
+  {% for name in category_names %}{% set _ = options.append((name, name)) %}{% endfor %}
+  {# Preserve a rejected submission so the owner can correct it. #}
+  {% if error and value and value not in category_names %}{% set _ = options.append((value, value)) %}{% endif %}
+  {{ field("category", "Category", value=value, id=id, options=options) }}
+{% endmacro %}
+
 {% block content %}
 <header class="mb-6">
   <h1 class="text-2xl font-semibold tracking-tight text-ink">Fixed payments</h1>
@@ -123,6 +131,9 @@
                   {{ form_error(row.edit_error) }}
                   <div class="col-span-2">{{ field("name", "Name", value=(row.edit_error.fields.name if row.edit_error else payment.name), id="edit-name-" ~ uid, required=true) }}</div>
                   <div class="col-span-2">{{ field("description", "Description (optional)", value=(row.edit_error.fields.description if row.edit_error else (payment.description or "")), id="edit-description-" ~ uid) }}</div>
+                  {% if payment.source == "manual" %}
+                  <div class="col-span-2">{{ category_field(row.edit_error.fields.category if row.edit_error else (payment.category if payment.category in category_names else ""), id="edit-category-" ~ uid, error=row.edit_error) }}</div>
+                  {% endif %}
                   {{ field("amount", "Amount", value=(row.edit_error.fields.amount if row.edit_error else (row.latest.amount_cents | money)), id="edit-amount-" ~ uid, required=true) }}
                   {{ field("interval_months", "Every (months)", type="number", value=(row.edit_error.fields.interval_months if row.edit_error else row.latest.interval_months), id="edit-interval-" ~ uid, required=true, attrs={"min": 1}) }}
                   <div class="col-span-2">{{ field("day", "Day", type="number", value=(row.edit_error.fields.day if row.edit_error else row.latest.day), id="edit-day-" ~ uid, required=true, attrs={"min": 1, "max": 31}) }}</div>
@@ -185,6 +196,7 @@
   <form id="add-payment" method="post" action="/recurring" class="space-y-4">
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       {{ form_error(add_error) }}
+      {{ category_field(add_error.fields.category if add_error else "", error=add_error) }}
       {{ field("name", "Name", value=(add_error.fields.name if add_error else ""), required=true, attrs={"placeholder": "e.g. Netflix"}) }}
       {{ field("amount", "Amount", value=(add_error.fields.amount if add_error else ""), required=true, attrs={"placeholder": "12.99"}) }}
       {{ field("interval_months", "Every (months)", type="number", value=(add_error.fields.interval_months if add_error else ""), required=true, help="1 = monthly, 3 = quarterly, 12 = yearly", attrs={"min": 1, "placeholder": "1"}) }}

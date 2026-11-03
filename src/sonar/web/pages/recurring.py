@@ -6,12 +6,13 @@ from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from sonar.cashflow.forecast import FixedSource, next_due
 from sonar.cashflow.service import AdvanceLink, advance_links
+from sonar.categorization.store import fixed_category_names
 from sonar.db import connect
 from sonar.debts.store import debt_overview
 from sonar.money import parse_cents
@@ -24,6 +25,7 @@ from sonar.recurring.store import (
     list_payments,
     pause_payment,
     resume_payment,
+    set_category,
 )
 from sonar.web import forms
 
@@ -54,6 +56,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         conn = connect(db_path)
         try:
             payments = list_payments(conn)
+            category_names = fixed_category_names(conn)
             # Inverted from debt_overview's debt -> payments so the payment row
             # can show which debt (if any) it is already counted as (SPEC §7).
             debt_names_by_payment_id = {
@@ -83,7 +86,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         return templates.TemplateResponse(
             request,
             "recurring.html",
-            {"rows": rows, "add_error": errors.get("add")},
+            {"rows": rows, "add_error": errors.get("add"), "category_names": category_names},
             status_code=status_code,
         )
 
@@ -100,6 +103,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         day: str = Form(...),
         starts_on: str = Form(...),
         description: str = Form(""),
+        category: str = Form(""),
     ) -> HTMLResponse:
         try:
             period = SchedulePeriod(
@@ -109,6 +113,12 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 interval_months=forms.field("Every (months)", interval_months, "int", int),
                 day=forms.field("Day", day, "int", int),
             )
+            conn = connect(db_path)
+            try:
+                _validate_category(category, fixed_category_names(conn))
+                add_manual(conn, name, category or None, period, description)
+            finally:
+                conn.close()
         except ValueError as error:
             values = {
                 "name": name,
@@ -117,17 +127,13 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 "day": day,
                 "starts_on": starts_on,
                 "description": description,
+                "category": category,
             }
             return _render_recurring_page(
                 request,
                 status_code=400,
                 errors={"add": {"message": forms.friendly(error), "fields": values}},
             )
-        conn = connect(db_path)
-        try:
-            add_manual(conn, name, None, period, description)
-        finally:
-            conn.close()
         return RedirectResponse("/recurring", status_code=303)
 
     @router.post("/recurring/{id}/edit")
@@ -139,12 +145,27 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
         interval_months: str = Form(...),
         day: str = Form(...),
         description: str = Form(""),
+        category: str = Form(""),
     ) -> HTMLResponse:
         try:
             amount_cents = forms.field("Amount", amount, "amount", parse_cents)
             interval = forms.field("Every (months)", interval_months, "int", int)
             day_number = forms.field("Day", day, "int", int)
             _validate_schedule(amount_cents, interval, day_number)
+            conn = connect(db_path)
+            try:
+                payment = next(
+                    (payment for payment in list_payments(conn) if payment.id == id), None
+                )
+                if payment is None:
+                    raise HTTPException(status_code=404, detail="Payment not found")
+                if payment.source == "manual":
+                    _validate_category(category, fixed_category_names(conn))
+                edit_payment(conn, id, name, amount_cents, interval, day_number, description)
+                if payment.source == "manual":
+                    set_category(conn, id, category or None)
+            finally:
+                conn.close()
         except ValueError as error:
             values = {
                 "name": name,
@@ -152,17 +173,13 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
                 "interval_months": interval_months,
                 "day": day,
                 "description": description,
+                "category": category,
             }
             return _render_recurring_page(
                 request,
                 status_code=400,
                 errors={"edit": {"id": id, "message": forms.friendly(error), "fields": values}},
             )
-        conn = connect(db_path)
-        try:
-            edit_payment(conn, id, name, amount_cents, interval, day_number, description)
-        finally:
-            conn.close()
         return RedirectResponse("/recurring", status_code=303)
 
     @router.post("/recurring/{id}/dismiss")
@@ -249,3 +266,8 @@ def _validate_schedule(amount_cents: int, interval_months: int, day: int) -> Non
         interval_months=interval_months,
         day=day,
     )
+
+
+def _validate_category(category: str, category_names: list[str]) -> None:
+    if category and category not in category_names:
+        raise ValueError("Choose a fixed category or None.")

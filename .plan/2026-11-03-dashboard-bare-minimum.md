@@ -1,5 +1,5 @@
 # Dashboard bare minimum
-status: WAITING
+status: RUNNING
 created: 2026-11-03 · updated: 2026-11-03
 goal: a Bare minimum card before Fixed costs, and the same figures in /api/dashboard, showing the heaviest coming pay cycle's need against the lowest recent income
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -41,7 +41,7 @@ Definition of done: with a salary day, recent income and a complete lights-on mo
 | N02 | bare minimum math and SPEC | exec | N01 | codex@medium/sonnet | 1 | 1 | DONE | |
 | N03 | dashboard and API wiring | exec | N02 | codex@medium/sonnet | 1 | 0 | DONE | |
 | N04 | Bare minimum card | exec | N03 | codex@medium/sonnet | 1 | 0 | DONE | |
-| N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
+| N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | DONE | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight

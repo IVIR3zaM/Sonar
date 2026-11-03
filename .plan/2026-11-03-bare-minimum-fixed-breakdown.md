@@ -1,5 +1,5 @@
 # Bare minimum fixed-cost breakdown
-status: RUNNING
+status: WAITING
 created: 2026-11-03 · updated: 2026-11-03
 goal: the Bare minimum card and /api/dashboard show what the fixed-cost monthly equivalent is made of, by category
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -49,7 +49,7 @@ and §12.
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | breakdown math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N03 | dashboard and API wiring | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
-| N04 | breakdown subsection | exec | N03 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N04 | breakdown subsection | exec | N03 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
@@ -226,4 +226,11 @@ exec: DONE · 2117 passed; ruff check and format clean
 - Added labelled fixed sources shared by dashboard and payoff; populated fixed_breakdown before setup returns.
 - Covered all D3 labels, debt deduplication, total equality across salary and balance states, and API serialization; observed five failures before implementation.
 check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-11-03
+exec: DONE · 2120 passed; ruff check clean; focused 8 passed; CSS rebuild matches
+- Added fixed-breakdown subsection and hook-based page tests; rebuilt sonar.css.
+- Groups stay collapsed and preserve model order; breakdown is present in hint and numbers states only when payments exist.
+check: PASS 3/3
 verify: PASS

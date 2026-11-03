@@ -321,22 +321,27 @@
 
 {% macro residual_chart(cycles) %}
 {%- set height = 40 -%}
-{%- set slot = 24 -%}
+{%- set width = 300 -%}
+{%- set slot = width / ([cycles|length, 1]|max) -%}
 {%- set values = cycles|map(attribute="residual_cents")|list -%}
 {%- set bars = charts.residual_bars(values, height) -%}
 {%- set tightest = values|min if values else none -%}
-{%- set width = [cycles|length * slot, slot]|max -%}
 {%- set summary = "Income left after the bare minimum per pay cycle" -%}
-<svg role="img" aria-label="{{ summary }}" viewBox="0 -1 {{ width }} {{ height * 2 + 2 }}" class="block h-44 w-full">
+<svg role="img" aria-label="{{ summary }}" viewBox="0 -14 {{ width }} {{ height * 2 + 40 }}" class="block w-full">
   <title>{{ summary }}</title>
   <line data-part="zero" x1="0" x2="{{ width }}" y1="{{ height }}" y2="{{ height }}" stroke="currentColor" stroke-width="1" />
   {%- for c in cycles %}
   {%- set bar = bars[loop.index0] %}
   <rect data-cents="{{ c.residual_cents }}" {% if c.residual_cents == tightest %}data-max="true"{% endif %}
-        x="{{ loop.index0 * slot + 4 }}" y="{{ bar.y }}" width="{{ slot - 8 }}" height="{{ bar.height }}"
+        x="{{ loop.index0 * slot + 8 }}" y="{{ bar.y }}" width="{{ slot - 16 }}" height="{{ bar.height }}"
         class="{{ 'fill-red-600 dark:fill-red-400' if bar.sign < 0 else 'fill-sky-500 dark:fill-sky-400' }}">
     <title>{{ charts.cycle_label(c.start, c.end) }}: {{ c.residual_cents|eur }} left</title>
   </rect>
+  <text data-part="amount" x="{{ loop.index0 * slot + slot / 2 }}"
+        y="{{ bar.y + bar.height + 12 if bar.sign < 0 else bar.y - 5 }}"
+        text-anchor="middle" font-size="8" class="fill-gray-700 dark:fill-gray-300">{{ c.residual_cents|eur }}</text>
+  <text data-part="cycle" x="{{ loop.index0 * slot + slot / 2 }}" y="{{ height * 2 + 22 }}"
+        text-anchor="middle" font-size="9" class="fill-gray-700 dark:fill-gray-300">{{ charts.day_month(c.start) }}</text>
   {%- endfor %}
 </svg>
 {%- endmacro %}

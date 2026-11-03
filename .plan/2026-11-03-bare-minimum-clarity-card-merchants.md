@@ -60,8 +60,9 @@ SPEC §11 and §12.
 | N04 | bare minimum chart geometry | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N05 | bare minimum card zones | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | SPEC amendments | exec | N03,N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N07 | visual check | gate | N06 | -/sonnet | 0 | 0 | TODO | |
+| N07 | visual check | gate | N09 | -/sonnet | 0 | 1 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
+| N09 | bare minimum card gate fixes | exec | N06 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the Tailwind CLI builds (the only download),
@@ -219,19 +220,25 @@ Done when:
 Do: gate, pre-authorized (D14). Run `uv run sonar import-categories data/categories.toml --db "$TMPDIR/sonar-visual.db"`,
   then start the app per config `visual_recipe` on `$TMPDIR/sonar-visual.db`. Import the newest file in `samples/` on
   /import, then on /settings set salary day 26 and a balance as of the sample's last booking date. Check / (the Bare
-  minimum card, expanding the fixed row, a group, "+N more", "Show as table") and /recurring at desktop and 375px,
-  light and dark (read_page first, scaled screenshots only where layout matters), then stop the app.
+  minimum card: expanding the Fixed costs row, a group, "+N more", the Keep the lights on row, "Show as table") and
+  /recurring at desktop and 375px, light and dark (read_page first, scaled screenshots only where layout matters),
+  then stop the app.
 Done when:
-- C1 [visual] zone 1 shows the equation, need bar with income marker and the sentence; the numbers equal
-  `GET /api/dashboard` `bare_minimum`
-- C2 [visual] zone 2 shows both rows; the fixed row shows the debt label and expands into share bars, at most 5
-  visible, "+N more" when there are more, each group expanding to its payments, and the gap note; totals equal
-  `fixed_breakdown`
-- C3 [visual] zone 3 shows the residual chart with the tightest cycle marked, the table behind "Show as table", and
-  debt endings only when `bare_minimum.drops` is non-empty
+- C1 [visual] zone 1 shows the equation, the need bar with income marker and one sentence "Tightest cycle <cycle>:
+  income covers it with X to spare | falls short by X. With X of occasional spending a month, the margin shrinks to
+  X | that becomes a shortfall of X | the gap grows to X." with no negative amount and no double negative; the
+  numbers equal `GET /api/dashboard` `bare_minimum` (as magnitudes in the sentence)
+- C2 [visual] zone 2 shows Fixed costs and Keep the lights on as two collapsed rows, each summary showing its name
+  and total, the fixed summary also a small "<n>% debt" label; opening Fixed costs shows the gap note and share bars,
+  at most 5 visible, "+N more" when there are more, each group expanding to its payments; opening Keep the lights on
+  shows the daily amount × days and a /lights-on link; totals equal `fixed_breakdown`
+- C3 [visual] zone 3 shows the residual chart spanning the card width, every bar labelled with its cycle and amount,
+  the tightest cycle marked, the table behind "Show as table", and debt endings only when `bare_minimum.drops` is
+  non-empty
 - C4 [visual] /recurring lists at least one detected card series named after its merchant (not "ABRECHNUNG KARTE"),
   monthly, at its latest booked amount
-- C5 [visual] at 375px nothing on either page is cut off or overflows; light and dark are both readable
+- C5 [visual] at 375px nothing on either page is cut off or overflows and the chart labels do not overlap; light and
+  dark are both readable
 
 ## N08 plan acceptance
 Do: Whole-plan check: run the full verify, then confirm SPEC §11 (acceptance checklist) and §12 (UI) still hold for
@@ -244,6 +251,46 @@ Done when:
   on ids and `data-*`, `sonar.css` rebuilt and committed; `/api/dashboard` and `cashflow/` are unchanged by this plan
 - C4 [review] the §13 bullets match `detect.py`, `drafts.py`, `charts.py` and `index.html`, including D1-D12; no
   migration was added and no importer, rule or dedup file changed
+
+## N09 bare minimum card gate fixes
+Do: Four presentation fixes to the numbers state of `#bare-minimum-card`; no number, Python domain code or API
+  changes. (1) Zone 1 sentence in the D7 form. (2) Residual chart spans the card width and labels every bar with its
+  cycle and amount. (3) Fixed costs and Keep the lights on become collapsed `<details>` rows. (4) Debt share becomes
+  the small "<n>% debt" label in the Fixed costs summary. Update the §13 layout bullet, rebuild and commit `sonar.css`.
+Context: (1) `index.html:286-292`: "Tightest cycle <cycle_label>: income covers it with <r> to spare." or "income
+  falls short by <|r|>." then "With <occasional> of occasional spending a month, the margin shrinks to <m>." (r, m
+  >= 0), "that becomes a shortfall of <|m|>." (r >= 0 > m) or "the gap grows to <|m|>." (r < 0). Amounts are
+  magnitudes, `colored=false`; signed cents stay on the `<p>`'s `data-residual`/`data-margin`.
+  (2) `residual_chart` (`components/charts.html:322-342`): a fixed viewBox width of 300 like `category_bars`
+  (`charts.html:119-123`), slot = width / cycles, `block w-full` with no fixed height so it is not letterboxed; each
+  bar gets an amount text (`data-part="amount"`, `|eur`) on its outer end and a cycle text (`data-part="cycle"`,
+  `charts.day_month(c.start)`) below the chart; full `cycle_label` stays in each `<title>`; legible at 375px, no overlap.
+  (3) `index.html:296-316`: `#bare-minimum-fixed` and `#bare-minimum-lights` are `<details>` (not `open`), summary
+  `details_summary` (`index.html:18`) with the name and total (first `data-cents` in the row is the total); fixed
+  summary also holds `#bare-minimum-debt-share`; inside fixed: `#bare-minimum-gap-note` and `{{ fixed_breakdown }}`;
+  inside lights: "<daily> a day × <n> days" and a /lights-on link. (4) `#bare-minimum-debt-share[data-percent]` reads
+  "<n>% debt", small and muted, no sentence and no debt amount. Hint state, all other D11 hooks, zone order and
+  `#fixed-breakdown` markup are unchanged. No inline `<style>`, no `style=`. SPEC: rewrite only the presentation
+  sentences of `SPEC.md:272` that these four points change.
+Read: `src/sonar/web/templates/index.html:1-30`, `src/sonar/web/templates/index.html:218-345`,
+  `src/sonar/web/templates/components/charts.html:118-140`, `src/sonar/web/templates/components/charts.html:300-351`,
+  `tests/html.py`, `tests/web/test_dashboard_bare_minimum.py`, `tests/web/test_charts_bare_minimum.py:60-100`,
+  `SPEC.md:272`
+Write: `src/sonar/web/templates/index.html`, `src/sonar/web/templates/components/charts.html`,
+  `src/sonar/web/static/sonar.css`, `tests/web/test_dashboard_bare_minimum.py`, `tests/web/test_charts_bare_minimum.py`,
+  `SPEC.md`
+Test first: the summary text matches each of the three wordings above for positive, mixed and negative fixtures, and
+  `#bare-minimum-fixed` is a closed `details` whose `summary` holds the total and `#bare-minimum-debt-share`.
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_dashboard_bare_minimum.py tests/web/test_charts_bare_minimum.py tests/web/test_dashboard_fixed_breakdown.py tests/web/test_templates_hygiene.py`
+- C2 [review] page tests pin the three sentence wordings with magnitudes in `data-field` residual, occasional and
+  margin, and no "-" amount or "below zero" in the sentence
+- C3 [review] macro tests assert one `data-part="amount"` and one `data-part="cycle"` text per bar, viewBox width
+  300, no fixed height class on the svg; bars, `data-max` and the zero line keep their meaning
+- C4 [review] both rows are `<details>` without `open`, summaries as in Context (3); debt share shows "<n>% debt" only;
+  hint state, other D11 hooks and zone order unchanged; `SPEC.md:272` describes the four changes
+- C5 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/plz-n09.css" --minify && cmp "$TMPDIR/plz-n09.css" src/sonar/web/static/sonar.css`
+- C6 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
 ## Log
 
@@ -303,4 +350,20 @@ exec: DONE · 2208 passed; ruff check clean
 - Added SPEC §13 Card merchant series D1-D6 and Bare minimum card layout D7-D11 amendments.
 - Documented implemented detection, draft matching, three-zone layout and stable hooks; retained calculation and API rules.
 check: PASS 1/1
+verify: PASS
+
+### N07 try 1 · 2026-11-03
+human: gate defects: (1) zone 1 sentence reads 'you have -504,35 EUR (a shortfall) ... leaving a margin of -851,18 EUR below zero' (double negative); use the D7 form: 'Tightest cycle <cycle>: income falls short by 504,35 EUR | covers it with X to spare. With 346,83 EUR of occasional spending a month, the gap grows to 851,18 EUR | the margin shrinks to X.' (2) zone 3 residual chart has no cycle labels and no amounts and does not span the card width; label each bar with its short cycle and amount, full width like the Fixed costs chart. (3) Fixed costs and Keep the lights on are not collapsible rows as D8 says; make each a details row (summary: name, total, and for fixed the small debt label), the breakdown and the lights detail inside, collapsed by default. (4) debt share is a full sentence; show it as the small '<n>% debt' label in the Fixed costs summary. Card series on /recurring, 375px layout and both themes pass.
+
+### N07 replan 1 · 2026-11-03
+plan: REPLANNED +N09
+- Cause: the gate found 4 card defects: double-negative sentence, unlabelled letterboxed residual chart, fixed and lights rows not collapsible, debt share as a sentence.
+- Added N09 (exec, deps N06, gpt-6.1-sol@high/sonnet) to fix all four in index.html, charts.html, tests, sonar.css and SPEC.md:272; N07 now depends on N09.
+- N07 brief rewritten: criteria pin the D7 sentence wording, collapsed rows with the percent-debt label, full-width labelled chart and no label overlap at 375px.
+
+### N09 try 1 · 2026-11-03
+exec: DONE · 2210 passed; ruff check clean; focused 34 passed; CSS rebuild comparison clean
+- Updated summary magnitudes and three wordings, collapsed composition rows, debt label, chart labels and width, SPEC presentation, and generated CSS.
+- Kept signed summary attributes, existing hooks, fixed breakdown markup, calculations, and API unchanged.
+check: PASS 3/3
 verify: PASS

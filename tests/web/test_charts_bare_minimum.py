@@ -87,6 +87,22 @@ def test_residual_macro_marks_the_tightest_cycle_and_zero(render):
     assert svg.select("[data-max]") == [bars[1]]
     zero = svg.select_one('[data-part="zero"]')
     assert int(bars[0]["y"]) < int(zero["y1"]) == int(bars[1]["y"])
+    assert float(svg["viewbox"].split()[2]) == 300
+    assert not svg.has_attr("height")
+    amounts = svg.select('text[data-part="amount"]')
+    labels = svg.select('text[data-part="cycle"]')
+    assert [label.text for label in labels] == ["1 Jan", "1 Feb"]
+    assert len(amounts) == len(labels) == len(bars)
+    assert "300,00" in amounts[0].text
+    assert "100,00" in amounts[1].text
+    for bar, amount, label in zip(bars, amounts, labels, strict=True):
+        assert float(amount["x"]) == float(label["x"])
+        assert float(amount["y"]) < float(bar["y"]) or float(amount["y"]) > (
+            float(bar["y"]) + float(bar["height"])
+        )
+        assert float(label["y"]) > 80
+    assert "31 Jan" in bars[0].title.text
+    assert "28 Feb" in bars[1].title.text
 
 
 def test_residual_macro_handles_no_cycles(render):

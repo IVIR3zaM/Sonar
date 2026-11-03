@@ -42,8 +42,10 @@ def _settings(client):
 
 
 @pytest.mark.parametrize("ending_debt", [True, False])
-@pytest.mark.parametrize("rent", ["500.00", "5000.00"])
-def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
+@pytest.mark.parametrize(
+    "rent,occasional_cents", [("500.00", 20_000), ("500.00", 500_000), ("5000.00", 20_000)]
+)
+def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent, occasional_cents):
     db_path = tmp_path / "test.db"
     _seed(db_path)
     for month in (6, 7, 8):
@@ -51,7 +53,7 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
             db_path,
             fingerprint=f"extras-{month}",
             booking_date=f"2026-{month:02d}-05",
-            amount_cents=-20_000,
+            amount_cents=-occasional_cents,
             counterparty="Restaurant",
         )
     with TestClient(create_app(db_path, today=_today)) as client:
@@ -119,9 +121,11 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
 
     minimum = dashboard.bare_minimum
     assert minimum is not None
-    assert minimum.occasional_cents == 20_000
+    assert minimum.occasional_cents == occasional_cents
     assert (minimum.residual_cents < 0) == (rent == "5000.00")
-    assert (minimum.occasional_margin_cents < 0) == (rent == "5000.00")
+    assert (minimum.occasional_margin_cents < 0) == (
+        rent == "5000.00" or occasional_cents == 500_000
+    )
     equation = page.select_one("#bare-minimum-equation")
     assert equation is not None
     assert fields(equation) == {
@@ -134,12 +138,32 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
     assert int(summary["data-residual"]) == minimum.residual_cents
     assert int(summary["data-margin"]) == minimum.occasional_margin_cents
     assert fields(summary) == {
-        "residual": minimum.residual_cents,
+        "residual": abs(minimum.residual_cents),
         "occasional": minimum.occasional_cents,
-        "margin": minimum.occasional_margin_cents,
+        "margin": abs(minimum.occasional_margin_cents),
     }
-    assert ("shortfall" in text(summary)) == (minimum.residual_cents < 0)
-    assert ("below" in text(summary)) == (minimum.occasional_margin_cents < 0)
+    residual = text(summary.select_one('[data-field="residual"]'))
+    occasional_amount = text(summary.select_one('[data-field="occasional"]'))
+    margin = text(summary.select_one('[data-field="margin"]'))
+    cycle_label = fields(page.select_one("#bare-minimum"))["cycle"]
+    coverage = (
+        f"income falls short by {residual}."
+        if minimum.residual_cents < 0
+        else f"income covers it with {residual} to spare."
+    )
+    consequence = (
+        f"the gap grows to {margin}."
+        if minimum.residual_cents < 0
+        else f"that becomes a shortfall of {margin}."
+        if minimum.occasional_margin_cents < 0
+        else f"the margin shrinks to {margin}."
+    )
+    assert text(summary) == (
+        f"Tightest cycle {cycle_label}: {coverage} "
+        f"With {occasional_amount} of occasional spending a month, {consequence}"
+    )
+    assert "-" not in residual + occasional_amount + margin
+    assert "below zero" not in text(summary)
     assert [
         el["id"]
         for el in page.select(
@@ -192,6 +216,19 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
         "cycle": page.select_one("#bare-minimum-cycles [data-max] [data-field=cycle]").get_text()
     }
     lights = page.select_one("#bare-minimum-lights")
+    fixed = page.select_one("#bare-minimum-fixed")
+    for row, name, total in (
+        (fixed, "Fixed costs", minimum.cycle.fixed_cents),
+        (lights, "Keep the lights on", minimum.cycle.lights_on_cents),
+    ):
+        assert row.name == "details" and not row.has_attr("open")
+        row_summary = row.find("summary", recursive=False)
+        assert name in text(row_summary)
+        assert cents(row_summary) == cents(row) == total
+    assert fixed.select_one("summary #bare-minimum-debt-share") is not None
+    assert fixed.select_one("#bare-minimum-gap-note") is not None
+    assert fixed.select_one("#fixed-breakdown") is not None
+    assert lights.select_one('a[href="/lights-on"]') is not None
     assert (
         cents(lights.select_one("[data-field=daily]"))
         == minimum.cycle.lights_on_cents // minimum.cycle.days
@@ -199,9 +236,9 @@ def test_bare_minimum_matches_dashboard(tmp_path, ending_debt, rent):
     assert int(lights.select_one("[data-days]")["data-days"]) == minimum.cycle.days
     share = page.select_one("#bare-minimum-debt-share")
     assert int(share["data-percent"]) == minimum.debt_share_percent
-    assert cents(share) == minimum.debt_cents
+    assert share.select_one("[data-cents]") is None
     assert share.find_parent(id="bare-minimum-fixed") is not None
-    assert "debt" in text(share).lower()
+    assert text(share) == f"{minimum.debt_share_percent}% debt"
     occasional = page.select_one("#bare-minimum-occasional")
     assert int(occasional["data-margin"]) == minimum.occasional_margin_cents
     assert cents(occasional) == minimum.occasional_cents

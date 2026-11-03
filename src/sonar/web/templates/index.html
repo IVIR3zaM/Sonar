@@ -284,34 +284,34 @@
         <p class="mt-1 text-xs text-ink-muted">Fixed costs + Keep the lights on · line marks income</p>
       </div>
       <p id="bare-minimum-summary" data-residual="{{ minimum.residual_cents }}" data-margin="{{ minimum.occasional_margin_cents }}" class="mt-3 text-sm text-ink-muted">
-        After essentials, you have {{ amount(minimum.residual_cents, attrs={"data-field": "residual"}) }}
-        {% if minimum.residual_cents < 0 %}(a shortfall){% else %}left{% endif %}.
-        Occasional spending averages <span id="bare-minimum-occasional" data-margin="{{ minimum.occasional_margin_cents }}">{{ amount(minimum.occasional_cents, colored=false, attrs={"data-field": "occasional"}) }}</span> a month,
-        leaving a margin of {{ amount(minimum.occasional_margin_cents, attrs={"data-field": "margin"}) }}{% if minimum.occasional_margin_cents < 0 %} below zero{% endif %}.
+        Tightest cycle {{ charts.cycle_label(minimum.cycle.start, minimum.cycle.end) }}:
+        {% if minimum.residual_cents < 0 %}income falls short by {{ amount(minimum.residual_cents|abs, colored=false, attrs={"data-field": "residual"}) }}.{% else %}income covers it with {{ amount(minimum.residual_cents, colored=false, attrs={"data-field": "residual"}) }} to spare.{% endif %}
+        With <span id="bare-minimum-occasional" data-margin="{{ minimum.occasional_margin_cents }}">{{ amount(minimum.occasional_cents, colored=false, attrs={"data-field": "occasional"}) }}</span> of occasional spending a month,
+        {% if minimum.residual_cents < 0 %}the gap grows to{% elif minimum.occasional_margin_cents < 0 %}that becomes a shortfall of{% else %}the margin shrinks to{% endif %}
+        {{ amount(minimum.occasional_margin_cents|abs, colored=false, attrs={"data-field": "margin"}) }}.
       </p>
     </section>
 
     <section aria-labelledby="bare-minimum-composition" class="mt-5 border-t border-line pt-4">
       <h3 id="bare-minimum-composition" class="text-sm font-semibold text-ink">Where it goes</h3>
-      <div id="bare-minimum-fixed" class="mt-3">
-        <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm font-semibold text-ink">
-          <span>Fixed costs</span>{{ amount(minimum.cycle.fixed_cents, colored=false) }}
-        </div>
-        <p id="bare-minimum-debt-share" data-percent="{{ minimum.debt_share_percent }}" class="mt-1 text-xs text-ink-muted">
-          Of this, {{ amount(minimum.debt_cents, colored=false) }} is debt · {{ minimum.debt_share_percent }}% of fixed costs.
-        </p>
+      <details id="bare-minimum-fixed" class="mt-3">
+        <summary class="{{ details_summary }}">
+          <span>Fixed costs</span> {{ amount(minimum.cycle.fixed_cents, colored=false) }}
+          <span id="bare-minimum-debt-share" data-percent="{{ minimum.debt_share_percent }}" class="ml-2 text-xs font-normal text-ink-muted">{{ minimum.debt_share_percent }}% debt</span>
+        </summary>
         <p id="bare-minimum-gap-note" class="mt-1 text-xs text-ink-muted">
           Monthly equivalent {{ amount(dashboard.fixed_costs.monthly_equivalent_cents, colored=false, attrs={"data-field": "monthly"}) }};
           this pay cycle {{ amount(minimum.cycle.fixed_cents, colored=false, attrs={"data-field": "cycle"}) }}. Payment dates can make these differ.
         </p>
         {{ fixed_breakdown }}
-      </div>
-      <div id="bare-minimum-lights" class="mt-4 border-t border-line pt-3">
-        <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm font-semibold text-ink">
-          <span>Keep the lights on</span>{{ amount(minimum.cycle.lights_on_cents, colored=false) }}
-        </div>
+      </details>
+      <details id="bare-minimum-lights" class="mt-4 border-t border-line pt-3">
+        <summary class="{{ details_summary }}">
+          <span>Keep the lights on</span> {{ amount(minimum.cycle.lights_on_cents, colored=false) }}
+        </summary>
         <p class="mt-1 text-xs text-ink-muted">{{ amount((minimum.cycle.lights_on_cents // minimum.cycle.days), colored=false, attrs={"data-field": "daily"}) }} a day × <span data-days="{{ minimum.cycle.days }}">{{ minimum.cycle.days }} days</span></p>
-      </div>
+        <a href="/lights-on" class="text-xs font-medium text-accent hover:underline">View Keep the lights on</a>
+      </details>
     </section>
 
     <section aria-labelledby="bare-minimum-future" class="mt-5 border-t border-line pt-4">

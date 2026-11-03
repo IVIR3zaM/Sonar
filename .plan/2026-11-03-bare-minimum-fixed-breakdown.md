@@ -1,5 +1,5 @@
 # Bare minimum fixed-cost breakdown
-status: WAITING
+status: RUNNING
 created: 2026-11-03 · updated: 2026-11-03
 goal: the Bare minimum card and /api/dashboard show what the fixed-cost monthly equivalent is made of, by category
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -50,7 +50,7 @@ and §12.
 | N02 | breakdown math and SPEC | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N03 | dashboard and API wiring | exec | N02 | gpt-6.1-sol@medium/sonnet | 1 | 1 | DONE | |
 | N04 | breakdown subsection | exec | N03 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
+| N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | DONE | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 preflight

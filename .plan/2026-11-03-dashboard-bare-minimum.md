@@ -1,5 +1,5 @@
 # Dashboard bare minimum
-status: RUNNING
+status: WAITING
 created: 2026-11-03 · updated: 2026-11-03
 goal: a Bare minimum card before Fixed costs, and the same figures in /api/dashboard, showing the heaviest coming pay cycle's need against the lowest recent income
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -40,7 +40,7 @@ Definition of done: with a salary day, recent income and a complete lights-on mo
 | N01 | preflight | check | - | -/- | 1 | 0 | DONE | |
 | N02 | bare minimum math and SPEC | exec | N01 | codex@medium/sonnet | 1 | 1 | DONE | |
 | N03 | dashboard and API wiring | exec | N02 | codex@medium/sonnet | 1 | 0 | DONE | |
-| N04 | Bare minimum card | exec | N03 | codex@medium/sonnet | 0 | 0 | TODO | |
+| N04 | Bare minimum card | exec | N03 | codex@medium/sonnet | 1 | 0 | DONE | |
 | N05 | visual check | gate | N04 | -/sonnet | 0 | 0 | TODO | |
 | N06 | plan acceptance | check | N05 | -/sonnet | 0 | 0 | TODO | |
 
@@ -221,4 +221,11 @@ exec: DONE · 2100 passed; ruff check and format clean
 - src/sonar/cashflow/service.py:82 adds bare minimum and ordered hints before the balance early return; debt inputs use debt schedules.
 - tests/cashflow/test_service_bare_minimum.py and tests/web/test_api_dashboard.py cover linked debts, drops, hints and numbers without a balance; quoted hint annotations preserve literal types under the category guard.
 check: PASS 2/2
+verify: PASS
+
+### N04 try 1 · 2026-11-03
+exec: DONE · 2105 passed; ruff clean; CSS rebuild matches
+- Added bare minimum card, hints, cycle and debt-ending tables with D8 hooks.
+- Daily basis derives from full-cycle lights amount and days, independent of balance setup; added five page cases.
+check: PASS 3/3
 verify: PASS

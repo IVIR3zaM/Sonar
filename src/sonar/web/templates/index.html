@@ -216,6 +216,77 @@
   {% endcall %}
 
   <div class="min-w-0 lg:col-span-2">
+  {% call card(title="Bare minimum", subtitle="Income needed to cover a full pay cycle", id="bare-minimum-card") %}
+    {% if dashboard.bare_minimum_hint %}
+    {% set reason = dashboard.bare_minimum_hint %}
+    <p id="bare-minimum-hint" data-reason="{{ reason }}" class="text-sm text-ink-muted">
+      {% if reason == "salary_day" %}Set your <a href="/settings" class="font-medium text-accent hover:underline">salary day</a> to see the bare minimum.
+      {% elif reason == "income" %}Categorize your <a href="/categories" class="font-medium text-accent hover:underline">income</a> to see the bare minimum.
+      {% else %}Add spending history for <a href="/lights-on" class="font-medium text-accent hover:underline">Keep the lights on</a> to see the bare minimum.{% endif %}
+    </p>
+    {% elif dashboard.bare_minimum %}
+    {% set minimum = dashboard.bare_minimum %}
+    {% call stat("Bare minimum", id="bare-minimum") %}
+      {{ amount(minimum.total_cents, colored=false) }}
+      <span data-field="cycle" class="block text-sm font-normal text-ink-muted">{{ charts.cycle_label(minimum.cycle.start, minimum.cycle.end) }}</span>
+    {% endcall %}
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {{ stat("Fixed costs", value=amount(minimum.cycle.fixed_cents, colored=false), id="bare-minimum-fixed") }}
+      {% call stat("Keep the lights on", id="bare-minimum-lights") %}
+        {{ amount(minimum.cycle.lights_on_cents, colored=false) }}
+        <span class="block text-xs font-normal text-ink-muted">{{ amount((minimum.cycle.lights_on_cents // minimum.cycle.days), colored=false, attrs={"data-field": "daily"}) }} a day × <span data-days="{{ minimum.cycle.days }}">{{ minimum.cycle.days }} days</span></span>
+      {% endcall %}
+      {{ stat("Income per cycle", value=amount(minimum.income_cents, colored=false), id="bare-minimum-income") }}
+      {{ stat("Residual", value=amount(minimum.residual_cents), id="bare-minimum-residual") }}
+      {% call stat("Debt share of fixed costs", id="bare-minimum-debt-share", attrs={"data-percent": minimum.debt_share_percent}) %}
+        {{ minimum.debt_share_percent }}% <span class="text-sm font-normal text-ink-muted">({{ amount(minimum.debt_cents, colored=false) }})</span>
+      {% endcall %}
+      {% call stat("Occasional spending per month", id="bare-minimum-occasional", attrs={"data-margin": minimum.occasional_margin_cents}) %}
+        {{ amount(minimum.occasional_cents, colored=false) }}
+        <span class="block text-xs font-normal text-ink-muted">{{ "shortfall" if minimum.occasional_margin_cents < 0 else "margin" }} {{ amount(minimum.occasional_margin_cents) }}</span>
+      {% endcall %}
+    </div>
+    <div class="{{ table_wrap }} mt-4">
+      <table id="bare-minimum-cycles" class="{{ table }}">
+        <thead><tr><th class="{{ th }}">Cycle</th><th class="{{ th_num }}">Fixed</th><th class="{{ th_num }}">Lights on</th><th class="{{ th_num }}">Need</th><th class="{{ th_num }}">Residual</th></tr></thead>
+        <tbody>
+        {% for cycle in minimum.cycles %}
+          <tr data-row{% if cycle == minimum.cycle %} data-max{% endif %} class="{{ tr }}">
+            <td class="{{ td }} whitespace-nowrap" data-field="cycle" data-start="{{ cycle.start.isoformat() }}" data-end="{{ cycle.end.isoformat() }}">{{ charts.cycle_label(cycle.start, cycle.end) }}</td>
+            <td class="{{ td_num }}" data-field="fixed">{{ amount(cycle.fixed_cents, colored=false) }}</td>
+            <td class="{{ td_num }}" data-field="lights">{{ amount(cycle.lights_on_cents, colored=false) }}</td>
+            <td class="{{ td_num }}" data-field="need">{{ amount(cycle.need_cents, colored=false) }}</td>
+            <td class="{{ td_num }}" data-field="residual">{{ amount(cycle.residual_cents) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h3 class="mt-4 text-sm font-semibold text-ink">Upcoming debt endings</h3>
+    {% if minimum.drops %}
+    <div class="{{ table_wrap }} mt-2">
+      <table id="bare-minimum-drops" class="{{ table }}">
+        <thead><tr><th class="{{ th }}">Name</th><th class="{{ th }}">Kind</th><th class="{{ th }}">End date</th><th class="{{ th_num }}">Rate</th></tr></thead>
+        <tbody>
+        {% for drop in minimum.drops %}
+          <tr data-row class="{{ tr }}">
+            <td class="{{ td }}" data-field="name">{{ drop.name }}</td>
+            <td class="{{ td }}" data-field="kind">{{ drop.kind }}</td>
+            <td class="{{ td }}" data-field="end_date">{{ date(drop.end_date) }}</td>
+            <td class="{{ td_num }}" data-field="rate">{{ amount(drop.rate_cents, colored=false) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p id="bare-minimum-no-drops" class="mt-2 text-sm text-ink-muted">No debts end in these six cycles.</p>
+    {% endif %}
+    {% endif %}
+  {% endcall %}
+  </div>
+
+  <div class="min-w-0 lg:col-span-2">
   {% call card(title="Fixed costs", subtitle="Recurring payments, installments and loans", id="fixed-card") %}
     {{ stat("Monthly equivalent", value=amount(dashboard.fixed_costs.monthly_equivalent_cents, colored=false), id="monthly-equivalent") }}
     {% set cycles = dashboard.fixed_costs.cycles %}

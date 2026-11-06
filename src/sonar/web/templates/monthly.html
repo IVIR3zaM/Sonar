@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "components/card.html" import card %}
 {% from "components/stat.html" import stat %}
+{% from "components/charts.html" import income_bar %}
 {% from "components/badge.html" import badge %}
 {% from "components/button.html" import button %}
 {% from "components/amount.html" import amount, date %}
@@ -69,6 +70,9 @@
   {% call card(title="By category", subtitle="Occasional payments are not forecast; transfers are shown net, not as spending.", id="categories-card") %}
     <div class="grid grid-cols-2 gap-6 sm:grid-cols-3 sm:gap-10">
       {{ stat("Spent", value=amount(spending.spent_cents, id="month-total", colored=false)) }}
+      {% if spending.income_cents > 0 %}
+      {{ stat("Residual income", value=amount(spending.residual_cents, id="residual-income", colored=true)) }}
+      {% endif %}
       {{ stat("Fixed payments", value=amount(spending.groups.fixed_cents, id="group-fixed", colored=false)) }}
       {{ stat("Keep the lights on", value=amount(spending.groups.lights_on_cents, id="group-lights-on", colored=false)) }}
       {{ stat("Occasional payments", value=amount(spending.groups.occasional_cents, id="group-occasional", colored=false)) }}
@@ -78,6 +82,8 @@
       {{ stat("Net received from other accounts" if spending.transfers_net_cents > 0 else "Net moved to other accounts", value=amount(spending.transfers_net_cents, id="transfers-net", colored=false)) }}
       {{ stat("Payments", value=spending.payments|length, id="payments-count") }}
     </div>
+
+    {{ income_bar(spending.groups, spending.income_cents) }}
 
     {% if spending.by_category %}
     {%- set widths = charts.bars(spending.by_category|map(attribute="total_cents")|list, 100) %}

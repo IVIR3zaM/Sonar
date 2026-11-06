@@ -43,6 +43,31 @@ def _tx(booking_date: date, amount_cents: int, counterparty: str = "Shop Foo") -
     )
 
 
+def test_monthly_income_counts_only_positive_income_credits_in_the_period():
+    from sonar.cashflow.monthly import Period
+
+    period = Period(date(2026, 9, 1), date(2026, 9, 1), date(2026, 9, 30))
+    rows = [
+        (_tx(date(2026, 9, 1), 600_000), "Salary"),
+        (_tx(date(2026, 9, 30), 10_000), "Salary"),
+        (_tx(date(2026, 8, 31), 50_000), "Salary"),
+        (_tx(date(2026, 10, 1), 50_000), "Salary"),
+        (_tx(date(2026, 9, 10), -1_000), "Salary"),
+        (_tx(date(2026, 9, 10), 0), "Salary"),
+        (_tx(date(2026, 9, 10), 20_000), None),
+        (_tx(date(2026, 9, 10), 30_000), "Transfers"),
+        (_tx(date(2026, 9, 10), 40_000), "Food"),
+        (_tx(date(2026, 9, 10), -650_000), "Food"),
+        (_tx(date(2026, 9, 10), -5_000), None),
+    ]
+    spending = monthly_spending(
+        rows, {"Salary": "income", "Transfers": "transfer", "Food": "lights_on"}, period
+    )
+
+    assert spending.income_cents == 610_000
+    assert spending.residual_cents == -45_000
+
+
 def test_lists_only_the_months_debits_newest_first():
     rows = [
         (_tx(date(2026, 9, 3), -1_000), "Groceries"),

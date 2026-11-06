@@ -297,6 +297,52 @@
 </g>
 {%- endmacro %}
 
+{% macro income_bar(groups, income) %}
+{%- set g = charts.income_bar(groups, income) -%}
+{%- if g %}
+{%- set names = {
+  "fixed": ("Fixed", "Fixed payments", "bg-accent/80"),
+  "lights_on": ("Lights on", "Keep the lights on", "bg-accent/60"),
+  "occasional": ("Occasional", "Occasional payments", "bg-accent/45"),
+  "uncategorized": ("Uncategorized", "Uncategorized", "bg-accent/30"),
+  "residual": ("Left", "Residual income", "bg-positive")
+} -%}
+<div id="income-bar" data-income-cents="{{ income }}" data-spent-cents="{{ g.spent_cents }}" class="mt-6">
+  <div class="relative h-7 text-sm font-medium tabular-nums">
+    <span data-part="income" data-cents="{{ income }}" class="absolute left-[70%] -translate-x-1/2 whitespace-nowrap">{{ income|eur }}</span>
+  </div>
+  <div class="relative overflow-hidden rounded-lg">
+    <div aria-hidden="true" class="absolute inset-0 flex">
+      <div data-zone="income" style="width: 70%" class="bg-positive-soft"></div>
+      <div data-zone="overspend" style="width: 30%" class="bg-negative-soft"></div>
+    </div>
+    <div class="relative flex h-16">
+      {%- for segment in g.segments %}
+      {%- set short, full, color = names[segment.part] -%}
+      {%- set label = full ~ ": " ~ segment.cents|eur %}
+      <div data-segment="{{ segment.part }}" data-cents="{{ segment.cents }}" data-width="{{ segment.width }}"
+           style="width: {{ segment.width }}%" title="{{ label }}" aria-label="{{ label }}"
+           class="flex min-w-0 shrink-0 items-center justify-center overflow-hidden {{ color }}">
+        {%- if segment.label_tier %}
+        <div class="min-w-0 px-2 text-center text-xs text-accent-ink {{ 'hidden sm:block' if segment.label_tier == 'wide' else '' }}">
+          <div class="truncate font-medium">{{ short }}</div>
+          <div class="truncate tabular-nums">{{ charts.compact_eur(segment.cents) }}</div>
+        </div>
+        {%- endif %}
+      </div>
+      {%- endfor %}
+    </div>
+  </div>
+  <p class="mt-2 text-sm text-ink-muted tabular-nums">
+    <span data-part="spent" data-cents="{{ g.spent_cents }}">Spent {{ g.spent_cents|eur }}</span>
+    {%- if g.over_cents > 0 %}
+    · <span data-part="over" data-cents="{{ g.over_cents }}" class="text-negative">{{ g.over_cents|eur }} over income</span>
+    {%- endif %}
+  </p>
+</div>
+{%- endif -%}
+{% endmacro %}
+
 {% macro need_bar(fixed, lights, income) %}
 {%- set width = 300 -%}
 {%- set g = charts.need_bar(fixed, lights, income, width) -%}

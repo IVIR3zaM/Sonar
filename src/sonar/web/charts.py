@@ -12,7 +12,7 @@ from datetime import date
 from fractions import Fraction
 from math import log10
 
-from sonar.categorization.groups import INCOME
+from sonar.categorization.groups import FIXED, INCOME, LIGHTS_ON, OCCASIONAL, GroupTotals
 from sonar.web.display import display_date
 
 # Non-breaking space before the currency sign, as in display.eur.
@@ -196,6 +196,48 @@ class NeedBar:
     fixed_width: int
     lights_width: int
     income_x: int
+
+
+@dataclass(frozen=True)
+class IncomeSegment:
+    part: str
+    cents: int
+    width: str
+    label_tier: str | None
+
+
+@dataclass(frozen=True)
+class IncomeBar:
+    segments: tuple[IncomeSegment, ...]
+    spent_cents: int
+    over_cents: int
+
+
+def income_bar(groups: GroupTotals, income_cents: int) -> IncomeBar | None:
+    """Place income at 70%, rounding cumulative endpoints in integer tenths."""
+    if income_cents == 0:
+        return None
+    parts = [
+        (FIXED, -groups.fixed_cents),
+        (LIGHTS_ON, -groups.lights_on_cents),
+        (OCCASIONAL, -groups.occasional_cents),
+        ("uncategorized", -groups.uncategorized_cents),
+    ]
+    spent_cents = sum(cents for _, cents in parts)
+    if income_cents > spent_cents:
+        parts.append(("residual", income_cents - spent_cents))
+    segments = []
+    cumulative_cents = previous_end = 0
+    for part, cents in parts:
+        if cents == 0:
+            continue
+        cumulative_cents += cents
+        end = min(round(Fraction(cumulative_cents * 700, income_cents)), 1000)
+        width = end - previous_end
+        tier = "always" if width >= 240 else "wide" if width >= 120 else None
+        segments.append(IncomeSegment(part, cents, f"{width // 10}.{width % 10}", tier))
+        previous_end = end
+    return IncomeBar(tuple(segments), spent_cents, max(spent_cents - income_cents, 0))
 
 
 def need_bar(fixed: int, lights: int, income: int, width: int) -> NeedBar:

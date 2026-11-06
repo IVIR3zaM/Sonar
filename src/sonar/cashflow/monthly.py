@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sonar.cashflow.payday import payday_in
-from sonar.categorization.groups import TRANSFER, GroupTotals, group_totals
+from sonar.categorization.groups import INCOME, TRANSFER, GroupTotals, group_totals
 from sonar.transactions import ParsedTransaction
 
 SALARY = "Salary"
@@ -72,6 +72,18 @@ class MonthlySpending:
     spent_cents: int
     transfers_net_cents: int
     groups: GroupTotals
+    income_cents: int
+
+    @property
+    def residual_cents(self) -> int:
+        return self.income_cents + sum(
+            (
+                self.groups.fixed_cents,
+                self.groups.lights_on_cents,
+                self.groups.occasional_cents,
+                self.groups.uncategorized_cents,
+            )
+        )
 
 
 def monthly_spending(
@@ -100,6 +112,11 @@ def monthly_spending(
         spent_cents=sum(c.total_cents for c in by_category),
         transfers_net_cents=sum(c.total_cents for c in transfer_totals),
         groups=group_totals(by_category),
+        income_cents=sum(
+            tx.amount_cents
+            for tx, category in in_period
+            if tx.amount_cents > 0 and category_types.get(category) == INCOME
+        ),
     )
 
 

@@ -35,6 +35,18 @@
   --color-negative-soft: oklch(0.955 0.025 25);
   --color-warn: oklch(0.56 0.12 65);
   --color-warn-soft: oklch(0.965 0.045 85);
+
+  /* Spending groups: one hue each, shared by the Monthly income bar and the
+     category table so a group reads the same everywhere. */
+  --color-fixed: oklch(0.6 0.13 240);
+  --color-fixed-ink: oklch(0.99 0 0);
+  --color-fixed-soft: oklch(0.95 0.03 240);
+  --color-lights: oklch(0.78 0.15 75);
+  --color-lights-ink: oklch(0.25 0.05 60);
+  --color-lights-soft: oklch(0.96 0.05 85);
+  --color-occasional: oklch(0.58 0.17 305);
+  --color-occasional-ink: oklch(0.99 0 0);
+  --color-occasional-soft: oklch(0.95 0.035 305);
 }
 
 @layer base {
@@ -58,6 +70,16 @@
     --color-negative-soft: oklch(0.3 0.07 25);
     --color-warn: oklch(0.81 0.12 80);
     --color-warn-soft: oklch(0.31 0.06 75);
+
+    --color-fixed: oklch(0.7 0.12 240);
+    --color-fixed-ink: oklch(0.17 0.02 260);
+    --color-fixed-soft: oklch(0.3 0.06 240);
+    --color-lights: oklch(0.8 0.13 75);
+    --color-lights-ink: oklch(0.2 0.04 60);
+    --color-lights-soft: oklch(0.31 0.06 75);
+    --color-occasional: oklch(0.72 0.14 305);
+    --color-occasional-ink: oklch(0.17 0.02 260);
+    --color-occasional-soft: oklch(0.3 0.07 305);
   }
 
   html {

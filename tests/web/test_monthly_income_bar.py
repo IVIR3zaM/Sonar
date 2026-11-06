@@ -66,3 +66,40 @@ def test_income_bar_markup_labels_overspending_and_capped_segments(tmp_path):
         assert " ".join(segment["title"].split()) == label
         assert segment["title"] == segment["aria-label"]
     assert bar.select_one('[data-segment="residual"]') is None
+
+
+def test_income_bar_legend_lists_every_segment_even_when_too_narrow_for_a_label(tmp_path):
+    create_app(tmp_path / "legend.db")
+    template = templates.env.from_string(
+        '{% from "components/charts.html" import income_bar %}{{ income_bar(groups, income) }}'
+    )
+    html = template.render(groups=GroupTotals(-500_000, -1_000, -500, 0), income=600_000)
+    bar = soup(SimpleNamespace(text=html)).select_one("#income-bar")
+    segments = bar.select("[data-segment]")
+    legend = bar.select('[data-part="legend"] [data-legend]')
+    assert [item["data-legend"] for item in legend] == [s["data-segment"] for s in segments]
+    assert [cents(item) for item in legend] == [int(s["data-cents"]) for s in segments]
+    assert [text(item) for item in legend] == [
+        "Fixed payments 5.000,00 €",
+        "Keep the lights on 10,00 €",
+        "Occasional payments 5,00 €",
+        "Residual income 985,00 €",
+    ]
+
+
+def test_bar_segments_legend_and_category_badges_share_group_tones(client):
+    page = soup(client.get("/monthly?month=2026-09"))
+    bar = page.select_one("#income-bar")
+    for segment in bar.select("[data-segment]"):
+        assert segment["data-tone"] == segment["data-segment"]
+    for item in bar.select("[data-legend]"):
+        assert item.select_one("[data-tone]")["data-tone"] == item["data-legend"]
+    tone_of = {
+        "Fixed payments": "fixed",
+        "Keep the lights on": "lights_on",
+        "Occasional payments": "occasional",
+    }
+    badges = page.select('#category-totals [data-field="group"] [data-tone]')
+    assert badges
+    for badge in badges:
+        assert badge["data-tone"] == tone_of[text(badge)]

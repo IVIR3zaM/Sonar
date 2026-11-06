@@ -1,5 +1,5 @@
 # Monthly income bar and group filters
-status: WAITING
+status: DONE
 created: 2026-11-06 · updated: 2026-11-06
 goal: /monthly compares the month's income with each spending group's share and filters payments by group
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -55,7 +55,7 @@ a normal month and for an overspend month when the sample has one, and each grou
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | income bar and residual stat | exec | - | gpt-6.1-sol@high/sonnet | 1 | 1 | DONE | |
 | N02 | group filter links | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N03 | visual check | gate | N02 | -/sonnet | 0 | 0 | TODO | |
+| N03 | visual check | gate | N02 | -/sonnet | 0 | 0 | DONE | |
 
 ## N01 income bar and residual stat
 Do: In `src/sonar/cashflow/monthly.py:66-103` add `MonthlySpending.income_cents` = sum of credits (amount > 0) in the

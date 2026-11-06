@@ -2,7 +2,8 @@
 
 from fastapi.testclient import TestClient
 
-from sonar.web.app import create_app
+from sonar.web.app import STATIC_DIR, create_app
+from sonar.web.assets import content_version
 
 
 def test_static_vendor_htmx_returns_200(tmp_path):
@@ -41,8 +42,12 @@ def test_index_links_favicon_and_home_screen_icon(tmp_path):
         text = client.get("/").text
         favicon = client.get("/static/icons/favicon.svg")
         touch_icon = client.get("/static/icons/apple-touch-icon.png")
-    assert 'rel="icon" href="/static/icons/favicon.svg"' in text
-    assert 'rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png"' in text
+    for rel, name in [
+        ("icon", "icons/favicon.svg"),
+        ("apple-touch-icon", "icons/apple-touch-icon.png"),
+    ]:
+        version = content_version((STATIC_DIR / name).read_bytes())
+        assert f'rel="{rel}" href="/static/{name}?v={version}"' in text
     assert favicon.status_code == 200
     assert touch_icon.status_code == 200
     assert touch_icon.headers["content-type"] == "image/png"
@@ -63,7 +68,8 @@ def test_index_links_web_app_manifest_with_whole_site_scope(tmp_path):
     with TestClient(app) as client:
         text = client.get("/").text
         response = client.get("/static/manifest.webmanifest")
-    assert 'rel="manifest" href="/static/manifest.webmanifest"' in text
+    version = content_version((STATIC_DIR / "manifest.webmanifest").read_bytes())
+    assert f'rel="manifest" href="/static/manifest.webmanifest?v={version}"' in text
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/manifest+json")
     manifest = response.json()

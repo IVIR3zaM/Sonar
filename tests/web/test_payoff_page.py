@@ -10,7 +10,8 @@ from sonar.db import connect
 from sonar.debts.model import Installment, Loan, MatchRule
 from sonar.debts.store import add_debt
 from sonar.web import charts
-from sonar.web.app import create_app
+from sonar.web.app import STATIC_DIR, create_app
+from sonar.web.assets import content_version
 from tests.html import cents, soup
 from tests.seed import seed
 
@@ -213,7 +214,8 @@ def test_a_page_with_steps_loads_the_slider_script_deferred(tmp_path):
 
     page = soup(_get(db_path))
 
-    script = page.select_one("script[src='/static/payoff.js']")
+    version = content_version((STATIC_DIR / "payoff.js").read_bytes())
+    script = page.select_one(f"script[src='/static/payoff.js?v={version}']")
     assert script is not None
     assert script.has_attr("defer")
 

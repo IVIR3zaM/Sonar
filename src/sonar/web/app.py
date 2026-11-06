@@ -26,6 +26,7 @@ from sonar.debts.store import DebtNotFound, DraftNotFound
 from sonar.recurring.store import PaymentNotFound
 from sonar.web import access, charts, forms
 from sonar.web.api import build_api_router
+from sonar.web.assets import static_url_builder
 from sonar.web.display import berlin_time, cadence, days_until, decimal, display_date, eur
 from sonar.web.pages import auth as auth_pages
 from sonar.web.pages import bank as bank_pages
@@ -84,6 +85,7 @@ templates.env.filters["days_until"] = days_until
 templates.env.filters["group_label"] = _group_label
 # Chart macros call the pure geometry in sonar.web.charts rather than doing math in Jinja.
 templates.env.globals["charts"] = charts
+templates.env.globals["static_url"] = static_url_builder(STATIC_DIR)
 
 
 def create_app(

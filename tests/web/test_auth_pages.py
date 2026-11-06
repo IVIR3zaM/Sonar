@@ -16,7 +16,8 @@ from itsdangerous import TimestampSigner
 from sonar.auth import store as auth_store
 from sonar.auth.settings import AuthSettings
 from sonar.db import connect
-from sonar.web.app import create_app
+from sonar.web.app import STATIC_DIR, create_app
+from sonar.web.assets import content_version
 from tests.html import soup, text
 from tests.seed import seed
 from tests.web.fake_google import FakeGoogle
@@ -291,4 +292,7 @@ def test_manifest_stays_public_and_login_page_links_it(tmp_path):
 
     assert manifest.status_code == 200
     assert manifest.json()["scope"] == "/"
-    assert page.select_one('link[rel="manifest"][href="/static/manifest.webmanifest"]') is not None
+    version = content_version((STATIC_DIR / "manifest.webmanifest").read_bytes())
+    assert page.select_one('link[rel="manifest"]')["href"] == (
+        f"/static/manifest.webmanifest?v={version}"
+    )

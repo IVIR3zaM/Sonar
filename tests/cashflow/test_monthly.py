@@ -298,3 +298,14 @@ def test_only_category_keeps_the_payments_of_one_category_in_order():
     assert only_category(payments, "Groceries") == (payments[0], payments[2])
     assert only_category(payments, UNCATEGORIZED) == (payments[1],)
     assert only_category(payments, "Housing") == ()
+
+
+def test_only_group_preserves_matching_payments_in_order():
+    from sonar.cashflow.monthly import only_group
+
+    rows = ((object(), "Rent"), (object(), None), (object(), "Food"), (object(), "Rent"))
+    assert only_group(iter(rows), {"Rent": "fixed", "Food": "lights_on"}, "fixed") == (
+        rows[0],
+        rows[3],
+    )
+    assert only_group(rows, {"Rent": "fixed"}, "occasional") == ()

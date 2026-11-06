@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -118,6 +118,13 @@ def monthly_spending(
             if tx.amount_cents > 0 and category_types.get(category) == INCOME
         ),
     )
+
+
+def only_group(
+    payments: Iterable[Row], category_types: Mapping[str, str], group: str
+) -> tuple[Row, ...]:
+    """Payments whose category belongs to the requested group, in order."""
+    return tuple(row for row in payments if category_types.get(row[1] or "") == group)
 
 
 def only_category(payments: Iterable[Row], key: str) -> tuple[Row, ...]:

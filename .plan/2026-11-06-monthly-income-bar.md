@@ -1,5 +1,5 @@
 # Monthly income bar and group filters
-status: RUNNING
+status: WAITING
 created: 2026-11-06 · updated: 2026-11-06
 goal: /monthly compares the month's income with each spending group's share and filters payments by group
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -54,7 +54,7 @@ a normal month and for an overspend month when the sample has one, and each grou
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | income bar and residual stat | exec | - | gpt-6.1-sol@high/sonnet | 1 | 1 | DONE | |
-| N02 | group filter links | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N02 | group filter links | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N03 | visual check | gate | N02 | -/sonnet | 0 | 0 | TODO | |
 
 ## N01 income bar and residual stat
@@ -158,5 +158,12 @@ plan: REPLANNED
 exec: DONE · 2231 passed; ruff check and format clean; CSS rebuild matches
 - Added income credits, residual stat, integer geometry, accessible income bar and SPEC §13 amendment with tests.
 - Income uses categorized positive credits; residual uses four spending groups; API remains unchanged.
+check: PASS 3/3
+verify: PASS
+
+### N02 try 1 · 2026-11-06
+exec: DONE · 2240 tests passed; ruff check and format clean; CSS rebuild matches
+- Added pure group filtering, linked stats, active/reset banner and month filter persistence with regression tests.
+- Documented D12-D15 in SPEC §13; category takes precedence and transfer list remains debit-only.
 check: PASS 3/3
 verify: PASS

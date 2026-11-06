@@ -20,12 +20,12 @@
     Kept off the page's other links, whose pages need the sidebar redrawn. -#}
 {% set boost = {"hx-boost": "true", "hx-target": "#main", "hx-select": "#main", "hx-swap": "outerHTML show:none"} %}
 
-{% macro month_url(month, category=none) -%}
-/monthly?month={{ month.strftime("%Y-%m") }}{% if category %}&amp;{{ {"category": category}|urlencode }}{% endif %}
+{% macro month_url(month, category=none, group=none) -%}
+/monthly?month={{ month.strftime("%Y-%m") }}{% if category %}&amp;{{ {"category": category}|urlencode }}{% elif group %}&amp;{{ {"group": group}|urlencode }}{% endif %}
 {%- endmacro %}
 
-{% macro month_link(month, category, id, label) -%}
-{{ button(label, variant="secondary", size="sm", href=month_url(month, category), id=id, attrs={"aria-label": label ~ " month: " ~ charts.month_label(month)}) }}
+{% macro month_link(month, category, group, id, label) -%}
+{{ button(label, variant="secondary", size="sm", href=month_url(month, category, group), id=id, attrs={"aria-label": label ~ " month: " ~ charts.month_label(month)}) }}
 {%- endmacro %}
 
 {% block content %}
@@ -45,12 +45,14 @@
     {%- endif %}
   </div>
   <nav aria-label="Months" class="flex flex-wrap items-center gap-2"{{ boost|xmlattr }}>
-    {% if older %}{{ month_link(older, category, "older-month", "← Older") }}{% endif %}
+    {% if older %}{{ month_link(older, category, group, "older-month", "← Older") }}{% endif %}
     {% if months %}
     <form action="/monthly" method="get" class="flex items-center gap-2">
       <label for="month-picker" class="sr-only">Month</label>
       {%- if category %}
       <input type="hidden" name="category" value="{{ category }}">
+      {%- elif group %}
+      <input type="hidden" name="group" value="{{ group }}">
       {%- endif %}
       <select id="month-picker" name="month" onchange="this.form.requestSubmit()"
               class="rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink shadow-xs focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25">
@@ -62,7 +64,7 @@
       <noscript>{{ button("Go", variant="secondary", size="sm") }}</noscript>
     </form>
     {% endif %}
-    {% if newer %}{{ month_link(newer, category, "newer-month", "Newer →") }}{% endif %}
+    {% if newer %}{{ month_link(newer, category, group, "newer-month", "Newer →") }}{% endif %}
   </nav>
 </header>
 
@@ -73,13 +75,13 @@
       {% if spending.income_cents > 0 %}
       {{ stat("Residual income", value=amount(spending.residual_cents, id="residual-income", colored=true)) }}
       {% endif %}
-      {{ stat("Fixed payments", value=amount(spending.groups.fixed_cents, id="group-fixed", colored=false)) }}
-      {{ stat("Keep the lights on", value=amount(spending.groups.lights_on_cents, id="group-lights-on", colored=false)) }}
-      {{ stat("Occasional payments", value=amount(spending.groups.occasional_cents, id="group-occasional", colored=false)) }}
+      {{ stat("Fixed payments", value=amount(spending.groups.fixed_cents, id="group-fixed", colored=false), id="stat-fixed", href=month_url(period.month, group=none if group == "fixed" else "fixed"), current=group == "fixed", attrs=boost) }}
+      {{ stat("Keep the lights on", value=amount(spending.groups.lights_on_cents, id="group-lights-on", colored=false), id="stat-lights-on", href=month_url(period.month, group=none if group == "lights_on" else "lights_on"), current=group == "lights_on", attrs=boost) }}
+      {{ stat("Occasional payments", value=amount(spending.groups.occasional_cents, id="group-occasional", colored=false), id="stat-occasional", href=month_url(period.month, group=none if group == "occasional" else "occasional"), current=group == "occasional", attrs=boost) }}
       {%- if spending.groups.uncategorized_cents != 0 %}
       {{ stat("Uncategorized", value=amount(spending.groups.uncategorized_cents, id="group-uncategorized", colored=false)) }}
       {%- endif %}
-      {{ stat("Net received from other accounts" if spending.transfers_net_cents > 0 else "Net moved to other accounts", value=amount(spending.transfers_net_cents, id="transfers-net", colored=false)) }}
+      {{ stat("Net received from other accounts" if spending.transfers_net_cents > 0 else "Net moved to other accounts", value=amount(spending.transfers_net_cents, id="transfers-net", colored=false), id="stat-transfer", href=month_url(period.month, group=none if group == "transfer" else "transfer"), current=group == "transfer", attrs=boost) }}
       {{ stat("Payments", value=spending.payments|length, id="payments-count") }}
     </div>
 
@@ -171,6 +173,12 @@
         {%- if selected %} · {{ selected.count }} payment{{ "s" if selected.count != 1 }} · {{ amount(selected.total_cents, colored=false) }}{% endif %}
       </p>
       {{ button("Show all", variant="secondary", size="sm", href=month_url(period.month), id="reset-category") }}
+    </div>
+    {% endif %}
+    {% if group %}
+    <div id="group-filter" role="status" data-count="{{ payments|length }}" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-control bg-accent-soft px-3 py-2 text-sm text-ink"{{ boost|xmlattr }}>
+      <p class="min-w-0">Only <strong class="font-semibold text-accent">{{ group_label }}</strong> · {{ payments|length }} payment{{ "s" if payments|length != 1 }} · {{ amount(group_total_cents, colored=false) }}</p>
+      {{ button("Show all", variant="secondary", size="sm", href=month_url(period.month), id="reset-group") }}
     </div>
     {% endif %}
     {% if payments %}

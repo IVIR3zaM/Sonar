@@ -1,15 +1,17 @@
 {#-
-  stat(label, value=None, id=None, hint=None, attrs={})
+  stat(label, value=None, id=None, hint=None, attrs={}, href=None, current=false)
     A labelled headline figure. value is text or markup (e.g. amount(...));
     a {% call %} block replaces it when the figure needs more than one element.
     id goes on the wrapper; put data hooks on the value itself (amount(id=...)).
 -#}
-{% macro stat(label, value=None, id=None, hint=None, attrs={}) -%}
-<div{% if id %} id="{{ id }}"{% endif %} class="min-w-0"{{ attrs|xmlattr }}>
+{% macro stat(label, value=None, id=None, hint=None, attrs={}, href=None, current=false) -%}
+<{{ "a" if href else "div" }}{% if href %} href="{{ href }}"{% if current %} aria-current="true"{% endif %}{% endif %}{% if id %} id="{{ id }}"{% endif %} class="min-w-0{% if href %} rounded-control transition-colors hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent aria-[current=true]:bg-accent-soft{% endif %}"{{ attrs|xmlattr }}>
+  {% if href %}<div>{% endif %}
   <p class="text-xs font-medium uppercase tracking-wide text-ink-muted">{{ label }}</p>
   <p class="mt-1 text-2xl font-semibold tracking-tight text-ink tabular-nums">{% if caller %}{{ caller() }}{% else %}{{ value }}{% endif %}</p>
   {%- if hint %}
   <p class="mt-0.5 text-xs text-ink-muted">{{ hint }}</p>
   {%- endif %}
-</div>
+  {% if href %}</div>{% endif %}
+</{{ "a" if href else "div" }}>
 {%- endmacro %}

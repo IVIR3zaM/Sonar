@@ -186,3 +186,21 @@ def test_empty_renders_title_message_and_action_slot():
     assert "No data yet" in soup.get_text()
     assert "Import a bank export to start." in soup.get_text()
     assert soup.select_one("a[href='/import']") is not None
+
+
+def test_stat_optional_link_and_current():
+    from tests.html import text
+
+    page = render(
+        '{% from "components/stat.html" import stat %}'
+        '{{ stat("Fixed", "100", id="linked", href="/monthly?group=fixed", current=true) }}'
+        '{{ stat("Plain", "200", id="plain") }}'
+    )
+    linked = page.select_one("#linked")
+    assert linked["href"] == "/monthly?group=fixed"
+    assert linked["aria-current"] == "true"
+    assert "Fixed" in text(linked)
+    plain = page.select_one("#plain")
+    assert plain.name == "div"
+    assert not plain.has_attr("href")
+    assert not plain.has_attr("aria-current")

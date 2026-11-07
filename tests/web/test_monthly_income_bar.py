@@ -1,10 +1,13 @@
 """Monthly income bar integration through stable page hooks (SPEC §13)."""
 
+from datetime import date
 from types import SimpleNamespace
 
+from sonar.cashflow.monthly import Upcoming
 from sonar.categorization.groups import GroupTotals
 from sonar.web.app import create_app, templates
 from tests.html import cents, soup, text
+from tests.web.test_charts_income_bar import ledger_for
 from tests.web.test_monthly_page import client as client
 
 
@@ -43,10 +46,10 @@ def test_monthly_without_income_omits_bar_and_residual(client):
 def test_income_bar_markup_labels_overspending_and_capped_segments(tmp_path):
     create_app(tmp_path / "bar.db")
     template = templates.env.from_string(
-        '{% from "components/charts.html" import income_bar %}{{ income_bar(groups, income) }}'
+        '{% from "components/charts.html" import income_bar %}{{ income_bar(ledger) }}'
     )
     html = template.render(
-        groups=GroupTotals(-100_000, -100_000, -100_000, -50_000), income=100_000
+        ledger=ledger_for(GroupTotals(-100_000, -100_000, -100_000, -50_000), 100_000)
     )
     page = soup(SimpleNamespace(text=html))
     bar = page.select_one("#income-bar")
@@ -71,9 +74,9 @@ def test_income_bar_markup_labels_overspending_and_capped_segments(tmp_path):
 def test_income_bar_legend_lists_every_segment_even_when_too_narrow_for_a_label(tmp_path):
     create_app(tmp_path / "legend.db")
     template = templates.env.from_string(
-        '{% from "components/charts.html" import income_bar %}{{ income_bar(groups, income) }}'
+        '{% from "components/charts.html" import income_bar %}{{ income_bar(ledger) }}'
     )
-    html = template.render(groups=GroupTotals(-500_000, -1_000, -500, 0), income=600_000)
+    html = template.render(ledger=ledger_for(GroupTotals(-500_000, -1_000, -500, 0), 600_000))
     bar = soup(SimpleNamespace(text=html)).select_one("#income-bar")
     segments = bar.select("[data-segment]")
     legend = bar.select('[data-part="legend"] [data-legend]')
@@ -103,3 +106,35 @@ def test_bar_segments_legend_and_category_badges_share_group_tones(client):
     assert badges
     for badge in badges:
         assert badge["data-tone"] == tone_of[text(badge)]
+
+
+def test_income_bar_labels_paid_and_upcoming_in_titles_and_legend(tmp_path):
+    create_app(tmp_path / "upcoming.db")
+    template = templates.env.from_string(
+        '{% from "components/charts.html" import income_bar %}{{ income_bar(ledger) }}'
+    )
+    upcoming = Upcoming(
+        date(2026, 11, 8), date(2026, 11, 30), -20_000, -10_000, (("Salary", 10_000),)
+    )
+    html = template.render(
+        ledger=ledger_for(GroupTotals(-10_000, -5_000, -1_000, -500), 90_000, upcoming)
+    )
+    bar = soup(SimpleNamespace(text=html)).select_one("#income-bar")
+    assert int(bar["data-income-cents"]) == 100_000
+    expected = [
+        ("fixed", "paid", "Fixed payments paid: 100,00 €"),
+        ("fixed", "upcoming", "Fixed payments upcoming: 200,00 €"),
+        ("lights_on", "paid", "Keep the lights on paid: 50,00 €"),
+        ("lights_on", "upcoming", "Keep the lights on upcoming: 100,00 €"),
+        ("occasional", "paid", "Occasional payments paid: 10,00 €"),
+        ("uncategorized", "paid", "Uncategorized paid: 5,00 €"),
+        ("residual", "paid", "Residual income paid: 535,00 €"),
+    ]
+    for segment, item, (part, kind, label) in zip(
+        bar.select("[data-segment]"), bar.select("[data-legend]"), expected, strict=True
+    ):
+        assert segment["data-segment"] == part
+        assert segment["data-kind"] == kind
+        assert " ".join(segment["title"].split()) == label
+        assert segment["aria-label"] == segment["title"]
+        assert text(item) == label

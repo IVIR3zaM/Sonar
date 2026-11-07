@@ -22,6 +22,8 @@
   --color-surface: oklch(1 0 0);
   --color-surface-muted: oklch(0.965 0.004 255);
   --color-line: oklch(0.915 0.006 255);
+  --color-glass-shine: oklch(1 0 0 / 0.65);
+  --color-glass-shade: oklch(0.22 0.02 260 / 0.2);
   --color-ink: oklch(0.22 0.02 260);
   --color-ink-muted: oklch(0.51 0.02 260);
 
@@ -57,6 +59,8 @@
     --color-surface: oklch(0.205 0.012 260);
     --color-surface-muted: oklch(0.245 0.012 260);
     --color-line: oklch(0.3 0.012 260);
+    --color-glass-shine: oklch(0.95 0.005 260 / 0.25);
+    --color-glass-shade: oklch(0.1 0.01 260 / 0.55);
     --color-ink: oklch(0.95 0.005 260);
     --color-ink-muted: oklch(0.7 0.015 260);
 
@@ -92,5 +96,39 @@
 
   body {
     @apply bg-canvas font-sans text-ink antialiased;
+  }
+}
+
+@layer components {
+  .glass-tube {
+    box-shadow: inset 0 2px 5px var(--color-glass-shade);
+  }
+
+  .glass-tube::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      var(--color-glass-shine),
+      transparent 45%
+    );
+    box-shadow: inset 0 1px 0 var(--color-glass-shine),
+      inset 0 -2px 4px var(--color-glass-shade);
+  }
+
+  .glass-fluid {
+    box-shadow: inset 0 -3px 6px var(--color-glass-shade);
+  }
+
+  .glass-upcoming {
+    background-image: repeating-linear-gradient(
+      135deg,
+      var(--color-glass-shine) 0 1px,
+      transparent 1px 6px
+    );
+    border-inline-start: 1px dashed var(--color-ink-muted);
   }
 }

@@ -85,7 +85,7 @@
       {{ stat("Payments", value=spending.payments|length, id="payments-count") }}
     </div>
 
-    {{ income_bar(spending.groups, spending.income_cents) }}
+    {{ income_bar(ledger) }}
 
     {% if spending.by_category %}
     {%- set widths = charts.bars(spending.by_category|map(attribute="total_cents")|list, 100) %}

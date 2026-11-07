@@ -63,7 +63,7 @@ residual.
 | N02 | SPEC amendment | exec | N01 | gpt-6.1-sol@low/sonnet | 1 | 0 | DONE | |
 | N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
-| N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
+| N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N07 | visual check | gate | N02,N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
@@ -270,5 +270,17 @@ verify: PASS
 exec: DONE · 2264 passed; ruff check and format clean
 - Shared dashboard window forecasting with monthly upcoming and ledger; exposed ledger in page context.
 - Balance-date window excludes settlement refunds from monthly income; tests cover booking stability, setup guards, and due sources.
+check: PASS 2/2
+verify: PASS
+
+### N05 try 1 · 2026-11-07
+exec: DONE · 2267 passed; ruff check and format clean; CSS rebuild matches
+- Ledger geometry separates paid and upcoming segments; preserved widths, caps, labels and hooks.
+- Glass tube uses semantic light/dark tokens, translucent fluid and hatched upcoming portions; rebuilt sonar.css.
+check: FAIL C4
+- C4 exit 1: Found 3 errors.
+
+### N05 try 2 · 2026-11-07
+exec: BLOCKED · C4 fails on three B023 errors in .claude/worktrees/sync-recurring-keys/src/sonar/recurring/detect.py:150-153, outside Write scope.
 check: PASS 2/2
 verify: PASS

@@ -10,6 +10,7 @@ key that holds several payments on one day splits into `<key>#<rank>` series.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -128,16 +129,20 @@ def series_keys(txs: Iterable[ParsedTransaction]) -> list[tuple[ParsedTransactio
     ]
 
 
+def _reference_tokens(purpose: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[^\W_]+", normalize_text(purpose))
+        if len(token) >= 4 and any(character.isdigit() for character in token)
+    }
+
+
 def _inherit_mandate_keys(txs: list[ParsedTransaction]) -> list[str]:
     base_keys = [payment_key(tx) for tx in txs]
     mandates: dict[str, dict[str, list[ParsedTransaction]]] = defaultdict(lambda: defaultdict(list))
     for tx, key in zip(txs, base_keys, strict=True):
         if tx.iban and key.startswith("mandate:"):
-            candidates = mandates["".join(tx.iban.split()).upper()][key]
-            if not candidates or tx.booking_date > candidates[0].booking_date:
-                candidates[:] = [tx]
-            elif tx.booking_date == candidates[0].booking_date:
-                candidates.append(tx)
+            mandates["".join(tx.iban.split()).upper()][key].append(tx)
 
     for index, (tx, key) in enumerate(zip(txs, base_keys, strict=True)):
         if not tx.iban or not key.startswith("counterparty:"):
@@ -146,17 +151,22 @@ def _inherit_mandate_keys(txs: list[ParsedTransaction]) -> list[str]:
         if not candidates:
             continue
 
+        tokens = _reference_tokens(tx.purpose)
         choices = []
-        for candidate_key, latest in candidates.items():
+        for candidate_key, rows in candidates.items():
+            candidate_tokens = {token for row in rows for token in _reference_tokens(row.purpose)}
+            latest_date = max(row.booking_date for row in rows)
+            latest = [row for row in rows if row.booking_date == latest_date]
             gap = abs(tx.booking_date.day - latest[0].booking_date.day)
             choices.append(
                 (
+                    -len(tokens & candidate_tokens),
                     all(tx.amount_cents != row.amount_cents for row in latest),
                     min(gap, DAYS_IN_MONTH_CYCLE - gap),
                     candidate_key,
                 )
             )
-        base_keys[index] = min(choices)[2]
+        base_keys[index] = min(choices)[3]
     return base_keys
 
 

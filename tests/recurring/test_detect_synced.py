@@ -1,6 +1,8 @@
 from dataclasses import replace
 from datetime import date
 
+import pytest
+
 from sonar.recurring.detect import detect_recurring, payment_key, series_keys
 from sonar.transactions import ParsedTransaction
 
@@ -101,3 +103,69 @@ def test_candidate_amount_comes_from_latest_mandate_rows_only():
         "mandate:CREDITOR/MANDATE-B",
         "mandate:CREDITOR/MANDATE-A",
     ]
+
+
+@pytest.mark.parametrize(
+    "purpose_a,purpose_b,synced_purpose,amount_a,amount_b,day_a,day_b,synced_amount,expected",
+    [
+        (
+            "Gas 400100111111",
+            "Power 400100222222",
+            "400100111111",
+            15000,
+            15200,
+            14,
+            14,
+            15200,
+            "A",
+        ),
+        ("7001000001", "7001000002", "Kd-Nr 7001000001", 6194, 6461, 14, 14, 6461, "A"),
+        ("PP.1111.PP", "PP.2222.PP", "PP.1111.PP", 2000, 2000, 12, 14, 2000, "A"),
+        ("400100111111", "400100222222", "Unrelated", 15000, 15200, 14, 14, 15200, "B"),
+        ("Abschlag pp 123", "Other", "ABSCHLAG PP 123", 15000, 15200, 14, 14, 15200, "B"),
+        ("Ref_AB12", "Other", "ref-ab12", 15000, 15200, 14, 14, 15200, "A"),
+        ("1111 1111", "2222 3333", "1111 2222 3333", 2000, 2000, 14, 14, 2000, "B"),
+        ("1111 1111", "2222", "1111 2222", 15000, 15200, 14, 14, 15200, "B"),
+    ],
+)
+def test_shared_reference_tokens_precede_amount_day_and_key(
+    purpose_a, purpose_b, synced_purpose, amount_a, amount_b, day_a, day_b, synced_amount, expected
+):
+    txs = [
+        replace(_tx(month, day, amount, f"MANDATE-{key}"), purpose=purpose)
+        for month in (5, 6, 7)
+        for key, purpose, amount, day in (
+            ("A", purpose_a, amount_a, day_a),
+            ("B", purpose_b, amount_b, day_b),
+        )
+    ]
+    txs.append(replace(_tx(8, 14, synced_amount), purpose=synced_purpose))
+    expected_key = f"mandate:CREDITOR/MANDATE-{expected}"
+
+    assert series_keys(txs)[-1][1] == expected_key
+    payments = detect_recurring(
+        [(tx, "Utilities") for tx in txs], {"Utilities": "fixed"}, date(2026, 8, 15)
+    )
+    payment = next(payment for payment in payments if payment.key == expected_key)
+    assert payment.last_paid_date == date(2026, 8, 14)
+    assert payment.schedule.amount_cents == synced_amount
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_candidate_tokens_include_older_mandate_rows(reverse):
+    txs = [
+        replace(_tx(5, 14, 15000, "MANDATE-A"), purpose="400100111111"),
+        replace(_tx(6, 14, 15000, "MANDATE-A"), purpose="Older debit"),
+        replace(_tx(7, 14, 15000, "MANDATE-A"), purpose="Latest debit"),
+        replace(_tx(7, 14, 15200, "MANDATE-B"), purpose="400100222222"),
+    ]
+    if reverse:
+        txs.reverse()
+    txs.append(replace(_tx(8, 14, 15200), purpose="400100111111"))
+
+    assert series_keys(txs)[-1][1] == "mandate:CREDITOR/MANDATE-A"
+    [payment] = detect_recurring(
+        [(tx, "Utilities") for tx in txs], {"Utilities": "fixed"}, date(2026, 8, 15)
+    )
+    assert payment.key == "mandate:CREDITOR/MANDATE-A"
+    assert payment.last_paid_date == date(2026, 8, 14)

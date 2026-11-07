@@ -47,13 +47,15 @@ counterparty = "Utility Co"
 def test_group_stat_filters_and_toggles(client, group, hook, category, count, total, label):
     unfiltered = soup(client.get("/monthly?month=2026-09"))
     link = unfiltered.select_one(f"#stat-{hook}")
-    assert link["href"] == f"/monthly?month=2026-09&group={group}"
+    assert link["href"] == f"/monthly?month=2026-09&group={group}#payments-card"
+    assert link["hx-swap"] == "outerHTML show:#payments-card:top"
     page = soup(client.get(link["href"]))
     rows = records(page.select_one("#payments"))
     assert len(rows) == count
     assert {row["category"] for row in rows} == {category}
     assert page.select_one(f"#stat-{hook}")["aria-current"] == "true"
     assert page.select_one(f"#stat-{hook}")["href"] == "/monthly?month=2026-09"
+    assert page.select_one(f"#stat-{hook}")["hx-swap"] == "outerHTML show:none"
     banner = page.select_one("#group-filter")
     assert f"Only {label}" in text(banner)
     assert banner["data-count"] == str(count)

@@ -25,6 +25,14 @@
 /monthly?month={{ month.strftime("%Y-%m") }}{% if category %}&amp;{{ {"category": category}|urlencode }}{% elif group %}&amp;{{ {"group": group}|urlencode }}{% endif %}
 {%- endmacro %}
 
+{#- A group link that filters jumps to the Payments card it narrows, with or
+    without JavaScript; the link that clears the filter stays put. -#}
+{% set boost_to_payments = {"hx-boost": "true", "hx-target": "#main", "hx-select": "#main", "hx-swap": "outerHTML show:#payments-card:top"} %}
+
+{% macro group_url(month, key, current) -%}
+{{ month_url(month) if current == key else month_url(month, group=key) ~ "#payments-card" }}
+{%- endmacro %}
+
 {% macro month_link(month, category, group, id, label) -%}
 {{ button(label, variant="secondary", size="sm", href=month_url(month, category, group), id=id, attrs={"aria-label": label ~ " month: " ~ charts.month_label(month)}) }}
 {%- endmacro %}
@@ -79,12 +87,12 @@
         {% endfor %}
       {% endcall %}
       {% endif %}
-      {{ ledger_line("Fixed payments", ledger.fixed.total_cents, "−", "group-fixed", href=month_url(period.month, group=none if group == "fixed" else "fixed"), current=group == "fixed", upcoming_cents=ledger.fixed.upcoming_cents if ledger.upcoming else none, attrs=boost) }}
-      {{ ledger_line("Keep the lights on", ledger.lights_on.total_cents, "−", "group-lights-on", href=month_url(period.month, group=none if group == "lights_on" else "lights_on"), current=group == "lights_on", upcoming_cents=ledger.lights_on.upcoming_cents if ledger.upcoming else none, attrs=boost) }}
+      {{ ledger_line("Fixed payments", ledger.fixed.total_cents, "−", "group-fixed", href=group_url(period.month, "fixed", group), current=group == "fixed", upcoming_cents=ledger.fixed.upcoming_cents if ledger.upcoming else none, attrs=boost if group == "fixed" else boost_to_payments) }}
+      {{ ledger_line("Keep the lights on", ledger.lights_on.total_cents, "−", "group-lights-on", href=group_url(period.month, "lights_on", group), current=group == "lights_on", upcoming_cents=ledger.lights_on.upcoming_cents if ledger.upcoming else none, attrs=boost if group == "lights_on" else boost_to_payments) }}
       {% if ledger.income_cents != 0 %}
       {{ ledger_line("Possible residual income", ledger.possible_residual_cents, "=", "possible-residual") }}
       {% endif %}
-      {{ ledger_line("Occasional payments", ledger.occasional.total_cents, "−", "group-occasional", href=month_url(period.month, group=none if group == "occasional" else "occasional"), current=group == "occasional", attrs=boost) }}
+      {{ ledger_line("Occasional payments", ledger.occasional.total_cents, "−", "group-occasional", href=group_url(period.month, "occasional", group), current=group == "occasional", attrs=boost if group == "occasional" else boost_to_payments) }}
       {% if ledger.uncategorized.total_cents != 0 %}
       {{ ledger_line("Uncategorized", ledger.uncategorized.total_cents, "−", "group-uncategorized") }}
       {% endif %}
@@ -103,7 +111,7 @@
     <aside id="not-counted" class="mt-5 border-t border-line pt-4 text-ink-muted [&_p]:text-ink-muted">
       <p class="mb-3 text-xs font-medium">For information, not counted</p>
       <div class="grid grid-cols-2 gap-6">
-        {{ stat("Net received from other accounts" if spending.transfers_net_cents > 0 else "Net moved to other accounts", value=amount(spending.transfers_net_cents, id="transfers-net", colored=false), id="stat-transfer", href=month_url(period.month, group=none if group == "transfer" else "transfer"), current=group == "transfer", attrs=boost) }}
+        {{ stat("Net received from other accounts" if spending.transfers_net_cents > 0 else "Net moved to other accounts", value=amount(spending.transfers_net_cents, id="transfers-net", colored=false), id="stat-transfer", href=group_url(period.month, "transfer", group), current=group == "transfer", attrs=boost if group == "transfer" else boost_to_payments) }}
         {{ stat("Payments", value=spending.payments|length, id="payments-count") }}
       </div>
     </aside>
@@ -126,9 +134,11 @@
           {%- set tone = {"fixed": "fill-fixed", "lights_on": "fill-lights", "occasional": "fill-occasional"}.get(c.category_type, "fill-ink-muted/50" if c.category is none else "fill-accent") %}
           {%- set is_selected = c.key == category %}
           {%- set group = c.category_type|group_label %}
-          {#- The link stretches over the whole row, so any cell is a click target. #}
+          {#- The link stretches over the whole row, so any cell is a click target.
+              iOS Safari ignores `relative` on a <tr>, so the transform is what
+              keeps the stretched link inside its own row. #}
           <tr data-row{% if is_selected %} aria-current="true"{% endif %}
-              class="{{ tr }} relative transition-colors hover:bg-surface-muted aria-[current=true]:bg-accent-soft{% if category and not is_selected %} text-ink-muted opacity-60 hover:opacity-100{% endif %}">
+              class="{{ tr }} relative [transform:translateZ(0)] transition-colors hover:bg-surface-muted aria-[current=true]:bg-accent-soft{% if category and not is_selected %} text-ink-muted opacity-60 hover:opacity-100{% endif %}">
             <td class="{{ td }} pl-2" data-field="category">
               <a href="{{ month_url(period.month) if is_selected else month_url(period.month, c.key) }}"
                  {%- if is_selected %} title="Show all categories"{% endif %}
@@ -167,9 +177,11 @@
         <tbody>
         {% for c in spending.transfer_totals %}
           {%- set is_selected = c.key == category %}
-          {#- The link stretches over the whole row, so any cell is a click target. #}
+          {#- The link stretches over the whole row, so any cell is a click target.
+              iOS Safari ignores `relative` on a <tr>, so the transform is what
+              keeps the stretched link inside its own row. #}
           <tr data-row{% if is_selected %} aria-current="true"{% endif %}
-              class="{{ tr }} relative transition-colors hover:bg-surface-muted aria-[current=true]:bg-accent-soft{% if category and not is_selected %} text-ink-muted opacity-60 hover:opacity-100{% endif %}">
+              class="{{ tr }} relative [transform:translateZ(0)] transition-colors hover:bg-surface-muted aria-[current=true]:bg-accent-soft{% if category and not is_selected %} text-ink-muted opacity-60 hover:opacity-100{% endif %}">
             <td class="{{ td }} pl-2" data-field="category">
               <a href="{{ month_url(period.month) if is_selected else month_url(period.month, c.key) }}"
                  {%- if is_selected %} title="Show all categories"{% endif %}

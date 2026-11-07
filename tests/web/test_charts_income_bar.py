@@ -1,15 +1,67 @@
 """Integer geometry for the Monthly income bar (SPEC §13)."""
 
 from dataclasses import FrozenInstanceError
+from datetime import date
 
 import pytest
 
+from sonar.cashflow.monthly import Ledger, LedgerLine, Upcoming
 from sonar.categorization.groups import GroupTotals
 from sonar.web import charts
 
 
+def ledger_for(groups: GroupTotals, income: int, upcoming: Upcoming | None = None) -> Ledger:
+    return Ledger(
+        income=(
+            LedgerLine(
+                "Salary", income, sum(c for _, c in upcoming.income_by_category) if upcoming else 0
+            ),
+        ),
+        fixed=LedgerLine(
+            "Fixed payments", groups.fixed_cents, upcoming.fixed_cents if upcoming else 0
+        ),
+        lights_on=LedgerLine(
+            "Keep the lights on",
+            groups.lights_on_cents,
+            upcoming.lights_on_cents if upcoming else 0,
+        ),
+        occasional=LedgerLine("Occasional payments", groups.occasional_cents, 0),
+        uncategorized=LedgerLine("Uncategorized", groups.uncategorized_cents, 0),
+        upcoming=upcoming,
+    )
+
+
+def test_income_bar_orders_paid_and_upcoming_with_cumulative_widths():
+    upcoming = Upcoming(date(2026, 11, 8), date(2026, 11, 30), -2, -1, (("Salary", 2),))
+    ledger = ledger_for(GroupTotals(-1, -1, -1, -1), 8, upcoming)
+    bar = charts.income_bar(ledger)
+
+    assert [(s.part, s.upcoming, s.cents, s.width) for s in bar.segments] == [
+        ("fixed", False, 1, "7.0"),
+        ("fixed", True, 2, "14.0"),
+        ("lights_on", False, 1, "7.0"),
+        ("lights_on", True, 1, "7.0"),
+        ("occasional", False, 1, "7.0"),
+        ("uncategorized", False, 1, "7.0"),
+        ("residual", False, 3, "21.0"),
+    ]
+    assert bar.spent_cents == 7
+    assert bar.over_cents == 0
+
+
+def test_income_bar_skips_zero_paid_and_caps_upcoming_overspending():
+    upcoming = Upcoming(date(2026, 11, 8), date(2026, 11, 30), -100, -100, ())
+    bar = charts.income_bar(ledger_for(GroupTotals(0, 0, 0, 0), 100, upcoming))
+    assert [(s.part, s.upcoming, s.width) for s in bar.segments] == [
+        ("fixed", True, "70.0"),
+        ("lights_on", True, "30.0"),
+    ]
+    assert bar.spent_cents == 200
+    assert bar.over_cents == 100
+
+
 def test_income_bar_example_widths_labels_and_residual():
-    bar = charts.income_bar(GroupTotals(-200_000, -100_000, -50_000, 0), 600_000)
+    bar = charts.income_bar(ledger_for(GroupTotals(-200_000, -100_000, -50_000, 0), 600_000))
 
     assert [(s.part, s.cents, s.width, s.label_tier) for s in bar.segments] == [
         ("fixed", 200_000, "23.3", "wide"),
@@ -26,7 +78,7 @@ def test_income_bar_example_widths_labels_and_residual():
 
 
 def test_income_bar_overspend_caps_segments_without_discarding_their_cents():
-    bar = charts.income_bar(GroupTotals(-100_000, -100_000, -100_000, -50_000), 100_000)
+    bar = charts.income_bar(ledger_for(GroupTotals(-100_000, -100_000, -100_000, -50_000), 100_000))
 
     assert [(s.part, s.cents, s.width) for s in bar.segments] == [
         ("fixed", 100_000, "70.0"),
@@ -43,25 +95,25 @@ def test_income_bar_overspend_caps_segments_without_discarding_their_cents():
     [(239, "23.9", "wide"), (240, "24.0", "always"), (119, "11.9", None), (120, "12.0", "wide")],
 )
 def test_income_bar_label_thresholds(spent, width, tier):
-    bar = charts.income_bar(GroupTotals(-spent, 0, 0, 0), 700)
+    bar = charts.income_bar(ledger_for(GroupTotals(-spent, 0, 0, 0), 700))
     assert (bar.segments[0].width, bar.segments[0].label_tier) == (width, tier)
 
 
 def test_income_bar_rounds_cumulative_endpoints_exactly():
-    bar = charts.income_bar(GroupTotals(-1, -1, -1, 0), 6)
+    bar = charts.income_bar(ledger_for(GroupTotals(-1, -1, -1, 0), 6))
     assert [s.width for s in bar.segments] == ["11.7", "11.6", "11.7", "35.0"]
 
 
 def test_income_bar_exactly_spent_income_has_no_residual():
-    bar = charts.income_bar(GroupTotals(-100, 0, 0, 0), 100)
+    bar = charts.income_bar(ledger_for(GroupTotals(-100, 0, 0, 0), 100))
     assert [s.part for s in bar.segments] == ["fixed"]
     assert bar.over_cents == 0
 
 
 def test_income_bar_without_spending_is_all_residual():
-    bar = charts.income_bar(GroupTotals(0, 0, 0, 0), 100)
+    bar = charts.income_bar(ledger_for(GroupTotals(0, 0, 0, 0), 100))
     assert [(s.part, s.cents, s.width) for s in bar.segments] == [("residual", 100, "70.0")]
 
 
 def test_income_bar_without_income_is_absent():
-    assert charts.income_bar(GroupTotals(-100, 0, 0, 0), 0) is None
+    assert charts.income_bar(ledger_for(GroupTotals(-100, 0, 0, 0), 0)) is None

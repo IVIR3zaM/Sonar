@@ -55,6 +55,7 @@ def build_router(db_path: Path, today: Callable[[], date], templates: Jinja2Temp
             "monthly.html",
             {
                 "spending": spending,
+                "ledger": view.ledger,
                 "category": category,
                 "category_label": "Uncategorized" if category == UNCATEGORIZED else category,
                 "payments": payments,

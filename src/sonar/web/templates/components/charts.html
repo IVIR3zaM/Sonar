@@ -297,35 +297,38 @@
 </g>
 {%- endmacro %}
 
-{% macro income_bar(groups, income) %}
-{%- set g = charts.income_bar(groups, income) -%}
+{% macro income_bar(ledger) %}
+{%- set g = charts.income_bar(ledger) -%}
+{%- set income = ledger.income_cents -%}
 {%- if g %}
 {#- Group colors are the same tokens as the category table's group badges. #}
 {%- set names = {
-  "fixed": ("Fixed", "Fixed payments", "bg-fixed/85 text-fixed-ink"),
-  "lights_on": ("Lights on", "Keep the lights on", "bg-lights/85 text-lights-ink"),
-  "occasional": ("Occasional", "Occasional payments", "bg-occasional/85 text-occasional-ink"),
-  "uncategorized": ("Uncategorized", "Uncategorized", "bg-ink-muted/50 text-surface"),
-  "residual": ("Left", "Residual income", "bg-positive text-surface")
+  "fixed": ("Fixed", "Fixed payments", "bg-fixed/60 text-fixed-ink", "bg-fixed/30 text-fixed-ink"),
+  "lights_on": ("Lights on", "Keep the lights on", "bg-lights/60 text-lights-ink", "bg-lights/30 text-lights-ink"),
+  "occasional": ("Occasional", "Occasional payments", "bg-occasional/60 text-occasional-ink", ""),
+  "uncategorized": ("Uncategorized", "Uncategorized", "bg-ink-muted/60 text-surface", ""),
+  "residual": ("Left", "Residual income", "bg-positive/60 text-surface", "")
 } -%}
 <div id="income-bar" data-income-cents="{{ income }}" data-spent-cents="{{ g.spent_cents }}" class="mt-6">
   <div class="relative h-7 text-sm font-medium tabular-nums">
     <span data-part="income" data-cents="{{ income }}" class="absolute left-[70%] -translate-x-1/2 whitespace-nowrap">{{ income|eur }}</span>
   </div>
-  <div class="relative overflow-hidden rounded-lg">
+  <div class="glass-tube relative overflow-hidden rounded-full">
     <div aria-hidden="true" class="absolute inset-0 flex">
-      <div data-zone="income" style="width: 70%" class="bg-positive-soft"></div>
-      <div data-zone="overspend" style="width: 30%" class="bg-negative-soft"></div>
+      <div data-zone="income" style="width: 70%" class="bg-positive/20"></div>
+      <div data-zone="overspend" style="width: 30%" class="bg-negative/20"></div>
     </div>
     <div class="relative flex h-16">
       {%- for segment in g.segments %}
-      {%- set short, full, color = names[segment.part] -%}
-      {%- set label = full ~ ": " ~ segment.cents|eur %}
-      <div data-segment="{{ segment.part }}" data-tone="{{ segment.part }}" data-cents="{{ segment.cents }}" data-width="{{ segment.width }}"
+      {%- set short, full, paid_color, upcoming_color = names[segment.part] -%}
+      {%- set color = upcoming_color if segment.upcoming else paid_color -%}
+      {%- set kind = "upcoming" if segment.upcoming else "paid" -%}
+      {%- set label = full ~ (" " ~ kind if ledger.upcoming and segment.part != "residual" else "") ~ ": " ~ segment.cents|eur %}
+      <div data-segment="{{ segment.part }}" data-kind="{{ kind }}" data-tone="{{ segment.part }}" data-cents="{{ segment.cents }}" data-width="{{ segment.width }}"
            style="width: {{ segment.width }}%" title="{{ label }}" aria-label="{{ label }}"
-           class="flex min-w-0 shrink-0 items-center justify-center overflow-hidden {{ color }}">
+           class="glass-fluid {{ 'glass-upcoming' if segment.upcoming else '' }} flex min-w-0 shrink-0 items-center justify-center overflow-hidden {{ color }}">
         {%- if segment.label_tier %}
-        <div class="min-w-0 px-2 text-center text-xs {{ 'hidden sm:block' if segment.label_tier == 'wide' else '' }}">
+        <div class="min-w-0 px-2 text-center text-xs {{ 'rounded bg-surface/80 py-0.5 text-ink' if segment.upcoming else '' }} {{ 'hidden sm:block' if segment.label_tier == 'wide' else '' }}">
           <div class="truncate font-medium">{{ short }}</div>
           <div class="truncate tabular-nums">{{ charts.compact_eur(segment.cents) }}</div>
         </div>
@@ -337,10 +340,12 @@
   {#- Narrow segments drop their inside label, so the legend always names every segment. #}
   <ul data-part="legend" class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
     {%- for segment in g.segments %}
-    {%- set short, full, color = names[segment.part] %}
+    {%- set short, full, paid_color, upcoming_color = names[segment.part] -%}
+    {%- set color = upcoming_color if segment.upcoming else paid_color -%}
+    {%- set kind = "upcoming" if segment.upcoming else "paid" %}
     <li data-legend="{{ segment.part }}" data-cents="{{ segment.cents }}" class="flex items-center gap-1.5">
-      <span data-tone="{{ segment.part }}" aria-hidden="true" class="size-2.5 shrink-0 rounded-sm {{ color }}"></span>
-      <span class="text-ink-muted">{{ full }}</span>
+      <span data-tone="{{ segment.part }}" aria-hidden="true" class="{{ 'glass-upcoming' if segment.upcoming else '' }} size-2.5 shrink-0 rounded-sm {{ color }}"></span>
+      <span class="text-ink-muted">{{ full }}{{ (" " ~ kind if segment.part != "residual" else "") ~ ":" if ledger.upcoming else "" }}</span>
       <span class="font-medium">{{ segment.cents|eur }}</span>
     </li>
     {%- endfor %}

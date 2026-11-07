@@ -25,7 +25,16 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sonar.cashflow.payday import payday_in
-from sonar.categorization.groups import INCOME, TRANSFER, GroupTotals, group_totals
+from sonar.categorization.groups import (
+    FIXED,
+    INCOME,
+    LABELS,
+    LIGHTS_ON,
+    OCCASIONAL,
+    TRANSFER,
+    GroupTotals,
+    group_totals,
+)
 from sonar.transactions import ParsedTransaction
 
 SALARY = "Salary"
@@ -73,6 +82,7 @@ class MonthlySpending:
     transfers_net_cents: int
     groups: GroupTotals
     income_cents: int
+    income_by_category: tuple[tuple[str, int], ...]
 
     @property
     def residual_cents(self) -> int:
@@ -84,6 +94,90 @@ class MonthlySpending:
                 self.groups.uncategorized_cents,
             )
         )
+
+
+@dataclass(frozen=True)
+class Upcoming:
+    start: date
+    end: date
+    fixed_cents: int
+    lights_on_cents: int
+    income_by_category: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
+class LedgerLine:
+    name: str
+    paid_cents: int
+    upcoming_cents: int
+
+    @property
+    def total_cents(self) -> int:
+        return self.paid_cents + self.upcoming_cents
+
+
+@dataclass(frozen=True)
+class Ledger:
+    income: tuple[LedgerLine, ...]
+    fixed: LedgerLine
+    lights_on: LedgerLine
+    occasional: LedgerLine
+    uncategorized: LedgerLine
+    upcoming: Upcoming | None
+
+    @property
+    def income_cents(self) -> int:
+        return sum(line.total_cents for line in self.income)
+
+    @property
+    def spent(self) -> LedgerLine:
+        lines = (self.fixed, self.lights_on, self.occasional, self.uncategorized)
+        return LedgerLine(
+            "Spent",
+            sum(line.paid_cents for line in lines),
+            sum(line.upcoming_cents for line in lines),
+        )
+
+    @property
+    def possible_residual_cents(self) -> int:
+        return self.income_cents + self.fixed.total_cents + self.lights_on.total_cents
+
+    @property
+    def actual_residual_cents(self) -> int:
+        return (
+            self.possible_residual_cents
+            + self.occasional.total_cents
+            + self.uncategorized.total_cents
+        )
+
+
+def ledger(spending: MonthlySpending, upcoming: Upcoming | None = None) -> Ledger:
+    """Combine paid and expected amounts, retaining their separate parts."""
+    paid_income = dict(spending.income_by_category)
+    upcoming_income = dict(upcoming.income_by_category) if upcoming else {}
+    income = tuple(
+        sorted(
+            (
+                LedgerLine(name, paid_income.get(name, 0), upcoming_income.get(name, 0))
+                for name in paid_income.keys() | upcoming_income.keys()
+            ),
+            key=lambda line: (-line.total_cents, line.name),
+        )
+    )
+    return Ledger(
+        income=income,
+        fixed=LedgerLine(
+            LABELS[FIXED], spending.groups.fixed_cents, upcoming.fixed_cents if upcoming else 0
+        ),
+        lights_on=LedgerLine(
+            LABELS[LIGHTS_ON],
+            spending.groups.lights_on_cents,
+            upcoming.lights_on_cents if upcoming else 0,
+        ),
+        occasional=LedgerLine(LABELS[OCCASIONAL], spending.groups.occasional_cents, 0),
+        uncategorized=LedgerLine("Uncategorized", spending.groups.uncategorized_cents, 0),
+        upcoming=upcoming,
+    )
 
 
 def monthly_spending(
@@ -104,6 +198,11 @@ def monthly_spending(
     # debits-only: a transfer out and its matching money coming back both
     # count, even though only the debit is ever listed as a payment.
     transfer_totals = _transfer_totals(in_period, category_types)
+    income_totals: dict[str, int] = defaultdict(int)
+    for tx, category in in_period:
+        if category is not None and tx.amount_cents > 0 and category_types.get(category) == INCOME:
+            income_totals[category] += tx.amount_cents
+    income_by_category = tuple(sorted(income_totals.items(), key=lambda item: (-item[1], item[0])))
     return MonthlySpending(
         period=period,
         payments=tuple(payments),
@@ -112,11 +211,8 @@ def monthly_spending(
         spent_cents=sum(c.total_cents for c in by_category),
         transfers_net_cents=sum(c.total_cents for c in transfer_totals),
         groups=group_totals(by_category),
-        income_cents=sum(
-            tx.amount_cents
-            for tx, category in in_period
-            if tx.amount_cents > 0 and category_types.get(category) == INCOME
-        ),
+        income_cents=sum(amount for _, amount in income_by_category),
+        income_by_category=income_by_category,
     )
 
 

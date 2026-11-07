@@ -1,5 +1,5 @@
 # Monthly forecast ledger and glass bar
-status: WAITING
+status: RUNNING
 created: 2026-11-07 · updated: 2026-11-07
 goal: /monthly explains income against spending as a top-down ledger, the current month adds what is still to come, and the income bar reads as a transparent glass tube
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -66,7 +66,7 @@ residual.
 | N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N07 | visual check | gate | N02,N09 | -/sonnet | 0 | 1 | TODO | |
+| N07 | visual check | gate | N02,N09 | -/sonnet | 0 | 1 | DONE | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
 | N09 | gate fixes | exec | N06 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 

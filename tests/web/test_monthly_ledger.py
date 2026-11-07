@@ -122,6 +122,19 @@ def test_current_ledger_includes_upcoming_and_forecast_window(ledger_client):
     }
 
 
+@pytest.mark.parametrize("ledger_client", [date(2026, 10, 15), date(2026, 9, 15)], indirect=True)
+def test_monthly_summary_blocks_follow_ledger_order(ledger_client):
+    assert ledger_client.put(
+        "/api/settings", json={"salary_day": 1, "overdraft_limit_cents": 0}
+    ).is_success
+    assert ledger_client.post(
+        "/api/settings/balance", json={"amount_cents": 200_000, "as_of": "2026-09-15"}
+    ).is_success
+    page = soup(ledger_client.get("/monthly?month=2026-09"))
+    hooks = ["month-total", "income-bar", "not-counted", "category-totals"]
+    assert [el["id"] for el in page.select("[id]") if el["id"] in hooks] == hooks
+
+
 def test_zero_income_omits_income_and_residuals_and_keeps_group_links(ledger_client):
     page = soup(ledger_client.get("/monthly?month=2026-08&group=fixed"))
     assert page.select_one("#monthly-ledger") is not None

@@ -54,6 +54,7 @@ residual.
 - D13 Category table, payment list, group filter and /api/monthly stay paid only and unchanged | confirmed
 - D14 A SPEC §13 amendment "Monthly ledger and forecast (§9, §12)" records these rules and overrides the Monthly income bar bullet's zone colours, segment list and stat layout | confirmed
 - D15 Visual gate on a temp DB, pre-authorized: import the newest sample; salary day 26 and a balance as of the last booking for past months; then salary day 10 with the same balance so the current period has about two weeks upcoming | confirmed
+- D16 Gate feedback: the residual segment's title and legend never say paid or upcoming; inside labels on upcoming (hatched) segments sit on a readable surface backdrop in light and dark; order on /monthly is ledger, forecast note, Spent line, income bar, "For information, not counted", category table | confirmed
 
 ## Graph
 
@@ -65,8 +66,9 @@ residual.
 | N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N07 | visual check | gate | N02,N06 | -/sonnet | 0 | 0 | TODO | |
+| N07 | visual check | gate | N02,N09 | -/sonnet | 0 | 1 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
+| N09 | gate fixes | exec | N06 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
 Do: Confirm the starting point: verify passes on the untouched tree, the CSS build tool runs (it may download its
@@ -212,6 +214,35 @@ Done when:
 - C3 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/plz-n06.css" --minify && cmp "$TMPDIR/plz-n06.css" src/sonar/web/static/sonar.css`
 - C4 [cmd] `uv run pytest -q -x && uv run ruff check .`
 
+## N09 gate fixes
+Do: Fix three /monthly gate defects. 1) The residual segment's `title`, `aria-label` and legend text never append
+  " paid" or " upcoming"; spending segments keep them in a month with upcoming; `data-kind` hooks stay. 2) Inside
+  labels of upcoming (hatched) segments sit on a small rounded backdrop of the `surface` token (about 80%) with
+  `text-ink`; paid labels unchanged. 3) `{{ income_bar(ledger) }}` moves right after the Spent paragraph, so
+  `#not-counted` is the last block before `#category-totals`. Record rules 1 and 3 in the §13 bullet; rebuild sonar.css.
+Context: D16: residual never says paid or upcoming; upcoming labels readable in light and dark; order is ledger,
+  forecast note, Spent line, income bar, not-counted area, category table. D6: in a month with upcoming, spending
+  titles and legend say paid or upcoming. Macro `income_bar` at src/sonar/web/templates/components/charts.html:300
+  (label 326, inside label 330-335, legend 348); bar call monthly.html:110, Spent paragraph monthly.html:98-101;
+  SPEC §13 bullet SPEC.md:282 ("Titles and legend say paid or upcoming..."). Theme tokens only, no inline `<style>`;
+  CSS build command in AGENTS.md Setup.
+Read: `src/sonar/web/templates/components/charts.html`, `src/sonar/web/templates/monthly.html`, `tests/html.py`,
+  `tests/web/test_monthly_income_bar.py`, `tests/web/test_monthly_ledger.py`, `SPEC.md`
+Write: `src/sonar/web/templates/components/charts.html`, `src/sonar/web/templates/monthly.html`,
+  `src/sonar/web/static/src/app.css`, `src/sonar/web/static/sonar.css`, `SPEC.md`,
+  `tests/web/test_monthly_income_bar.py`, `tests/web/test_monthly_ledger.py`
+Test first: test_monthly_income_bar.py:131 expects "Residual income: 535,00 €" in title and legend (fails today);
+  a new test in test_monthly_ledger.py asserts document order `#month-total` < `#income-bar` < `#not-counted` <
+  `#category-totals` on a past and a current month (fails today).
+Done when:
+- C1 [cmd] `uv run pytest -q tests/web/test_monthly_income_bar.py tests/web/test_monthly_ledger.py`
+- C2 [review] the residual expectation reads "Residual income: 535,00 €" and the order test covers past and current
+  months; no other test expectation changed
+- C3 [review] upcoming inside labels use a `surface` backdrop with `text-ink`; no inline `<style>`, no new colour
+  literals; paid labels and every hook unchanged; SPEC.md:282 states rules 1 and 3
+- C4 [cmd] `TAILWINDCSS_VERSION=v4.3.3 uv run tailwindcss -i src/sonar/web/static/src/app.css -o "$TMPDIR/plz-n09.css" --minify && cmp "$TMPDIR/plz-n09.css" src/sonar/web/static/sonar.css`
+- C5 [cmd] `uv run pytest -q -x && uv run ruff check .`
+
 ## N07 visual check
 Do: gate, pre-authorized. Run `uv run sonar import-categories data/categories.toml --db "$TMPDIR/sonar-visual.db"`,
   then start the app per config `visual_recipe` on `$TMPDIR/sonar-visual.db`; import the newest file in `samples/`
@@ -226,9 +257,12 @@ Done when:
 - C2 [visual] the current month shows "paid + upcoming" under Fixed and Keep the lights on and a forecast note;
   past months show no upcoming parts
 - C3 [visual] the bar looks like a glossy glass tube with rounded ends and highlight; the green and red zone tint
-  shows through the fluid; upcoming segments are paler and hatched; legend and titles say paid and upcoming
-- C4 [visual] the not-counted area is visually separate; each group line filters the payments and is marked active
-- C5 [visual] at 375px nothing overflows the card or scrolls the page sideways; light and dark both readable
+  shows through the fluid; upcoming segments are paler and hatched; in the current month legend and titles say
+  paid or upcoming for spending segments and never for the residual segment (D16)
+- C4 [visual] inside labels on upcoming segments are clearly readable in dark and light (D16)
+- C5 [visual] order is ledger, Spent line, income bar, then the separate "For information, not counted" area as
+  the last block before the category table (D16); each group line filters the payments and is marked active
+- C6 [visual] at 375px nothing overflows the card or scrolls the page sideways; light and dark both readable
 
 ## N08 plan acceptance
 Do: Whole-plan check: full verify, and the work against AGENTS.md rules and SPEC §11 (SPEC.md:162) and §12
@@ -290,4 +324,21 @@ exec: DONE · 2270 passed; ruff check and format clean; CSS rebuild matches
 - Replaced monthly stats grid with ledger macro, income breakdown, residual equations, forecast window and informational aside.
 - Kept signed total hooks while displaying spending magnitudes; added past/current/zero-income ledger coverage and retained group links.
 check: PASS 2/2
+verify: PASS
+
+### N07 try 1 · 2026-11-07
+human: gate defects: 1) residual segment title and legend read 'Residual income paid' in the current month; residual never says paid or upcoming. 2) inside label on an upcoming (hatched, 30%) segment has poor contrast in dark mode ('Fixed 4,7k €' barely readable); keep labels readable, e.g. put the label on a readable fill or give it a contrasting ink/backdrop. 3) #income-bar renders after the 'For information, not counted' area; move it right after the ledger's Spent line so the not-counted area is the last block before the category table.
+- visual gate 2026-11-07, sample data, salary day 10, balance 2026-09-23
+
+### N07 replan 1 · 2026-11-07
+plan: REPLANNED +N09
+- gate found 3 defects: residual labelled paid, unreadable upcoming inside label in dark, income bar after not-counted area
+- added D16 (confirmed from gate feedback) and fix node N09 before N07; N07 deps N02,N09
+- N07 criteria now check residual wording, upcoming label contrast and block order
+
+### N09 try 1 · 2026-11-07
+exec: DONE · 2272 passed; ruff check clean; CSS rebuild matches
+- Removed residual paid/upcoming suffixes, added surface backdrop to upcoming labels, and moved income bar before not-counted; SPEC §13 updated.
+- Regression tests failed first for residual wording and past/current block order; 11 focused tests pass; paid labels and hooks retained.
+check: PASS 3/3
 verify: PASS

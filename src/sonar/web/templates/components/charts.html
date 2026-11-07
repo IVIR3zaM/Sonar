@@ -323,12 +323,12 @@
       {%- set short, full, paid_color, upcoming_color = names[segment.part] -%}
       {%- set color = upcoming_color if segment.upcoming else paid_color -%}
       {%- set kind = "upcoming" if segment.upcoming else "paid" -%}
-      {%- set label = full ~ (" " ~ kind if ledger.upcoming else "") ~ ": " ~ segment.cents|eur %}
+      {%- set label = full ~ (" " ~ kind if ledger.upcoming and segment.part != "residual" else "") ~ ": " ~ segment.cents|eur %}
       <div data-segment="{{ segment.part }}" data-kind="{{ kind }}" data-tone="{{ segment.part }}" data-cents="{{ segment.cents }}" data-width="{{ segment.width }}"
            style="width: {{ segment.width }}%" title="{{ label }}" aria-label="{{ label }}"
            class="glass-fluid {{ 'glass-upcoming' if segment.upcoming else '' }} flex min-w-0 shrink-0 items-center justify-center overflow-hidden {{ color }}">
         {%- if segment.label_tier %}
-        <div class="min-w-0 px-2 text-center text-xs {{ 'hidden sm:block' if segment.label_tier == 'wide' else '' }}">
+        <div class="min-w-0 px-2 text-center text-xs {{ 'rounded bg-surface/80 py-0.5 text-ink' if segment.upcoming else '' }} {{ 'hidden sm:block' if segment.label_tier == 'wide' else '' }}">
           <div class="truncate font-medium">{{ short }}</div>
           <div class="truncate tabular-nums">{{ charts.compact_eur(segment.cents) }}</div>
         </div>
@@ -345,7 +345,7 @@
     {%- set kind = "upcoming" if segment.upcoming else "paid" %}
     <li data-legend="{{ segment.part }}" data-cents="{{ segment.cents }}" class="flex items-center gap-1.5">
       <span data-tone="{{ segment.part }}" aria-hidden="true" class="{{ 'glass-upcoming' if segment.upcoming else '' }} size-2.5 shrink-0 rounded-sm {{ color }}"></span>
-      <span class="text-ink-muted">{{ full }}{{ " " ~ kind ~ ":" if ledger.upcoming else "" }}</span>
+      <span class="text-ink-muted">{{ full }}{{ (" " ~ kind if segment.part != "residual" else "") ~ ":" if ledger.upcoming else "" }}</span>
       <span class="font-medium">{{ segment.cents|eur }}</span>
     </li>
     {%- endfor %}

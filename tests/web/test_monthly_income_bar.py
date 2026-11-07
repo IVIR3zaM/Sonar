@@ -128,7 +128,7 @@ def test_income_bar_labels_paid_and_upcoming_in_titles_and_legend(tmp_path):
         ("lights_on", "upcoming", "Keep the lights on upcoming: 100,00 €"),
         ("occasional", "paid", "Occasional payments paid: 10,00 €"),
         ("uncategorized", "paid", "Uncategorized paid: 5,00 €"),
-        ("residual", "paid", "Residual income paid: 535,00 €"),
+        ("residual", "paid", "Residual income: 535,00 €"),
     ]
     for segment, item, (part, kind, label) in zip(
         bar.select("[data-segment]"), bar.select("[data-legend]"), expected, strict=True

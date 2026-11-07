@@ -99,6 +99,7 @@
       Spent <span id="month-total" data-cents="{{ ledger.spent.total_cents }}" data-upcoming-cents="{{ ledger.spent.upcoming_cents }}" class="whitespace-nowrap tabular-nums">{{ ledger.spent.total_cents|abs|eur }}</span>
       = {{ ledger.fixed.total_cents|abs|eur }} Fixed + {{ ledger.lights_on.total_cents|abs|eur }} Keep the lights on + {{ ledger.occasional.total_cents|abs|eur }} Occasional{% if ledger.uncategorized.total_cents != 0 %} + {{ ledger.uncategorized.total_cents|abs|eur }} Uncategorized{% endif %}
     </p>
+    {{ income_bar(ledger) }}
     <aside id="not-counted" class="mt-5 border-t border-line pt-4 text-ink-muted [&_p]:text-ink-muted">
       <p class="mb-3 text-xs font-medium">For information, not counted</p>
       <div class="grid grid-cols-2 gap-6">
@@ -106,8 +107,6 @@
         {{ stat("Payments", value=spending.payments|length, id="payments-count") }}
       </div>
     </aside>
-
-    {{ income_bar(ledger) }}
 
     {% if spending.by_category %}
     {%- set widths = charts.bars(spending.by_category|map(attribute="total_cents")|list, 100) %}

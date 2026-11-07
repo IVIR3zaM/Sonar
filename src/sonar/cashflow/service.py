@@ -25,8 +25,11 @@ from sonar.cashflow.forecast import DueItem, FixedCosts, FixedSource, Projection
 from sonar.cashflow.income import ExpectedIncome
 from sonar.cashflow.lights_on import LightsOnForecast
 from sonar.cashflow.monthly import (
+    Ledger,
     MonthlySpending,
+    Upcoming,
     adjacent_months,
+    ledger,
     monthly_spending,
     payment_months,
     period_for,
@@ -204,6 +207,67 @@ def load_dashboard(
     start = estimate_date + timedelta(days=1)
     end = next_payday - timedelta(days=1)
     window_days = (end - start).days + 1
+    window = _window_forecast(
+        rows,
+        category_types,
+        settings.salary_day,
+        balance,
+        end,
+        sources,
+        utilities,
+        cashflows,
+        links,
+    )
+    due_total = sum(item.amount_cents for item in window.due)
+    inflows = window.inflows + window.refunds
+    inflow_total = sum(item.amount_cents for item in inflows)
+    lights = window.lights_on
+    lights_range = None if lights is None else (lights.low_cents, lights.high_cents)
+    projection = forecast.project(balance.amount_cents, due_total, lights_range, inflow_total)
+    lights_expected = 0 if lights is None else lights.expected_cents
+    return replace(
+        board,
+        payday=next_payday,
+        days_to_payday=(next_payday - today).days,
+        due=window.due,
+        due_total_cents=due_total,
+        inflows=inflows,
+        inflow_total_cents=inflow_total,
+        window_days=window_days,
+        lights_on=lights,
+        lights_on_daily=window.lights_on_daily,
+        expected_cents=balance.amount_cents + inflow_total - due_total - lights_expected,
+        projection=projection,
+        light=forecast.traffic_light(projection, settings.overdraft_limit_cents),
+        expected_income=income.expected_income(
+            rows, category_types, settings.salary_day, estimate_date
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class _WindowForecast:
+    due: list[DueItem]
+    inflows: list[DueItem]
+    refunds: list[DueItem]
+    lights_on: LightsOnForecast | None
+    lights_on_daily: LightsOnForecast | None
+
+
+def _window_forecast(
+    rows: list[Row],
+    category_types: dict[str, str],
+    salary_day: int,
+    balance: BalanceEntry,
+    end: date,
+    sources: tuple[FixedSource, ...],
+    utilities: list[SettlementSummary],
+    cashflows: list[MeterCashflow],
+    links: dict[int, AdvanceLink],
+) -> _WindowForecast:
+    estimate_date = balance.as_of
+    start = estimate_date + timedelta(days=1)
+    window_days = (end - start).days + 1
     settlements = _settlements(utilities, cashflows, start, end)
     linked_meters = {link.meter_id for link in links.values()}
     due = (
@@ -215,38 +279,17 @@ def load_dashboard(
         ]
         + _advances(cashflows, linked_meters, start, end)
     )
-    due_total = sum(item.amount_cents for item in due)
-    inflows = _inflows(rows, category_types, settings.salary_day, estimate_date, start, end) + [
-        item for item in settlements if item.amount_cents > 0
-    ]
-    inflow_total = sum(item.amount_cents for item in inflows)
+    inflows = _inflows(rows, category_types, salary_day, estimate_date, start, end)
     until = lights_on.last_known_day(rows, balance.as_of)
     months = (
-        []
-        if until is None
-        else lights_on.month_spends(rows, category_types, settings.salary_day, until)
+        [] if until is None else lights_on.month_spends(rows, category_types, salary_day, until)
     )
-    lights = lights_on.lights_on_forecast(months, window_days)
-    lights_range = None if lights is None else (lights.low_cents, lights.high_cents)
-    projection = forecast.project(balance.amount_cents, due_total, lights_range, inflow_total)
-    lights_expected = 0 if lights is None else lights.expected_cents
-    return replace(
-        board,
-        payday=next_payday,
-        days_to_payday=(next_payday - today).days,
+    return _WindowForecast(
         due=due,
-        due_total_cents=due_total,
         inflows=inflows,
-        inflow_total_cents=inflow_total,
-        window_days=window_days,
-        lights_on=lights,
+        refunds=[item for item in settlements if item.amount_cents > 0],
+        lights_on=lights_on.lights_on_forecast(months, window_days),
         lights_on_daily=lights_on.lights_on_forecast(months, 1),
-        expected_cents=balance.amount_cents + inflow_total - due_total - lights_expected,
-        projection=projection,
-        light=forecast.traffic_light(projection, settings.overdraft_limit_cents),
-        expected_income=income.expected_income(
-            rows, category_types, settings.salary_day, estimate_date
-        ),
     )
 
 
@@ -347,6 +390,8 @@ class MonthlyView:
     older: date | None
     newer: date | None
     salary_months: bool
+    upcoming: Upcoming | None
+    ledger: Ledger
 
 
 def load_monthly(
@@ -364,8 +409,54 @@ def load_monthly(
     else:
         selected = month
     older, newer = adjacent_months(months, selected)
-    spending = monthly_spending(rows, category_types, period_for(selected, salary_day, paydays))
-    return MonthlyView(spending, months, selected, older, newer, salary_day is not None)
+    period = period_for(selected, salary_day, paydays)
+    spending = monthly_spending(rows, category_types, period)
+    balance = current_balance(conn)
+    upcoming = None
+    if (
+        salary_day is not None
+        and balance is not None
+        and period.start <= balance.as_of < period.end
+    ):
+        estimate_date = balance.as_of
+        views = debt_overview(conn, estimate_date)
+        payments = list_payments(conn)
+        cashflows = meter_cashflows(conn, estimate_date)
+        links = _advance_links(payments, views, cashflows)
+        sources = tuple(
+            source for _, source in _labelled_fixed_sources(payments, views, rows, links)
+        )
+        window = _window_forecast(
+            rows,
+            category_types,
+            salary_day,
+            balance,
+            period.end,
+            sources,
+            settlement_summaries(conn, estimate_date),
+            cashflows,
+            links,
+        )
+        income_by_category: dict[str, int] = {}
+        for item in window.inflows:
+            income_by_category[item.name] = income_by_category.get(item.name, 0) + item.amount_cents
+        upcoming = Upcoming(
+            start=estimate_date + timedelta(days=1),
+            end=period.end,
+            fixed_cents=-sum(item.amount_cents for item in window.due),
+            lights_on_cents=0 if window.lights_on is None else -window.lights_on.expected_cents,
+            income_by_category=tuple(sorted(income_by_category.items())),
+        )
+    return MonthlyView(
+        spending=spending,
+        months=months,
+        selected=selected,
+        older=older,
+        newer=newer,
+        salary_months=salary_day is not None,
+        upcoming=upcoming,
+        ledger=ledger(spending, upcoming),
+    )
 
 
 def _names_of_type(category_types: dict[str, str], category_type: str) -> tuple[str, ...]:

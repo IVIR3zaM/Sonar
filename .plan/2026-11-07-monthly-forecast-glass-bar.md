@@ -62,7 +62,7 @@ residual.
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
 | N02 | SPEC amendment | exec | N01 | gpt-6.1-sol@low/sonnet | 1 | 0 | DONE | |
 | N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
-| N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
+| N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
 | N07 | visual check | gate | N02,N06 | -/sonnet | 0 | 0 | TODO | |
@@ -264,4 +264,11 @@ check: PASS 1/1
 verify: PASS
 
 ### N02 try 1 · 2026-11-07
+verify: PASS
+
+### N04 try 1 · 2026-11-07
+exec: DONE · 2264 passed; ruff check and format clean
+- Shared dashboard window forecasting with monthly upcoming and ledger; exposed ledger in page context.
+- Balance-date window excludes settlement refunds from monthly income; tests cover booking stability, setup guards, and due sources.
+check: PASS 2/2
 verify: PASS

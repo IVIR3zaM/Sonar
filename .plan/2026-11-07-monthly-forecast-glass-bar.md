@@ -1,5 +1,5 @@
 # Monthly forecast ledger and glass bar
-status: RUNNING
+status: WAITING
 created: 2026-11-07 · updated: 2026-11-07
 goal: /monthly explains income against spending as a top-down ledger, the current month adds what is still to come, and the income bar reads as a transparent glass tube
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -64,7 +64,7 @@ residual.
 | N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 1 | 0 | DONE | |
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
-| N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N07 | visual check | gate | N02,N06 | -/sonnet | 0 | 0 | TODO | |
 | N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
 
@@ -282,5 +282,12 @@ check: FAIL C4
 
 ### N05 try 2 · 2026-11-07
 exec: BLOCKED · C4 fails on three B023 errors in .claude/worktrees/sync-recurring-keys/src/sonar/recurring/detect.py:150-153, outside Write scope.
+check: PASS 2/2
+verify: PASS
+
+### N06 try 1 · 2026-11-07
+exec: DONE · 2270 passed; ruff check and format clean; CSS rebuild matches
+- Replaced monthly stats grid with ledger macro, income breakdown, residual equations, forecast window and informational aside.
+- Kept signed total hooks while displaying spending magnitudes; added past/current/zero-income ledger coverage and retained group links.
 check: PASS 2/2
 verify: PASS

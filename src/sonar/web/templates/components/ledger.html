@@ -1,0 +1,18 @@
+{% from "components/amount.html" import amount %}
+
+{% macro ledger_line(label, cents, operator="", id=none, href=none, current=false, upcoming_cents=none, attrs={}) -%}
+<{{ "a" if href else "div" }}{% if href %} id="{{ id|replace('group-', 'stat-') }}" href="{{ href }}"{% if current %} aria-current="true"{% endif %}{% endif %} class="block py-3{% if operator == '=' %} border-t border-line font-semibold{% endif %}{% if href %} rounded-control hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent aria-[current=true]:bg-accent-soft{% endif %}"{{ attrs|xmlattr }}>
+  <div class="flex items-baseline justify-between gap-3">
+    <span class="min-w-0 text-ink"><span class="mr-2 inline-block w-3 text-ink-muted">{{ operator }}</span>{{ label }}</span>
+    {% if operator == '−' %}
+    <span id="{{ id }}" data-cents="{{ cents }}"{% if upcoming_cents is not none %} data-upcoming-cents="{{ upcoming_cents }}"{% endif %} class="whitespace-nowrap text-ink tabular-nums">{{ cents|abs|eur }}</span>
+    {% else %}
+    {{ amount(cents, id=id, attrs={"data-upcoming-cents": upcoming_cents} if upcoming_cents is not none else {}) }}
+    {% endif %}
+  </div>
+  {% if upcoming_cents is not none %}
+  <p class="mt-1 pl-5 text-xs text-ink-muted tabular-nums">{{ (cents - upcoming_cents)|abs|eur }} paid + {{ upcoming_cents|abs|eur }} upcoming</p>
+  {% endif %}
+  {% if caller %}<div class="mt-1 pl-5 text-sm text-ink-muted">{{ caller() }}</div>{% endif %}
+</{{ "a" if href else "div" }}>
+{%- endmacro %}

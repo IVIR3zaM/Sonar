@@ -1,5 +1,5 @@
 # Monthly forecast ledger and glass bar
-status: RUNNING
+status: DONE
 created: 2026-11-07 · updated: 2026-11-07
 goal: /monthly explains income against spending as a top-down ledger, the current month adds what is still to come, and the income bar reads as a transparent glass tube
 verify: uv run pytest -q && uv run ruff check . && uv run ruff format --check .
@@ -67,7 +67,7 @@ residual.
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 2 | 0 | DONE | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N07 | visual check | gate | N02,N09 | -/sonnet | 0 | 1 | DONE | |
-| N08 | plan acceptance | check | N07 | -/sonnet | 0 | 0 | TODO | |
+| N08 | plan acceptance | check | N07 | -/sonnet | 1 | 0 | DONE | |
 | N09 | gate fixes | exec | N06 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 
 ## N01 preflight
@@ -341,4 +341,8 @@ exec: DONE · 2272 passed; ruff check clean; CSS rebuild matches
 - Removed residual paid/upcoming suffixes, added surface backdrop to upcoming labels, and moved income bar before not-counted; SPEC §13 updated.
 - Regression tests failed first for residual wording and past/current block order; 11 focused tests pass; paid labels and hooks retained.
 check: PASS 3/3
+verify: PASS
+
+### N08 try 1 · 2026-11-07
+check: PASS 2/2
 verify: PASS

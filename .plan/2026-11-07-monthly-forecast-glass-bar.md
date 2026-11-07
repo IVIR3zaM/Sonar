@@ -61,7 +61,7 @@ residual.
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
 | N02 | SPEC amendment | exec | N01 | gpt-6.1-sol@low/sonnet | 1 | 0 | DONE | |
-| N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | VERIFYING | |
+| N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | DONE | |
 | N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |

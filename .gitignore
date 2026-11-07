@@ -16,3 +16,6 @@ deploy/terraform/terraform.tfvars
 deploy/terraform/backend.hcl
 **/.terraform/
 *.tfstate*
+
+# Insurance policies and extracted summaries hold personal data.
+insurance/

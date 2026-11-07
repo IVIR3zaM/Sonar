@@ -60,8 +60,8 @@ residual.
 | id | title | type | deps | model | try | rp | status | note |
 |----|-------|------|------|-------|-----|----|--------|------|
 | N01 | preflight | check | - | -/haiku | 1 | 0 | DONE | |
-| N02 | SPEC amendment | exec | N01 | gpt-6.1-sol@low/sonnet | 0 | 0 | TODO | |
-| N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
+| N02 | SPEC amendment | exec | N01 | gpt-6.1-sol@low/sonnet | 1 | 0 | DONE | |
+| N03 | ledger core | exec | N01 | gpt-6.1-sol@medium/sonnet | 1 | 0 | VERIFYING | |
 | N04 | current period forecast | exec | N03 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
 | N05 | glass income bar | exec | N04 | gpt-6.1-sol@high/sonnet | 0 | 0 | TODO | |
 | N06 | ledger page | exec | N05 | gpt-6.1-sol@medium/sonnet | 0 | 0 | TODO | |
@@ -245,3 +245,23 @@ Done when:
 
 ### N01 try 1 · 2026-11-07
 check: PASS 4/4
+
+### N02 try 1 · 2026-11-07
+exec: DONE · 2245 passed; ruff check clean
+- Appended SPEC §13 Monthly ledger and forecast with forecast window, ledger, glass bar and hooks.
+- Explicitly overrides Monthly income bar colours, segments and stat layout; API and filtering unchanged.
+
+### N03 try 1 · 2026-11-07
+exec: DONE · 2253 passed; ruff check clean; changed files formatted
+- Added per-category income and pure frozen ledger types with paid, upcoming and residual totals.
+- Used group constants and labels; eight tests cover category filtering, merging, sorting, totals and negative residuals.
+
+### N02 try 1 · 2026-11-07
+check: PASS 1/1
+
+### N03 try 1 · 2026-11-07
+check: PASS 1/1
+verify: PASS
+
+### N02 try 1 · 2026-11-07
+verify: PASS

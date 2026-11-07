@@ -110,7 +110,7 @@ def series_keys(txs: Iterable[ParsedTransaction]) -> list[tuple[ParsedTransactio
     # series, ranked by amount on the days it collides. A lone payment on another
     # day belongs to the series it resembles, so a skipped charge keeps the rest in place.
     txs = list(txs)
-    base_keys = [payment_key(tx) for tx in txs]
+    base_keys = _inherit_mandate_keys(txs)
     by_group_date: dict[str, dict[date, list[int]]] = defaultdict(lambda: defaultdict(list))
     for index, (tx, base) in enumerate(zip(txs, base_keys, strict=True)):
         by_group_date[base][tx.booking_date].append(index)
@@ -126,6 +126,38 @@ def series_keys(txs: Iterable[ParsedTransaction]) -> list[tuple[ParsedTransactio
         (tx, f"{base}#{rank}" if base in splitting else base)
         for tx, base, rank in zip(txs, base_keys, ranks, strict=True)
     ]
+
+
+def _inherit_mandate_keys(txs: list[ParsedTransaction]) -> list[str]:
+    base_keys = [payment_key(tx) for tx in txs]
+    mandates: dict[str, dict[str, list[ParsedTransaction]]] = defaultdict(lambda: defaultdict(list))
+    for tx, key in zip(txs, base_keys, strict=True):
+        if tx.iban and key.startswith("mandate:"):
+            candidates = mandates["".join(tx.iban.split()).upper()][key]
+            if not candidates or tx.booking_date > candidates[0].booking_date:
+                candidates[:] = [tx]
+            elif tx.booking_date == candidates[0].booking_date:
+                candidates.append(tx)
+
+    for index, (tx, key) in enumerate(zip(txs, base_keys, strict=True)):
+        if not tx.iban or not key.startswith("counterparty:"):
+            continue
+        candidates = mandates.get("".join(tx.iban.split()).upper(), {})
+        if not candidates:
+            continue
+
+        choices = []
+        for candidate_key, latest in candidates.items():
+            gap = abs(tx.booking_date.day - latest[0].booking_date.day)
+            choices.append(
+                (
+                    all(tx.amount_cents != row.amount_cents for row in latest),
+                    min(gap, DAYS_IN_MONTH_CYCLE - gap),
+                    candidate_key,
+                )
+            )
+        base_keys[index] = min(choices)[2]
+    return base_keys
 
 
 def _rank_group(
